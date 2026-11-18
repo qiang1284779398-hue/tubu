@@ -222,6 +222,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var active by remember(projectId) { mutableStateOf(false) }
     var current by remember(projectId) { mutableStateOf<Location?>(null) }
     var gpsStatusTick by remember(projectId) { mutableLongStateOf(0L) }
+    var locationUpdateCount by remember(projectId) { mutableIntStateOf(0) }
+    var lastLocationProvider by remember(projectId) { mutableStateOf("等待定位源") }
 
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick)
     var gpsError by remember(projectId) { mutableStateOf("") }
@@ -399,14 +401,21 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
                     val age=System.currentTimeMillis()-location.time
-                    if(age !in 0L..30000L || location.accuracy>1500f) return
+                    if(age !in 0L..60000L || location.accuracy>2500f) return
                     val existing=current
                     if(existing!=null) {
                         if(location.time<existing.time) return
                         val existingAge=System.currentTimeMillis()-existing.time
-                        if(existingAge in 0L..15000L && existing.accuracy<=75f && location.accuracy>existing.accuracy) return
+                        if(existingAge in 0L..15000L && existing.accuracy<=75f && location.accuracy>existing.accuracy && location.provider!=LocationManager.GPS_PROVIDER) return
                     }
-                    if(location.accuracy<=75f) {
+                    locationUpdateCount++
+                    lastLocationProvider=when(location.provider) {
+                        LocationManager.GPS_PROVIDER -> "GPS 卫星"
+                        LocationManager.NETWORK_PROVIDER -> "Wi-Fi / 基站"
+                        LocationManager.PASSIVE_PROVIDER -> "系统被动定位"
+                        else -> location.provider ?: "未知来源"
+                    }
+                    if(location.accuracy<=250f) {
                         val previous=previousAccepted
                         if(previous!=null) {
                             val elapsed=((location.time-previous.time).coerceAtLeast(0L))/1000.0
@@ -414,15 +423,14 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             val oldSpeed=if(previous.hasSpeed())previous.speed else 0f
                             val newSpeed=if(location.hasSpeed())location.speed else 0f
                             val expected=maxOf(oldSpeed,newSpeed)*elapsed
-                            val allowed=maxOf(120.0,expected+previous.accuracy+location.accuracy+30.0)
-                            if(elapsed in 0.0..8.0 && jump>allowed) { gpsError="GPS 定位出现异常跳变，已忽略本次高精度位置";return }
+                            val allowed=maxOf(250.0,expected+previous.accuracy+location.accuracy+50.0)
+                            if(elapsed in 0.0..8.0 && jump>allowed) { gpsError="定位出现异常跳变，已忽略本次位置";return }
                         }
                         previousAccepted=Location(location)
                     }
                     current=Location(location)
-                    gpsError=if(location.accuracy<=75f) "" else "当前为网络辅助粗略定位（±${location.accuracy.roundToInt()} 米）；导航进度和轨迹记录暂不启用"
-                    if(isRecording && location.provider==LocationManager.GPS_PROVIDER &&
-                        age in 0L..15000L && location.accuracy<=50f) {
+                    gpsError=if(location.accuracy<=75f) "" else "当前定位精度 ±${location.accuracy.roundToInt()} 米；精度较低，仍显示实时位置"
+                    if(isRecording && age in 0L..20000L && location.accuracy<=100f) {
                         val previousRecorded=recordedPoints.lastOrNull()
                         val movedMeters=previousRecorded?.let {
                             mapDistance(it.latitude to it.longitude,location.latitude to location.longitude)
@@ -444,13 +452,25 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             try {
                 if(fine || coarse) {
                     var requested=false
-                    if(coarse && manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                        try { manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,3000L,5f,listener);requested=true } catch(_:SecurityException) {}
-                    }
+                    try {
+                        val providers=if(fine) listOf(LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER,LocationManager.PASSIVE_PROVIDER)
+                            else listOf(LocationManager.NETWORK_PROVIDER,LocationManager.PASSIVE_PROVIDER)
+                        providers.forEach { provider ->
+                            manager.getLastKnownLocation(provider)?.let { last ->
+                                val age=System.currentTimeMillis()-last.time
+                                if(age in 0L..120000L && last.accuracy<=2500f && (current==null || last.time>current!!.time)) current=Location(last)
+                            }
+                        }
+                    } catch(_:SecurityException) {}
                     if(fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                        try { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1500L,1f,listener);requested=true } catch(_:SecurityException) {}
+                        try { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,0f,listener);requested=true } catch(_:SecurityException) {}
                     }
-                    gpsError=if(requested) "正在获取 GPS / Wi-Fi / 基站辅助定位…" else "系统定位源暂不可用，请检查手机定位开关和权限"
+                    if(manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                        try { manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,2500L,0f,listener);requested=true } catch(_:SecurityException) {}
+                    }
+                    try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,5000L,0f,listener);requested=true } catch(_:Exception) {}
+                    gpsError=if(requested) "定位已启动：卫星 GPS + Wi-Fi/基站辅助（按权限自动切换）" else "系统定位源未启动；检查定位开关、权限和系统定位服务"
+                    if(!fine) gpsError="仅获得大致位置权限：使用 Wi-Fi/基站定位；轨迹记录也允许此来源"
                 } else { active=false;gpsError="请允许 TrailKit 使用位置信息" }
             } catch(e:Exception) { gpsError=e.message?.let{"定位启动失败：$it"}?:"定位启动失败，请检查定位设置";active=false }
             onDispose { try{manager.removeUpdates(listener)}catch(_:Exception){} }

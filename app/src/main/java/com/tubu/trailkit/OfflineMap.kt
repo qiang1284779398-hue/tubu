@@ -828,7 +828,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("速度",if(current?.hasSpeed()==true) String.format(Locale.CHINA,"%.1f km/h",gpsSpeed*3.6) else "--")
                     MapStat("${currentElevationSource} 海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")
-                    MapStat("位置",when { current==null->"等待定位";(gpsFixAgeSeconds?:0L)>15L->"最后位置 · ${gpsFixAgeSeconds}s";else->"实时 · ±${current!!.accuracy.roundToInt()} m" })
+                    MapStat("位置",when { current==null->"等待定位";(gpsFixAgeSeconds?:0L)>15L->"定位过期";else->"实时 · ±${current!!.accuracy.roundToInt()} m" })
                 }
                 if(navigationPoints.size>=2) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("预计剩余",etaText)
@@ -938,7 +938,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("20 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary);Text("300 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)}
                 } else Text("当前项目没有有效 GPX 轨迹，请先导入 GPX 文件。",fontSize=12.sp,color=MaterialTheme.colorScheme.error)
                 if(gpsError.isNotBlank())Text(gpsError,fontSize=12.sp,color=MaterialTheme.colorScheme.error)
-                if((gpsFixAgeSeconds?:0L)>15L) Text("位置更新暂时中断，地图保留灰色最后位置；导航进度和偏航判断已暂停，收到新定位后自动恢复。",fontSize=11.sp,color=Color(0xFF9A6A25))
+                if((gpsFixAgeSeconds?:0L)>15L) Text("定位过期，地图保留灰色最后位置；导航进度和偏航判断已暂停，收到新定位后自动恢复。",fontSize=11.sp,color=Color(0xFF9A6A25))
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         MapStat("GPS 精度","±${current!!.accuracy.roundToInt()} m")

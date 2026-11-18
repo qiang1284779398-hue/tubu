@@ -344,7 +344,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if(active)"轨迹跟随导航" else info?.name?:"离线地图导航",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
-                        Text(if(info!=null)"离线地形 · ${info.format.uppercase()} · 缩放 ${info.minZoom}–${info.maxZoom}" else "轨迹导航模式 · 尚未导入离线地图",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.secondary)
+                        Text(if(info!=null)"离线地形 · ${info.format.uppercase()} · ${info.tileCount} 瓦片 · 缩放 ${info.minZoom}–${info.maxZoom}" else "轨迹导航模式 · 尚未导入离线地图",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.secondary)
                     }
                     TextButton(onClick={active=false;onClose()}){Text("关闭")}
                 }

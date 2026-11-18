@@ -279,6 +279,30 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         canvas.drawCircle(x,y,13f,p);p.color=android.graphics.Color.rgb(30,105,210);canvas.drawCircle(x,y,9f,p)
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
                     }
+                    // North-up compass marker and a ground-distance scale bar.
+                    val overlay=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(35,54,46);style=Paint.Style.FILL;textSize=22f;typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)}
+                    val white=Paint(overlay).apply{color=android.graphics.Color.WHITE}
+                    val compassX=size.width-38f;val compassY=42f
+                    canvas.drawCircle(compassX,compassY,25f,white)
+                    overlay.style=Paint.Style.STROKE;overlay.strokeWidth=3f
+                    canvas.drawCircle(compassX,compassY,25f,overlay)
+                    overlay.style=Paint.Style.FILL
+                    val north=AndroidPath().apply{moveTo(compassX,compassY-17f);lineTo(compassX-7f,compassY+7f);lineTo(compassX,compassY+2f);lineTo(compassX+7f,compassY+7f);close()}
+                    canvas.drawPath(north,overlay)
+                    canvas.drawText("N",compassX-7f,compassY+43f,overlay)
+                    val metersPerPixel=156543.03392*cos(Math.toRadians(centerLat))/2.0.pow(zoom.toDouble())
+                    val rawMeters=(metersPerPixel*105.0).coerceAtLeast(1.0)
+                    val power=10.0.pow(floor(log10(rawMeters)))
+                    val normalized=rawMeters/power
+                    val nice=when { normalized>=5.0->5.0;normalized>=2.0->2.0;else->1.0 }*power
+                    val bar=(nice/metersPerPixel).toFloat().coerceAtMost(size.width*0.45f)
+                    val bx=22f;val by=size.height-25f
+                    val back=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=0xCCFFFFFF.toInt();style=Paint.Style.FILL}
+                    canvas.drawRoundRect(RectF(bx-10f,by-39f,bx+bar+12f,by+12f),9f,9f,back)
+                    overlay.strokeWidth=5f;overlay.strokeCap=Paint.Cap.SQUARE
+                    canvas.drawLine(bx,by,bx+bar,by,overlay)
+                    canvas.drawLine(bx,by-7f,bx,by+5f,overlay);canvas.drawLine(bx+bar,by-7f,bx+bar,by+5f,overlay)
+                    canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
                 }
                 Text("绿线：已走   橙线：剩余   蓝点：定位   橙色点：GPX 途经点（${waypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 if(points.size>=2) {

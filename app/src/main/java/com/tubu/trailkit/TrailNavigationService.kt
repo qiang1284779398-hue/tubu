@@ -29,7 +29,6 @@ class TrailNavigationService : Service(), LocationListener {
     private val channelId="trailkit_navigation"
     private val notificationId=4107
     private var trackWriter:BufferedWriter?=null
-    private var trackFile:File?=null
 
     override fun onCreate() {
         super.onCreate()
@@ -82,7 +81,6 @@ class TrailNavigationService : Service(), LocationListener {
         finishRecording()
         try {
             val file=File(filesDir,"trailkit_track_${projectId.hashCode()}.gpx")
-            trackFile=file
             trackWriter=BufferedWriter(OutputStreamWriter(FileOutputStream(file,false),StandardCharsets.UTF_8)).apply {
                 write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"TrailKit\" xmlns=\"http://www.topografix.com/GPX/1/1\"><trk><name>TrailKit 实时轨迹</name><trkseg>\n")
                 flush()

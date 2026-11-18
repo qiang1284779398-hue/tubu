@@ -173,7 +173,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     append("</trkpt>\n")
                 }
                 append("</trkseg></trk>\n")
-                allWaypoints.forEach { wp -> append("<wpt lat=\"${wp.lat}\" lon=\"${wp.lon}\"><name>${xml(wp.name)}</name></wpt>\n") }
+                allWaypoints.forEachIndexed { index,wp -> append("<wpt lat=\"${wp.lat}\" lon=\"${wp.lon}\"><name>${xml(wp.name)}</name></wpt>\n") }
                 append("</gpx>")
             }
             context.contentResolver.openOutputStream(uri)?.use{it.write(body.toByteArray(Charsets.UTF_8))}
@@ -462,6 +462,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val labelStroke=Paint(labelFill).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
                         var lastLabelX=-1000f;var lastLabelY=-1000f
                         allWaypoints.forEach { wp ->
+                            marker.color=if(index<waypoints.size)android.graphics.Color.rgb(235,151,47) else android.graphics.Color.rgb(48,119,190)
                             val x=((worldX(wp.lon,z)-left)*scale).toFloat()
                             val y=((worldY(wp.lat,z)-top)*scale).toFloat()
                             if(x in 0f..size.width && y in 0f..size.height) {
@@ -479,8 +480,8 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val p=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
                         canvas.drawCircle(x,y,13f,p);p.color=android.graphics.Color.rgb(30,105,210);canvas.drawCircle(x,y,9f,p)
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
-                        if(!heading.isNaN()) {
-                            val angle=Math.toRadians(heading.toDouble())
+                        if(!trueHeading.isNaN()) {
+                            val angle=Math.toRadians(trueHeading.toDouble())
                             val tipX=x+(sin(angle)*31f).toFloat()
                             val tipY=y-(cos(angle)*31f).toFloat()
                             val direction=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(218,91,48);strokeWidth=4f;strokeCap=Paint.Cap.ROUND;style=Paint.Style.STROKE}

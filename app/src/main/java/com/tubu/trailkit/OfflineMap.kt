@@ -214,6 +214,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         } else onDispose { }
     }
     val cp=current?.let{it.latitude to it.longitude}
+    val utmCoordinate=cp?.let{toUtm(it.first,it.second)}
     val magneticDeclination=current?.let { loc ->
         try { GeomagneticField(loc.latitude.toFloat(),loc.longitude.toFloat(),if(loc.hasAltitude())loc.altitude.toFloat() else 0f,System.currentTimeMillis()).declination }
         catch(_:Exception) { 0f }
@@ -624,6 +625,17 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             clipboard.setPrimaryClip(ClipData.newPlainText("GPS 坐标",String.format(Locale.US,"%.6f, %.6f",current!!.latitude,current!!.longitude)))
                             android.widget.Toast.makeText(context,"坐标已复制",android.widget.Toast.LENGTH_SHORT).show()
                         }) { Text("复制坐标") }
+                    }
+                }
+                utmCoordinate?.let { utm ->
+                    val utmText=String.format(Locale.US,"%02d%c  E %.0f  N %.0f",utm.zone,utm.hemisphere,utm.easting,utm.northing)
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        MapStat("UTM 公制网格",utmText)
+                        OutlinedButton(onClick={
+                            val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("UTM",utmText))
+                            android.widget.Toast.makeText(context,"UTM 坐标已复制",android.widget.Toast.LENGTH_SHORT).show()
+                        }) { Text("复制 UTM") }
                     }
                 }
                 if(current!=null) OutlinedButton(onClick={

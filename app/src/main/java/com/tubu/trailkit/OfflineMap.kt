@@ -181,9 +181,14 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
             context.contentResolver.openOutputStream(uri)?.use{it.write(body.toByteArray(Charsets.UTF_8))}
         } catch(_:Exception) { gpsError="路线 GPX 导出失败，请检查保存位置" }
     }
-    var zoom by remember(path){mutableFloatStateOf((info?.centerZoom?:14f).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
-    var centerLon by remember(path){mutableDoubleStateOf(if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
-    var centerLat by remember(path){mutableDoubleStateOf(if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
+    val viewPrefs=remember(projectId,path){context.getSharedPreferences("trailkit_map_view",Context.MODE_PRIVATE)}
+    var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$projectId",(info?.centerZoom?:14f)).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
+    var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$projectId",null)?.toDoubleOrNull() ?: if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
+    var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$projectId",null)?.toDoubleOrNull() ?: if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
+    LaunchedEffect(projectId,path,zoom,centerLon,centerLat) {
+        kotlinx.coroutines.delay(450L)
+        viewPrefs.edit().putFloat("zoom_$projectId",zoom).putString("lon_$projectId",centerLon.toString()).putString("lat_$projectId",centerLat.toString()).apply()
+    }
     val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true) { active=true;gpsError="" }
         else gpsError="请授予精确位置权限，徒步轨迹导航需要 GPS 精度"

@@ -119,8 +119,8 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
     }
     val prefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
-    var active by remember { mutableStateOf(false) }
-    var current by remember { mutableStateOf<Location?>(null) }
+    var active by remember(projectId) { mutableStateOf(false) }
+    var current by remember(projectId) { mutableStateOf<Location?>(null) }
     var gpsError by remember { mutableStateOf("") }
     var followGps by remember { mutableStateOf(true) }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
@@ -131,14 +131,14 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
     var lastMatchedSegment by remember(projectId,encoded,reverseRoute) { mutableIntStateOf(prefs.getInt(segmentKey,0)) }
     var offRouteWas by remember(projectId) { mutableStateOf(false) }
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
-    var isRecording by remember { mutableStateOf(false) }
+    var isRecording by remember(projectId) { mutableStateOf(false) }
     var showWaypointList by remember { mutableStateOf(false) }
     var editingCustomWaypoint by remember { mutableStateOf<GpxWaypoint?>(null) }
     var waypointNameDraft by remember { mutableStateOf("") }
     var measureMode by remember(projectId) { mutableStateOf(false) }
     val measurePoints=remember(projectId){mutableStateListOf<Pair<Double,Double>>()}
     val measureDistance=remember(measurePoints.toList()){measurePoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
-    val recordedPoints = remember { mutableStateListOf<Location>() }
+    val recordedPoints = remember(projectId) { mutableStateListOf<Location>() }
     var recordingClockTick by remember { mutableLongStateOf(0L) }
     var gpsStatusTick by remember { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
@@ -153,7 +153,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
             recordingClockTick++
         }
     }
-    var hasSavedRecording by remember { mutableStateOf(projectTrackFile(context,projectId).exists()) }
+    var hasSavedRecording by remember(projectId) { mutableStateOf(projectTrackFile(context,projectId).exists()) }
     val tileCache = remember(path) { object : LruCache<String, android.graphics.Bitmap>(8 * 1024) { override fun sizeOf(key:String,value:android.graphics.Bitmap)=value.byteCount/1024 } }
     val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
         if(uri!=null) try {
@@ -204,7 +204,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
         if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true) { active=true;gpsError="" }
         else gpsError="请授予精确位置权限，徒步轨迹导航需要 GPS 精度"
     }
-    DisposableEffect(active) {
+    DisposableEffect(active,projectId) {
         if(active) {
             try { ContextCompat.startForegroundService(context,android.content.Intent(context,TrailNavigationService::class.java)) }
             catch(_:Exception) { gpsError="无法启动后台导航服务，请检查系统限制" }

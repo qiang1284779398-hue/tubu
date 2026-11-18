@@ -37,7 +37,8 @@ import androidx.compose.ui.unit.dp
   }else locationStatus="未授予定位权限"
  }
  val phone=contact.filter{it.isDigit()||it=='+'}
- val message="【TrailKit 徒步安全信息】\n项目："+project.name+"\n目的地："+project.place+"\n当前位置："+(coordinates.ifBlank{"未获取"})+"\n路线："+project.route+"\n住宿/营地："+project.lodging+"\n补给/水源："+project.resupply+"\n紧急联系人："+project.emergency+"\n请协助确认我的安全状况。"
+ val mapLink=if(coordinates.isNotBlank()) "https://maps.google.com/?q="+coordinates.replace(" ","") else ""
+ val message="【TrailKit 徒步安全信息】\n项目："+project.name+"\n目的地："+project.place+"\n当前位置："+(coordinates.ifBlank{"未获取"})+(if(mapLink.isNotBlank())"\n地图定位："+mapLink else "")+"\n路线："+project.route+"\n住宿/营地："+project.lodging+"\n补给/水源："+project.resupply+"\n紧急联系人："+contact+"\n请协助确认我的安全状况。"
  AlertDialog(onDismissRequest=onClose,title={Text("户外安全中心")},text={Column(verticalArrangement=Arrangement.spacedBy(9.dp)){
   Text("紧急联系人和路线资料会整理成求助信息。发送或拨号前请检查内容。")
   OutlinedTextField(contact,{contact=it},label={Text("紧急联系电话")},singleLine=true)

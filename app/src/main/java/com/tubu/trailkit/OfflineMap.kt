@@ -561,6 +561,14 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         }) { Text("复制坐标") }
                     }
                 }
+                if(current!=null) OutlinedButton(onClick={
+                    val loc=current!!
+                    val coordinates=String.format(Locale.US,"%.6f, %.6f",loc.latitude,loc.longitude)
+                    val mapUrl="https://maps.google.com/?q=${loc.latitude},${loc.longitude}"
+                    val message="我的 TrailKit 徒步位置：$coordinates\n地图：$mapUrl\nGPS 精度：±${loc.accuracy.roundToInt()} 米\n请根据现场情况协助确认位置。"
+                    val send=android.content.Intent(android.content.Intent.ACTION_SEND).apply{type="text/plain";putExtra(android.content.Intent.EXTRA_SUBJECT,"徒步位置求助");putExtra(android.content.Intent.EXTRA_TEXT,message)}
+                    context.startActivity(android.content.Intent.createChooser(send,"分享当前位置"))
+                },modifier=Modifier.fillMaxWidth()) { Text("分享当前位置 / 求助坐标") }
                 if(closestWaypoint!=null) {
                     val waypointDistance=mapDistance(cp!!,closestWaypoint.lat to closestWaypoint.lon)
                     val waypointBearing=bearingToPoint(cp,closestWaypoint.lat to closestWaypoint.lon)

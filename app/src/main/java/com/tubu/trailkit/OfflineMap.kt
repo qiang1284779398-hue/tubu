@@ -712,6 +712,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     val cx=worldX(centerLon,z);val cy=worldY(centerLat,z)
                     val left=cx-size.width/(2.0*scale);val top=cy-size.height/(2.0*scale)
                     fun project(lat:Double,lon:Double):android.graphics.PointF = mapProjector?.invoke(lat,lon) ?: android.graphics.PointF(((worldX(lon,z)-left)*scale).toFloat(),((worldY(lat,z)-top)*scale).toFloat())
+                    // Rotate the raster MBTiles and graticule with the map camera.
+                    // Route/waypoint overlays below already use MapLibre's rotated projection.
+                    canvas.save()
+                    canvas.rotate(-mapBearing,size.width/2f,size.height/2f)
                     if(db!=null&&info!=null) {
                         val minX=floor(left/256.0).toInt();val maxX=floor((left+size.width/scale)/256.0).toInt()
                         val minY=floor(top/256.0).toInt();val maxY=floor((top+size.height/scale)/256.0).toInt()
@@ -769,6 +773,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             if(p1.y in 18f..size.height) canvas.drawText(String.format(Locale.US,"%.3f°%s",kotlin.math.abs(lat),if(lat>=0)"N" else "S"),5f,p1.y-4f,label)
                         }
                     }
+                    canvas.restore()
                     if(measurePoints.isNotEmpty()) {
                         val measurePaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(36,105,190);strokeWidth=4f;style=Paint.Style.STROKE;strokeCap=Paint.Cap.ROUND}
                         val measurePath=AndroidPath()

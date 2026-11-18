@@ -734,14 +734,21 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick={reverseRoute=!reverseRoute;context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE).edit().putBoolean("reverse_$projectId",!reverseRoute).apply();confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear()},modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
+                    OutlinedButton(onClick={
+                        val nextReverse=!reverseRoute
+                        val nextProgressKey="progress_${projectId}_${encoded.hashCode()}_${if(nextReverse)"rev" else "fwd"}"
+                        val nextSegmentKey="segment_${projectId}_${encoded.hashCode()}_${if(nextReverse)"rev" else "fwd"}"
+                        context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE).edit()
+                            .putBoolean("reverse_$projectId",nextReverse).putFloat(nextProgressKey,0f).putInt(nextSegmentKey,0).apply()
+                        reverseRoute=nextReverse;confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear()
+                    },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
                     OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
                     OutlinedButton(onClick={if(current!=null){centerLat=current!!.latitude;centerLon=current!!.longitude;followGps=true}else if(navigationPoints.isNotEmpty()){centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second}} ,modifier=Modifier.weight(1f)){Text("回到当前位置")}
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}
                     OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost((info?.maxZoom?:18).toFloat())},modifier=Modifier.weight(1f)){Text("+ 放大")}
-                    OutlinedButton(onClick={confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false},modifier=Modifier.weight(1f)){Text("重置进度")}
+                    OutlinedButton(onClick={confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()},modifier=Modifier.weight(1f)){Text("重置进度")}
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={

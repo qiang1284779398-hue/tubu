@@ -7,6 +7,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import androidx.core.content.FileProvider
+import java.io.File
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,6 +41,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
@@ -90,12 +93,28 @@ fun TrailKitApp() {
     var gearDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Gear?>(null) }
     var chosenPhoto by remember { mutableStateOf("") }
+    var cameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) cameraPhotoUri?.let { chosenPhoto = it.toString() }
+    }
     var manageProjectId by remember { mutableStateOf<String?>(null) }
     var editProjectField by remember { mutableStateOf<String?>(null) }
     var editingProjectId by remember { mutableStateOf<String?>(null) }
     var editProjectValue by remember { mutableStateOf("") }
     var deleteProjectId by remember { mutableStateOf<String?>(null) }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if(uri!=null) chosenPhoto=uri.toString() }
+    fun takeGearPhoto() {
+        try {
+            val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES) ?: context.cacheDir
+            if (!dir.exists()) dir.mkdirs()
+            val file = File.createTempFile("trailkit_gear_", ".jpg", dir)
+            val uri = FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+            cameraPhotoUri = uri
+            cameraLauncher.launch(uri)
+        } catch (e: Exception) {
+            Toast.makeText(context, "无法打开相机：${e.message ?: "请检查相机应用"}", Toast.LENGTH_LONG).show()
+        }
+    }
     fun save(list:List<Project>) { projects=list; persist(context,list) }
     val project=projects.firstOrNull { it.id==selected }
 
@@ -183,11 +202,11 @@ fun TrailKitApp() {
             title = { Text(managedProject.name) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("长按项目可管理项目资料", color = muted, fontSize = 12.sp)
-                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "name"; editProjectValue = managedProject.name; manageProjectId = null }) { Text("重命名项目") }
-                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "place"; editProjectValue = managedProject.place; manageProjectId = null }) { Text("修改终点 / 目的地") }
-                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "date"; editProjectValue = managedProject.date; manageProjectId = null }) { Text("修改时间") }
-                    TextButton(onClick = { deleteProjectId = managedProject.id; manageProjectId = null }) { Text("删除项目", color = androidx.compose.ui.graphics.Color(0xFFB34D43)) }
+                    Text("长按项目可管理项目资料", color = muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "name"; editProjectValue = managedProject.name; manageProjectId = null }, modifier = Modifier.fillMaxWidth()) { Text("重命名项目", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "place"; editProjectValue = managedProject.place; manageProjectId = null }, modifier = Modifier.fillMaxWidth()) { Text("修改终点 / 目的地", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "date"; editProjectValue = managedProject.date; manageProjectId = null }, modifier = Modifier.fillMaxWidth()) { Text("修改时间", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
+                    TextButton(onClick = { deleteProjectId = managedProject.id; manageProjectId = null }, modifier = Modifier.fillMaxWidth()) { Text("删除项目", color = androidx.compose.ui.graphics.Color(0xFFB34D43), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }
                 }
             },
             confirmButton = { TextButton(onClick = { manageProjectId = null }) { Text("完成") } }
@@ -243,7 +262,7 @@ fun TrailKitApp() {
         )
     }
 
-    if(gearDialog && project!=null) GearDialog(editing,chosenPhoto,{picker.launch("image/*")},{gearDialog=false}) { g ->
+    if(gearDialog && project!=null) GearDialog(editing,chosenPhoto,{picker.launch("image/*")},{takeGearPhoto()},{gearDialog=false}) { g ->
         val updated=if(editing==null) project.copy(gear=project.gear+g) else project.copy(gear=project.gear.map{if(it.id==g.id)g else it})
         save(projects.map{if(it.id==project.id)updated else it});gearDialog=false
     }
@@ -269,17 +288,21 @@ fun TrailKitApp() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun GearDialog(initial:Gear?,photo0:String,pick:()->Unit,close:()->Unit,save:(Gear)->Unit) {
+@Composable private fun GearDialog(initial:Gear?,photo0:String,pick:()->Unit,takePhoto:()->Unit,close:()->Unit,save:(Gear)->Unit) {
     var name by remember{mutableStateOf(initial?.name?:"")};var cat by remember{mutableStateOf(initial?.category?:categories[0])}
     var price by remember{mutableStateOf(initial?.price?.toString()?:"")};var qty by remember{mutableStateOf(initial?.quantity?.toString()?: "1")}
     var note by remember{mutableStateOf(initial?.note?:"")};var photo by remember{mutableStateOf(photo0)}
     AlertDialog(onDismissRequest=close,title={Text(if(initial==null)"添加装备" else "编辑装备")},text={
         Column(Modifier.heightIn(max=520.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
-            Box(Modifier.fillMaxWidth().height(105.dp).clip(RoundedCornerShape(14.dp)).background(androidx.compose.ui.graphics.Color(0xFFE9EEE8)).clickable{pick()},contentAlignment=Alignment.Center) {
+            Box(Modifier.fillMaxWidth().height(145.dp).clip(RoundedCornerShape(14.dp)).background(androidx.compose.ui.graphics.Color(0xFFE9EEE8)),contentAlignment=Alignment.Center) {
                 val ctx=LocalContext.current
                 val bitmap=remember(photo){try{if(photo.isNotBlank())android.graphics.BitmapFactory.decodeStream(ctx.contentResolver.openInputStream(Uri.parse(photo)))else null}catch(_:Exception){null}}
                 if(bitmap!=null) Image(bitmap.asImageBitmap(),null,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
-                else Column(horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.PhotoCamera,null,tint=forest);Text("点击上传装备照片",fontSize=12.sp,color=forest)}
+                else Column(horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.PhotoCamera,null,tint=forest);Text("还没有装备照片",fontSize=12.sp,color=forest)}
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick=takePhoto, modifier=Modifier.weight(1f)) { Icon(Icons.Default.PhotoCamera, null); Spacer(Modifier.width(6.dp)); Text("实时拍照") }
+                OutlinedButton(onClick=pick, modifier=Modifier.weight(1f)) { Icon(Icons.Default.Image, null); Spacer(Modifier.width(6.dp)); Text("从相册选择") }
             }
             OutlinedTextField(name,{name=it},label={Text("装备名称 *")},singleLine=true,modifier=Modifier.fillMaxWidth())
             var expanded by remember{mutableStateOf(false)}

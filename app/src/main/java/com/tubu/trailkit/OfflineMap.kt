@@ -348,7 +348,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 val nextBearing=bearingToPoint(navigationPoints[i+1],navigationPoints[i+2])
                 val delta=((nextBearing-match.bearingDegrees+540.0)%360.0)-180.0
                 val distance=preparedRoute.prefixMeters[i+1]-match.progressMeters
-                if(kotlin.math.abs(delta)>=35.0 && distance in 0.0..500.0) (if(delta>0)"右转" else "左转") to distance else null
+                if(kotlin.math.abs(delta)>=35.0 && distance in 0.0..500.0) Triple(if(delta>0)"右转" else "左转",distance,kotlin.math.abs(delta)) else null
             } else null
         }
     }
@@ -849,8 +849,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 }
                 if((batteryLevel?:100)<=20) Text("电量不足 20%：建议开启省电模式、降低屏幕亮度，并准备备用电源。",fontSize=11.sp,color=Color(0xFF9A6A25))
                 if(nextTurnInfo!=null) {
-                    val (direction,distance)=nextTurnInfo
-                    Text("前方约 ${distance.roundToInt()} 米 · $direction",fontWeight=FontWeight.Bold,fontSize=13.sp,color=Color(0xFF8B5A22))
+                    val (direction,distance,angle)=nextTurnInfo
+                    Text("前方约 ${distance.roundToInt()} 米 · $direction ${angle.roundToInt()}°",fontWeight=FontWeight.Bold,fontSize=13.sp,color=Color(0xFF8B5A22))
                 } else if(routeMatch!=null && (gpsFixAgeSeconds?:999L)>15L) {
                     Text("GPS 定位过期，暂停转弯判断",fontSize=11.sp,color=Color(0xFF9A6A25))
                 } else if(routeMatch!=null && (current?.accuracy?:999f)>50f) {

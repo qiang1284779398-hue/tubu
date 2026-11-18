@@ -15,7 +15,6 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import java.util.Locale
 import java.io.BufferedWriter
@@ -30,7 +29,6 @@ class TrailNavigationService : Service(), LocationListener {
     private val channelId="trailkit_navigation"
     private val notificationId=4107
     private var trackWriter:BufferedWriter?=null
-    private var trackFile:File?=null
 
     override fun onCreate() {
         super.onCreate()
@@ -73,7 +71,7 @@ class TrailNavigationService : Service(), LocationListener {
         updateNotification(text)
         try {
             trackWriter?.apply {
-                write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\"><ele>%.1f</ele><time>%s</time></trkpt>\\n",location.latitude,location.longitude,if(location.hasAltitude())location.altitude else 0.0,Instant.ofEpochMilli(location.time)))
+                write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\"><ele>%.1f</ele><time>%s</time></trkpt>\n",location.latitude,location.longitude,if(location.hasAltitude())location.altitude else 0.0,Instant.ofEpochMilli(location.time)))
                 flush()
             }
         } catch(_:Exception) { finishRecording() }
@@ -83,9 +81,8 @@ class TrailNavigationService : Service(), LocationListener {
         finishRecording()
         try {
             val file=File(filesDir,"trailkit_active_track.gpx")
-            trackFile=file
             trackWriter=BufferedWriter(OutputStreamWriter(FileOutputStream(file,false),StandardCharsets.UTF_8)).apply {
-                write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<gpx version=\"1.1\" creator=\"TrailKit\" xmlns=\"http://www.topografix.com/GPX/1/1\"><trk><name>TrailKit 实时轨迹</name><trkseg>\\n")
+                write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"TrailKit\" xmlns=\"http://www.topografix.com/GPX/1/1\"><trk><name>TrailKit 实时轨迹</name><trkseg>\n")
                 flush()
             }
             updateNotification("轨迹记录已开始")

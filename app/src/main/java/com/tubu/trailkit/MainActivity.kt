@@ -291,7 +291,7 @@ fun TrailKitApp() {
 @Composable private fun GearDialog(initial:Gear?,photo0:String,pick:()->Unit,takePhoto:()->Unit,close:()->Unit,save:(Gear)->Unit) {
     var name by remember{mutableStateOf(initial?.name?:"")};var cat by remember{mutableStateOf(initial?.category?:categories[0])}
     var price by remember{mutableStateOf(initial?.price?.toString()?:"")};var qty by remember{mutableStateOf(initial?.quantity?.toString()?: "1")}
-    var note by remember{mutableStateOf(initial?.note?:"")};var photo by remember{mutableStateOf(photo0)}
+    var note by remember{mutableStateOf(initial?.note?:"")};var photo by remember(photo0){mutableStateOf(photo0)}
     AlertDialog(onDismissRequest=close,title={Text(if(initial==null)"添加装备" else "编辑装备")},text={
         Column(Modifier.heightIn(max=520.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
             Box(Modifier.fillMaxWidth().height(145.dp).clip(RoundedCornerShape(14.dp)).background(androidx.compose.ui.graphics.Color(0xFFE9EEE8)),contentAlignment=Alignment.Center) {

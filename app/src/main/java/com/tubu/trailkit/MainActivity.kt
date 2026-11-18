@@ -434,7 +434,6 @@ fun TrailKitApp() {
                                 }
                                 Text("GPX 文件用于路线预览与户外导航；导入后会更新当前项目的轨迹数据。",fontSize=11.sp,color=muted,modifier=Modifier.padding(horizontal=4.dp))
                             }
-                            }
                             item {
                                 Text("天气与安全",fontWeight=FontWeight.Bold,color=forest,fontSize=16.sp)
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {

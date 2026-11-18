@@ -2,6 +2,7 @@ package com.tubu.trailkit
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.*
 import android.net.Uri
 import android.os.Build
@@ -53,8 +54,8 @@ private val forest = androidx.compose.ui.graphics.Color(0xFF183C32)
 private val sand = androidx.compose.ui.graphics.Color(0xFFF3F0E7)
 private val muted = androidx.compose.ui.graphics.Color(0xFF78827A)
 
-data class Gear(val id:String,val name:String,val category:String,val price:Double,val quantity:Int,val note:String,val photo:String)
-data class Project(val id:String,val name:String,val place:String,val date:String,val gear:List<Gear>)
+data class Gear(val id:String,val name:String,val category:String,val price:Double,val quantity:Int,val note:String,val photo:String,val weightGrams:Double=0.0,val packed:Boolean=false)
+data class Project(val id:String,val name:String,val place:String,val date:String,val gear:List<Gear>,val route:String="",val lodging:String="",val resupply:String="",val emergency:String="")
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,8 +68,8 @@ private fun load(context:Context): List<Project> = try {
     val a=JSONArray(context.getSharedPreferences("trailkit",0).getString("projects","[]"))
     List(a.length()) { i ->
         val p=a.getJSONObject(i); val ga=p.optJSONArray("gear") ?: JSONArray()
-        val gs=List(ga.length()) { j -> val g=ga.getJSONObject(j); Gear(g.optString("id"),g.optString("name"),g.optString("category"),g.optDouble("price"),g.optInt("quantity",1),g.optString("note"),g.optString("photo")) }
-        Project(p.optString("id"),p.optString("name"),p.optString("place"),p.optString("date"),gs)
+        val gs=List(ga.length()) { j -> val g=ga.getJSONObject(j); Gear(g.optString("id"),g.optString("name"),g.optString("category"),g.optDouble("price"),g.optInt("quantity",1),g.optString("note"),g.optString("photo"),g.optDouble("weightGrams",0.0),g.optBoolean("packed",false)) }
+        Project(p.optString("id"),p.optString("name"),p.optString("place"),p.optString("date"),gs,p.optString("route"),p.optString("lodging"),p.optString("resupply"),p.optString("emergency"))
     }
 } catch (_:Exception) { emptyList() }
 
@@ -76,8 +77,8 @@ private fun persist(context:Context, projects:List<Project>) {
     val a=JSONArray()
     projects.forEach { p ->
         val ga=JSONArray()
-        p.gear.forEach { g -> ga.put(JSONObject().put("id",g.id).put("name",g.name).put("category",g.category).put("price",g.price).put("quantity",g.quantity).put("note",g.note).put("photo",g.photo)) }
-        a.put(JSONObject().put("id",p.id).put("name",p.name).put("place",p.place).put("date",p.date).put("gear",ga))
+        p.gear.forEach { g -> ga.put(JSONObject().put("id",g.id).put("name",g.name).put("category",g.category).put("price",g.price).put("quantity",g.quantity).put("note",g.note).put("photo",g.photo).put("weightGrams",g.weightGrams).put("packed",g.packed)) }
+        a.put(JSONObject().put("id",p.id).put("name",p.name).put("place",p.place).put("date",p.date).put("gear",ga).put("route",p.route).put("lodging",p.lodging).put("resupply",p.resupply).put("emergency",p.emergency))
     }
     context.getSharedPreferences("trailkit",0).edit().putString("projects",a.toString()).apply()
 }
@@ -102,6 +103,28 @@ fun TrailKitApp() {
     var editingProjectId by remember { mutableStateOf<String?>(null) }
     var editProjectValue by remember { mutableStateOf("") }
     var deleteProjectId by remember { mutableStateOf<String?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
+    var packedOnly by remember { mutableStateOf(false) }
+    var sortByWeight by remember { mutableStateOf(false) }
+    var itineraryProjectId by remember { mutableStateOf<String?>(null) }
+    var libraryOpen by remember { mutableStateOf(false) }
+    var libraryTargetProjectId by remember { mutableStateOf<String?>(null) }
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) try {
+            val json=context.getSharedPreferences("trailkit",0).getString("projects","[]") ?: "[]"
+            context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+            Toast.makeText(context,"备份文件已导出",Toast.LENGTH_LONG).show()
+        } catch(e:Exception) { Toast.makeText(context,"导出失败：${e.message}",Toast.LENGTH_LONG).show() }
+    }
+    val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) try {
+            val json=context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("无法读取文件")
+            val parsed=JSONArray(json)
+            context.getSharedPreferences("trailkit",0).edit().putString("projects",parsed.toString()).apply()
+            projects=load(context); selected=null
+            Toast.makeText(context,"备份恢复成功",Toast.LENGTH_LONG).show()
+        } catch(e:Exception) { Toast.makeText(context,"恢复失败：文件格式不正确",Toast.LENGTH_LONG).show() }
+    }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if(uri!=null) chosenPhoto=uri.toString() }
     fun takeGearPhoto() {
         try {
@@ -123,7 +146,15 @@ fun TrailKitApp() {
             TopAppBar(
                 title={ Column { Text(project?.name ?: "徒步装备管家",fontWeight=FontWeight.Bold); Text(if(project==null) "把每一次出发，准备得漂亮一点" else "装备清单 · "+project.place,fontSize=11.sp,color=muted) } },
                 navigationIcon={ if(project!=null) IconButton(onClick={selected=null}) { Icon(Icons.Default.ArrowBack,"返回") } },
-                actions={ if(project!=null) IconButton(onClick={makePoster(context,project)}) { Icon(Icons.Default.Image,"生成海报") } }
+                actions={
+                    if(project!=null) {
+                        IconButton(onClick={makePoster(context,project)}) { Icon(Icons.Default.Image,"生成海报") }
+                        IconButton(onClick={itineraryProjectId=project.id}) { Icon(Icons.Default.Landscape,"行程信息") }
+                    } else {
+                        IconButton(onClick={exportBackup.launch("TrailKit-备份.json")}) { Icon(Icons.Default.Image,"导出备份") }
+                        IconButton(onClick={importBackup.launch(arrayOf("application/json","text/*"))}) { Icon(Icons.Default.Add,"恢复备份") }
+                    }
+                }
             )
         }, floatingActionButton={
             FloatingActionButton(onClick={ if(project==null) projectDialog=true else {editing=null;chosenPhoto="";gearDialog=true} },containerColor=forest,contentColor=androidx.compose.ui.graphics.Color.White) { Icon(Icons.Default.Add,"新增") }
@@ -139,6 +170,8 @@ fun TrailKitApp() {
                             Text("创建徒步项目 · 记录装备照片与价格 · 生成专属海报",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=12.sp)
                             Spacer(Modifier.height(20.dp))
                             Text("我的徒步项目  /  ${projects.size}",color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.SemiBold)
+                            Spacer(Modifier.height(10.dp))
+                            Text("数据备份：右上角导出 / 恢复",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=11.sp)
                         }
                     }
                     if(projects.isEmpty()) item { Empty("还没有徒步项目","点击右下角 + 创建你的第一个计划") }
@@ -163,14 +196,42 @@ fun TrailKitApp() {
                     item {
                         Card(shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=forest)) {
                             Row(Modifier.fillMaxWidth().padding(20.dp),verticalAlignment=Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) { Text("装备总价值",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=12.sp); Text(yuan(p.gear.sumOf{it.price*it.quantity}),color=androidx.compose.ui.graphics.Color.White,fontSize=28.sp,fontWeight=FontWeight.ExtraBold) }
-                                Column(horizontalAlignment=Alignment.End) { Text("${p.gear.size}",color=androidx.compose.ui.graphics.Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold); Text("件装备",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=11.sp) }
+                                Column(Modifier.weight(1f)) {
+                                    Text("装备总价值",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=12.sp)
+                                    Text(yuan(p.gear.sumOf{it.price*it.quantity}),color=androidx.compose.ui.graphics.Color.White,fontSize=26.sp,fontWeight=FontWeight.ExtraBold)
+                                    Spacer(Modifier.height(5.dp))
+                                    Text("背包重量  ${String.format(Locale.CHINA,"%.2f",p.gear.filter{!it.packed}.sumOf{it.weightGrams*it.quantity}/1000.0)} kg",color=androidx.compose.ui.graphics.Color.White,fontSize=13.sp)
+                                }
+                                Column(horizontalAlignment=Alignment.End) {
+                                    Text("${p.gear.size}",color=androidx.compose.ui.graphics.Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
+                                    Text("件装备",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=11.sp)
+                                    Text("已打包 ${p.gear.count{it.packed}}/${p.gear.size}",color=androidx.compose.ui.graphics.Color.White,fontSize=11.sp)
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        OutlinedTextField(value=searchQuery,onValueChange={searchQuery=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("搜索装备名称 / 备注")})
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                            FilterChip(selected=packedOnly,onClick={packedOnly=!packedOnly},label={Text("只看未打包")})
+                            Spacer(Modifier.width(8.dp))
+                            FilterChip(selected=sortByWeight,onClick={sortByWeight=!sortByWeight},label={Text(if(sortByWeight)"按重量排序" else "默认排序")})
+                            Spacer(Modifier.weight(1f))
+                            Text("${p.gear.count{it.packed}}/${p.gear.size} 已打包",fontSize=11.sp,color=muted)
+                        }
+                        LinearProgressIndicator(progress={if(p.gear.isEmpty())0f else p.gear.count{it.packed}.toFloat()/p.gear.size},modifier=Modifier.fillMaxWidth(),color=forest)
+                        Text("分类重量统计",fontWeight=FontWeight.Bold,color=forest)
+                        categories.forEach { c ->
+                            val grams=p.gear.filter{it.category==c}.sumOf{it.weightGrams*it.quantity}
+                            if(grams>0) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                                Text(c,fontSize=11.sp,color=muted); Text("${String.format(Locale.CHINA,"%.0f",grams)} g",fontSize=11.sp,color=forest)
                             }
                         }
                     }
                     if(p.gear.isEmpty()) item { Empty("装备清单还是空的","点击右下角 + 添加第一件装备") }
                     categories.forEach { cat ->
-                        val list=p.gear.filter{it.category==cat}
+                        val filtered=p.gear.filter{it.category==cat && (it.name.contains(searchQuery,true)||it.note.contains(searchQuery,true)) && (!packedOnly || !it.packed)}
+                        val list=if(sortByWeight) filtered.sortedByDescending{it.weightGrams*it.quantity} else filtered
                         if(list.isNotEmpty()) {
                             item { Text(cat,fontWeight=FontWeight.Bold,color=forest,fontSize=15.sp) }
                             items(list,key={it.id}) { g ->
@@ -180,7 +241,12 @@ fun TrailKitApp() {
                                         if(image!=null) Image(image.asImageBitmap(),null,Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop)
                                         else Box(Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)).background(androidx.compose.ui.graphics.Color(0xFFE9EEE8)),contentAlignment=Alignment.Center){Icon(Icons.Default.PhotoCamera,null,tint=forest)}
                                         Spacer(Modifier.width(12.dp))
-                                        Column(Modifier.weight(1f)) { Text(g.name,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis); Text("${g.category} · 数量 ${g.quantity}",fontSize=11.sp,color=muted); Text(yuan(g.price)+" / 件",fontSize=13.sp,color=forest,fontWeight=FontWeight.SemiBold) }
+                                        Column(Modifier.weight(1f)) { Text(g.name,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis); Text("${g.category} · 数量 ${g.quantity}",fontSize=11.sp,color=muted); Text(yuan(g.price)+" / 件 · ${g.weightGrams.toInt()} g/件",fontSize=12.sp,color=forest,fontWeight=FontWeight.SemiBold)
+                                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                                Checkbox(checked=g.packed,onCheckedChange={v->save(projects.map{pr->if(pr.id==p.id)pr.copy(gear=pr.gear.map{it2->if(it2.id==g.id)it2.copy(packed=v) else it2}) else pr})},modifier=Modifier.size(30.dp))
+                                                Text(if(g.packed)"已打包" else "未打包",fontSize=11.sp,color=muted)
+                                            }
+                                        }
                                         IconButton(onClick={save(projects.map{if(it.id==p.id)it.copy(gear=it.gear.filterNot{x->x.id==g.id}) else it})}) { Icon(Icons.Default.Delete,null,tint=androidx.compose.ui.graphics.Color(0xFFB36D5D)) }
                                     }
                                 }
@@ -262,6 +328,32 @@ fun TrailKitApp() {
         )
     }
 
+
+    val itineraryProject = projects.firstOrNull { it.id == itineraryProjectId }
+    if (itineraryProject != null) {
+        var route by remember(itineraryProject.id) { mutableStateOf(itineraryProject.route) }
+        var lodging by remember(itineraryProject.id) { mutableStateOf(itineraryProject.lodging) }
+        var resupply by remember(itineraryProject.id) { mutableStateOf(itineraryProject.resupply) }
+        var emergency by remember(itineraryProject.id) { mutableStateOf(itineraryProject.emergency) }
+        AlertDialog(
+            onDismissRequest={itineraryProjectId=null},
+            title={Text("徒步行程与安全信息")},
+            text={
+                Column(Modifier.heightIn(max=520.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(route,{route=it},label={Text("路线 / 途经点")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                    OutlinedTextField(lodging,{lodging=it},label={Text("住宿 / 营地")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                    OutlinedTextField(resupply,{resupply=it},label={Text("补给点 / 水源")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                    OutlinedTextField(emergency,{emergency=it},label={Text("紧急联系人 / 电话")},modifier=Modifier.fillMaxWidth(),minLines=2)
+                }
+            },
+            confirmButton={TextButton(onClick={
+                save(projects.map{if(it.id==itineraryProject.id)it.copy(route=route,lodging=lodging,resupply=resupply,emergency=emergency) else it})
+                itineraryProjectId=null
+            }){Text("保存行程")}},
+            dismissButton={TextButton(onClick={itineraryProjectId=null}){Text("取消")}}
+        )
+    }
+
     if(gearDialog && project!=null) GearDialog(editing,chosenPhoto,{picker.launch("image/*")},{takeGearPhoto()},{gearDialog=false}) { g ->
         val updated=if(editing==null) project.copy(gear=project.gear+g) else project.copy(gear=project.gear.map{if(it.id==g.id)g else it})
         save(projects.map{if(it.id==project.id)updated else it});gearDialog=false
@@ -291,7 +383,7 @@ fun TrailKitApp() {
 @Composable private fun GearDialog(initial:Gear?,photo0:String,pick:()->Unit,takePhoto:()->Unit,close:()->Unit,save:(Gear)->Unit) {
     var name by remember{mutableStateOf(initial?.name?:"")};var cat by remember{mutableStateOf(initial?.category?:categories[0])}
     var price by remember{mutableStateOf(initial?.price?.toString()?:"")};var qty by remember{mutableStateOf(initial?.quantity?.toString()?: "1")}
-    var note by remember{mutableStateOf(initial?.note?:"")};var photo by remember(photo0){mutableStateOf(photo0)}
+    var note by remember{mutableStateOf(initial?.note?:"")};var weight by remember{mutableStateOf(initial?.weightGrams?.toString()?:"")};var photo by remember(photo0){mutableStateOf(photo0)}
     AlertDialog(onDismissRequest=close,title={Text(if(initial==null)"添加装备" else "编辑装备")},text={
         Column(Modifier.heightIn(max=520.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
             Box(Modifier.fillMaxWidth().height(145.dp).clip(RoundedCornerShape(14.dp)).background(androidx.compose.ui.graphics.Color(0xFFE9EEE8)),contentAlignment=Alignment.Center) {
@@ -314,9 +406,10 @@ fun TrailKitApp() {
                 OutlinedTextField(price,{price=it},Modifier.weight(1f),label={Text("单价（元）")},singleLine=true)
                 OutlinedTextField(qty,{qty=it.filter{c->c.isDigit()}},Modifier.weight(1f),label={Text("数量")},singleLine=true)
             }
+            OutlinedTextField(weight,{weight=it.filter{c->c.isDigit()||c=='.'}},label={Text("单件重量（克）")},modifier=Modifier.fillMaxWidth(),singleLine=true)
             OutlinedTextField(note,{note=it},label={Text("备注")},modifier=Modifier.fillMaxWidth(),maxLines=2)
         }
-    },confirmButton={TextButton(onClick={if(name.isNotBlank())save(Gear(initial?.id?:System.nanoTime().toString(),name.trim(),cat,price.toDoubleOrNull()?:0.0,(qty.toIntOrNull()?:1).coerceAtLeast(1),note.trim(),photo))}){Text("保存")}},dismissButton={TextButton(onClick=close){Text("取消")}})
+    },confirmButton={TextButton(onClick={if(name.isNotBlank())save(Gear(initial?.id?:System.nanoTime().toString(),name.trim(),cat,price.toDoubleOrNull()?:0.0,(qty.toIntOrNull()?:1).coerceAtLeast(1),note.trim(),photo,weight.toDoubleOrNull()?:0.0,initial?.packed?:false))}){Text("保存")}},dismissButton={TextButton(onClick=close){Text("取消")}})
 }
 
 private fun makePoster(context:Context,project:Project) {

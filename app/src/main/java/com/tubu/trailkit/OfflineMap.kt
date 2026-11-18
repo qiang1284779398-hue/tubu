@@ -175,12 +175,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 if(status!=TextToSpeech.SUCCESS) voiceReady.value=false
             }
             engine
-        } catch(_:Exception) {
-            voiceInitComplete.value=true
-            voiceReady.value=false
-            null
-        }
+        } catch(_:Exception) { null }
     }
+    LaunchedEffect(textToSpeech) { if(textToSpeech==null) {voiceInitComplete.value=true;voiceReady.value=false} }
     DisposableEffect(textToSpeech) { onDispose { try{textToSpeech?.stop();textToSpeech?.shutdown()}catch(_:Exception){} } }
     fun speakNavigation(message:String) {
         if(voiceGuidance && voiceReady.value) try{textToSpeech?.speak(message,TextToSpeech.QUEUE_FLUSH,null,"trailkit_navigation")}catch(_:Exception){}

@@ -121,6 +121,8 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember { mutableStateOf(false) }
     var showWaypointList by remember { mutableStateOf(false) }
+    var editingCustomWaypoint by remember { mutableStateOf<GpxWaypoint?>(null) }
+    var waypointNameDraft by remember { mutableStateOf("") }
     var measureMode by remember(projectId) { mutableStateOf(false) }
     val measurePoints=remember(projectId){mutableStateListOf<Pair<Double,Double>>()}
     val measureDistance=remember(measurePoints.toList()){measurePoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
@@ -712,6 +714,10 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                                 android.widget.Toast.makeText(context,"已复制 ${wp.name} 坐标",android.widget.Toast.LENGTH_SHORT).show()
                             }) { Text("复制") }
                             if(index>=waypoints.size) OutlinedButton(onClick={
+                                editingCustomWaypoint=wp
+                                waypointNameDraft=wp.name
+                            }) { Text("改名") }
+                            if(index>=waypoints.size) OutlinedButton(onClick={
                                 customWaypoints.remove(wp)
                                 persistCustomWaypoints()
                                 announcedWaypoints.clear()
@@ -759,6 +765,23 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                 },modifier=Modifier.fillMaxWidth(),enabled=navigationPoints.size>=2){Text(if(active)"暂停导航定位" else "开始导航 / 开启 GPS")}
                 Text("导航使用手机 GPS 和导入的 GPX；离线地图数据需要事先导入。山区 GPS 可能漂移，请结合指北针、纸质地图和现场判断。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
+                editingCustomWaypoint?.let { target ->
+                    AlertDialog(
+                        onDismissRequest={editingCustomWaypoint=null},
+                        title={Text("重命名地图标记")},
+                        text={TextField(value=waypointNameDraft,onValueChange={waypointNameDraft=it},singleLine=true,label={Text("标记名称")})},
+                        confirmButton={TextButton(onClick={
+                            val index=customWaypoints.indexOfFirst{it.lat==target.lat && it.lon==target.lon}
+                            val name=waypointNameDraft.trim()
+                            if(index>=0 && name.isNotBlank()) {
+                                customWaypoints[index]=target.copy(name=name)
+                                persistCustomWaypoints()
+                            }
+                            editingCustomWaypoint=null
+                        }){Text("保存")}},
+                        dismissButton={TextButton(onClick={editingCustomWaypoint=null}){Text("取消")}}
+                    )
+                }
             }
         }
     }

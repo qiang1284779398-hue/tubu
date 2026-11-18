@@ -388,12 +388,15 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             }
                         }
                     },modifier=Modifier.weight(1f),enabled=active || isRecording) { Text(if(isRecording)"停止并导出 GPX（${recordedPoints.size}点）" else "开始记录新轨迹") }
-                    OutlinedButton(onClick={recordedPoints.clear();isRecording=false;hasSavedRecording=false;try{context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING));File(context.filesDir,"trailkit_active_track.gpx").delete()}catch(_:Exception){}},modifier=Modifier.weight(1f),enabled=!isRecording && recordedPoints.isNotEmpty()) { Text("清空记录") }
+                    OutlinedButton(onClick={recordedPoints.clear();isRecording=false;hasSavedRecording=false;try{context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING));File(context.filesDir,"trailkit_active_track.gpx").delete()}catch(_:Exception){}},modifier=Modifier.weight(1f),enabled=!isRecording && (recordedPoints.isNotEmpty() || hasSavedRecording)) { Text("清空记录") }
                 }
                 if(!isRecording && hasSavedRecording) OutlinedButton(onClick={exportGpx.launch("TrailKit-上次轨迹.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出上次保存的轨迹 GPX") }
                 if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · ${recordingElapsedText} · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))
                 Button(onClick={
-                    if(active)active=false else {
+                    if(active) {
+                        active=false
+                        if(isRecording) { isRecording=false;hasSavedRecording=true }
+                    } else {
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
                         if(fine)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
                     }

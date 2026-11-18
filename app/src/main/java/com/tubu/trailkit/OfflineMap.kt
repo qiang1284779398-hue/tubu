@@ -84,6 +84,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var gpsError by remember { mutableStateOf("") }
     var followGps by remember { mutableStateOf(true) }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
+    var compassAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_UNRELIABLE) }
     var confirmedProgress by remember(projectId) { mutableDoubleStateOf(0.0) }
     var lastMatchedSegment by remember(projectId) { mutableIntStateOf(0) }
     var offRouteWas by remember(projectId) { mutableStateOf(false) }
@@ -207,7 +208,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 SensorManager.getOrientation(matrix,orientation)
                 heading=((Math.toDegrees(orientation[0].toDouble()).toFloat()+360f)%360f)
             }
-            override fun onAccuracyChanged(sensor:Sensor?,accuracy:Int) {}
+            override fun onAccuracyChanged(sensor:Sensor?,accuracy:Int) { compassAccuracy=accuracy }
         }
         if(sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_UI)
         onDispose { manager.unregisterListener(listener) }
@@ -506,7 +507,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    MapStat("罗盘",if(heading.isNaN())"无传感器" else "${directionLabel(heading)} ${heading.roundToInt()}°")
+                    MapStat("罗盘",when { heading.isNaN()->"无传感器";compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE->"需校准";compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW->"精度较低";else->"${directionLabel(heading)} ${heading.roundToInt()}°" })
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
                     MapStat("方向提示",routeMatch?.let{turnGuidance(heading,it.bearingDegrees.toFloat())}?:"等待定位")
                 }

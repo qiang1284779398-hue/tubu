@@ -74,6 +74,35 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     return 2*r*asin(sqrt(h.coerceIn(0.0,1.0)))
 }
 
+// Convert WGS84 GPS coordinates to GCJ-02 for Amap's coordinate display in China.
+private fun wgs84ToGcj02(latitude:Double,longitude:Double):Pair<Double,Double> {
+    if(longitude !in 72.004..137.8347 || latitude !in 0.8293..55.8271) return latitude to longitude
+    val a=6378245.0
+    val ee=0.00669342162296594323
+    fun transformLat(x:Double,y:Double):Double {
+        var value=-100.0+2.0*x+3.0*y+0.2*y*y+0.1*x*y+0.2*sqrt(abs(x))
+        value+=(20.0*sin(6.0*x*Math.PI)+20.0*sin(2.0*x*Math.PI))*2.0/3.0
+        value+=(20.0*sin(y*Math.PI)+40.0*sin(y/3.0*Math.PI))*2.0/3.0
+        value+=(160.0*sin(y/12.0*Math.PI)+320.0*sin(y*Math.PI/30.0))*2.0/3.0
+        return value
+    }
+    fun transformLon(x:Double,y:Double):Double {
+        var value=300.0+x+2.0*y+0.1*x*x+0.1*x*y+0.1*sqrt(abs(x))
+        value+=(20.0*sin(6.0*x*Math.PI)+20.0*sin(2.0*x*Math.PI))*2.0/3.0
+        value+=(20.0*sin(x*Math.PI)+40.0*sin(x/3.0*Math.PI))*2.0/3.0
+        value+=(150.0*sin(x/12.0*Math.PI)+300.0*sin(x/30.0*Math.PI))*2.0/3.0
+        return value
+    }
+    val dLat=transformLat(longitude-105.0,latitude-35.0)
+    val dLon=transformLon(longitude-105.0,latitude-35.0)
+    val radLat=Math.toRadians(latitude)
+    val magic=1.0-ee*sin(radLat).pow(2)
+    val sqrtMagic=sqrt(magic)
+    val adjustedLat=dLat*180.0/((a*(1.0-ee))/(magic*sqrtMagic)*Math.PI)
+    val adjustedLon=dLon*180.0/(a/sqrtMagic*cos(radLat)*Math.PI)
+    return (latitude+adjustedLat) to (longitude+adjustedLon)
+}
+
 private fun recoverRecordedGpx(file:File):ByteArray {
     val source=file.readText(Charsets.UTF_8)
     if(source.contains("</gpx>")) return source.toByteArray(Charsets.UTF_8)
@@ -198,6 +227,20 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var confirmedProgress by remember(projectId,encoded,reverseRoute) { mutableDoubleStateOf(prefs.getFloat(progressKey,0f).toDouble()) }
     var lastMatchedSegment by remember(projectId,encoded,reverseRoute) { mutableIntStateOf(prefs.getInt(segmentKey,0)) }
     var offRouteWas by remember(projectId,encoded,reverseRoute) { mutableStateOf(false) }
+    var navigationSessionInitialized by remember(projectId,encoded,reverseRoute) { mutableStateOf(false) }
+    fun prepareNavigationStart() {
+        if(!navigationSessionInitialized) {
+            confirmedProgress=0.0
+            lastMatchedSegment=0
+            offRouteWas=false
+            current=null
+            gpsStaleWas=false
+            prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()
+            navigationSessionInitialized=true
+        }
+        followGps=true
+        gpsError=""
+    }
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember(projectId) { mutableStateOf(false) }
     var showWaypointList by remember(projectId) { mutableStateOf(false) }
@@ -297,7 +340,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         } catch(_:Exception) { null }
     }
     val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true) { active=true;gpsError="" }
+        if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true) { prepareNavigationStart();active=true;gpsError="" }
         else gpsError="请授予精确位置权限，徒步轨迹导航需要 GPS 精度"
     }
     DisposableEffect(active,projectId) {
@@ -313,7 +356,21 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
-                    current=location
+                    val age=System.currentTimeMillis()-location.time
+                    if(age !in 0L..20000L) { gpsError="GPS 数据已过期，正在等待新的定位";return }
+                    if(location.accuracy>75f) { gpsError="GPS 精度不足，请移至开阔处";return }
+                    val previous=current
+                    if(previous!=null) {
+                        val elapsed=((location.time-previous.time).coerceAtLeast(0L))/1000.0
+                        val jump=mapDistance(previous.latitude to previous.longitude,location.latitude to location.longitude)
+                        val oldSpeed=if(previous.hasSpeed())previous.speed else 0f
+                        val newSpeed=if(location.hasSpeed())location.speed else 0f
+                        val expected=maxOf(oldSpeed,newSpeed)*elapsed
+                        val allowed=maxOf(120.0,expected+previous.accuracy+location.accuracy+30.0)
+                        if(elapsed in 0.0..8.0 && jump>allowed) { gpsError="GPS 定位出现异常跳变，已忽略本次位置";return }
+                    }
+                    current=Location(location)
+                    gpsError=""
                     if(isRecording && (recordedPoints.isEmpty() || mapDistance(recordedPoints.last().latitude to recordedPoints.last().longitude,location.latitude to location.longitude)>=3.0)) recordedPoints.add(Location(location))
                     if(followGps) { centerLat=location.latitude;centerLon=location.longitude }
                 }
@@ -324,14 +381,24 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             try {
                 if(fine) {
                     if(!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) gpsError="请开启手机 GPS 定位"
-                    manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { current=it;centerLat=it.latitude;centerLon=it.longitude }
-                    manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,2000L,3f,listener)
+                    manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { last ->
+                        val age=System.currentTimeMillis()-last.time
+                        if(age in 0L..10000L && last.accuracy<=50f) {
+                            current=Location(last)
+                            centerLat=last.latitude
+                            centerLon=last.longitude
+                        } else gpsError="正在等待新的高精度 GPS 定位…"
+                    } ?: run { gpsError="正在等待新的高精度 GPS 定位…" }
+                    manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1500L,1f,listener)
                 } else { active=false;gpsError="请授予定位权限" }
             } catch(e:Exception) { gpsError="定位启动失败：${e.message ?: "请检查定位设置"}";active=false }
             onDispose { try{manager.removeUpdates(listener)}catch(_:Exception){} }
         } else onDispose { }
     }
-    val cp=current?.let{it.latitude to it.longitude}
+    val cp=current?.takeIf {
+        val age=System.currentTimeMillis()-it.time
+        age in 0L..15000L && it.accuracy<=75f
+    }?.let{it.latitude to it.longitude}
 
     val utmCoordinate=cp?.let{toUtm(it.first,it.second)}
     val magneticDeclination=current?.let { loc ->
@@ -340,9 +407,15 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     } ?: 0f
     val trueHeading=if(heading.isNaN()) Float.NaN else (heading+magneticDeclination+360f)%360f
     val reliableTrueHeading=if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) Float.NaN else trueHeading
+    val gpsCourse=current?.takeIf{it.hasBearing() && it.hasSpeed() && it.speed>=0.8f}?.bearing
+    val arrowHeading=if(!trueHeading.isNaN()) trueHeading else gpsCourse ?: Float.NaN
     val routeMatch=cp?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
-    val nextTurnInfo=remember(routeMatch,navigationPoints,preparedRoute) {
-        routeMatch?.let { match ->
+    val progressMatch=routeMatch?.takeIf {
+        active && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f &&
+            it.distanceMeters<=threshold.toDouble()+(current?.accuracy?:0f).toDouble()
+    }
+    val nextTurnInfo=remember(progressMatch,navigationPoints,preparedRoute) {
+        progressMatch?.let { match ->
             val i=match.segmentIndex
             if(i+2<navigationPoints.size && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f) {
                 val nextBearing=bearingToPoint(navigationPoints[i+1],navigationPoints[i+2])
@@ -397,7 +470,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val nearest=routeMatch?.segmentIndex?:0
     val deviation=routeMatch?.distanceMeters
     val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
-    val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
+    val travelled=if(progressMatch!=null) maxOf(confirmedProgress,progressMatch.progressMeters) else confirmedProgress
     val waypointRoutePositions=remember(allWaypoints,navigationPoints) {
         allWaypoints.mapNotNull { wp -> matchRoute(preparedRoute,wp.lat to wp.lon)?.let{wp to it.progressMeters} }
     }
@@ -435,10 +508,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         if(a!=null&&b!=null) a+(b-a)*match.fraction else current?.takeIf{it.hasAltitude()}?.altitude
     } ?: current?.takeIf{it.hasAltitude()}?.altitude
     val currentElevationSource=if(routeMatch!=null && navigationElevations.getOrNull(routeMatch.segmentIndex)!=null && navigationElevations.getOrNull(routeMatch.segmentIndex+1)!=null)"GPX" else "GPS"
-    LaunchedEffect(routeMatch,active,reverseRoute) {
-        if(routeMatch!=null) {
-            confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters)
-            lastMatchedSegment=routeMatch.segmentIndex
+    LaunchedEffect(routeMatch,progressMatch,active,reverseRoute) {
+        if(progressMatch!=null) {
+            confirmedProgress=maxOf(confirmedProgress,progressMatch.progressMeters)
+            lastMatchedSegment=progressMatch.segmentIndex
             prefs.edit().putFloat(progressKey,confirmedProgress.toFloat()).putInt(segmentKey,lastMatchedSegment).apply()
         }
         val off=active && routeMatch!=null && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f && routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
@@ -675,19 +748,22 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val p=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
                         canvas.drawCircle(x,y,13f,p);p.color=android.graphics.Color.rgb(30,105,210);canvas.drawCircle(x,y,9f,p)
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
-                        if(!reliableTrueHeading.isNaN()) {
-                            val angle=Math.toRadians(reliableTrueHeading.toDouble())
-                            val tipX=x+(sin(angle)*31f).toFloat()
-                            val tipY=y-(cos(angle)*31f).toFloat()
-                            val direction=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(218,91,48);strokeWidth=4f;strokeCap=Paint.Cap.ROUND;style=Paint.Style.STROKE}
+                        if(!arrowHeading.isNaN() && (gpsFixAgeSeconds?:999L)<=15L) {
+                            val angle=Math.toRadians(arrowHeading.toDouble())
+                            val ux=sin(angle).toFloat()
+                            val uy=(-cos(angle)).toFloat()
+                            val tipX=x+ux*56f
+                            val tipY=y+uy*56f
+                            val direction=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(232,112,35);strokeWidth=6f;strokeCap=Paint.Cap.ROUND;style=Paint.Style.STROKE}
                             canvas.drawLine(x,y,tipX,tipY,direction)
                             val arrow=AndroidPath().apply {
                                 moveTo(tipX,tipY)
-                                lineTo(tipX-8f*cos(angle.toFloat())-6f*sin(angle.toFloat()),tipY-8f*sin(angle.toFloat())+6f*cos(angle.toFloat()))
-                                moveTo(tipX,tipY)
-                                lineTo(tipX-8f*cos(angle.toFloat())+6f*sin(angle.toFloat()),tipY-8f*sin(angle.toFloat())-6f*cos(angle.toFloat()))
+                                lineTo(tipX-ux*17f+cos(angle).toFloat()*9f,tipY-uy*17f+sin(angle).toFloat()*9f)
+                                lineTo(tipX-ux*17f-cos(angle).toFloat()*9f,tipY-uy*17f-sin(angle).toFloat()*9f)
+                                close()
                             }
-                            canvas.drawPath(arrow,direction)
+                            val arrowFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(232,112,35);style=Paint.Style.FILL}
+                            canvas.drawPath(arrow,arrowFill)
                         }
                     }
                     // North-up compass marker and a ground-distance scale bar.
@@ -746,12 +822,13 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     ) { Text("复制当前位置坐标") }
                     OutlinedButton(
                         onClick={
-                            val loc=current
+                            val loc=current?.takeIf { (System.currentTimeMillis()-it.time) in 0L..15000L && it.accuracy<=75f }
                             if(loc!=null) {
-                                val uri=android.net.Uri.parse("geo:${loc.latitude},${loc.longitude}?q=${loc.latitude},${loc.longitude}(TrailKit)")
+                                val amap=wgs84ToGcj02(loc.latitude,loc.longitude)
+                                val uri=android.net.Uri.parse("geo:${amap.first},${amap.second}?q=${amap.first},${amap.second}(TrailKit)")
                                 val intent=android.content.Intent(android.content.Intent.ACTION_VIEW,uri)
                                 try{context.startActivity(intent)}catch(_:Exception){android.widget.Toast.makeText(context,"没有可打开坐标的地图应用",android.widget.Toast.LENGTH_SHORT).show()}
-                            } else android.widget.Toast.makeText(context,"尚未获取 GPS 定位",android.widget.Toast.LENGTH_SHORT).show()
+                            } else android.widget.Toast.makeText(context,"当前 GPS 定位已过期或精度不足，请等待重新定位",android.widget.Toast.LENGTH_SHORT).show()
                         },
                         modifier=Modifier.weight(1f)
                     ) { Text("用地图查看") }
@@ -1032,6 +1109,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         active=false
                         if(isRecording) { isRecording=false;hasSavedRecording=true }
                     } else {
+                        prepareNavigationStart()
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
                         if(fine)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
                     }

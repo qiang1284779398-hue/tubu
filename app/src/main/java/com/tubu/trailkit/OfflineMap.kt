@@ -125,7 +125,6 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val measurePoints=remember(projectId){mutableStateListOf<Pair<Double,Double>>()}
     val measureDistance=remember(measurePoints.toList()){measurePoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val recordedPoints = remember { mutableStateListOf<Location>() }
-    var recordingStartedAt by remember { mutableLongStateOf(0L) }
     var recordingClockTick by remember { mutableLongStateOf(0L) }
     var gpsStatusTick by remember { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
@@ -741,7 +740,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         } else {
                             if(!active) gpsError="请先开启导航定位，再开始记录轨迹"
                             else {
-                                recordedPoints.clear();recordingStartedAt=System.currentTimeMillis();recordingClockTick=0L;isRecording=true;hasSavedRecording=false
+                                recordedPoints.clear();recordingClockTick=0L;isRecording=true;hasSavedRecording=false
                                 try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_START_RECORDING)) } catch(_:Exception) { gpsError="无法启动轨迹记录服务" }
                             }
                         }

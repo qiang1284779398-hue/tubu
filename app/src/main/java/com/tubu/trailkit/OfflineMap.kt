@@ -116,7 +116,11 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         if(uri!=null) try {
             val body=buildString {
                 append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"TrailKit\" xmlns=\"http://www.topografix.com/GPX/1/1\"><trk><name>TrailKit 实时记录</name><trkseg>\n")
-                recordedPoints.forEach { p -> append("<trkpt lat=\"${p.latitude}\" lon=\"${p.longitude}\"><ele>${p.altitude}</ele><time>${java.time.Instant.ofEpochMilli(p.time)}</time></trkpt>\n") }
+                recordedPoints.forEach { p ->
+                    append("<trkpt lat=\"${p.latitude}\" lon=\"${p.longitude}\">")
+                    if(p.hasAltitude()) append("<ele>${p.altitude}</ele>")
+                    append("<time>${java.time.Instant.ofEpochMilli(p.time)}</time></trkpt>\n")
+                }
                 append("</trkseg></trk></gpx>")
             }
             context.contentResolver.openOutputStream(uri)?.use { output ->

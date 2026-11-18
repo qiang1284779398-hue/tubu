@@ -338,6 +338,17 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val trueHeading=if(heading.isNaN()) Float.NaN else (heading+magneticDeclination+360f)%360f
     val reliableTrueHeading=if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) Float.NaN else trueHeading
     val routeMatch=cp?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
+    val nextTurnInfo=remember(routeMatch,navigationPoints,preparedRoute) {
+        routeMatch?.let { match ->
+            val i=match.segmentIndex
+            if(i+2<navigationPoints.size) {
+                val nextBearing=bearingToPoint(navigationPoints[i+1],navigationPoints[i+2])
+                val delta=((nextBearing-match.bearingDegrees+540.0)%360.0)-180.0
+                val distance=preparedRoute.prefixMeters[i+1]-match.progressMeters
+                if(kotlin.math.abs(delta)>=35.0 && distance in 0.0..500.0) (if(delta>0)"右转" else "左转") to distance else null
+            } else null
+        }
+    }
     val closestWaypoint=if(cp!=null) allWaypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val announcedWaypoints = remember(projectId,encoded) { mutableStateListOf<Int>() }
     val announcedApproaches = remember(projectId,encoded) { mutableStateListOf<Int>() }
@@ -834,6 +845,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     MapStat("GPS 更新",gpsFixAgeSeconds?.let{if(it<60L)"${it} 秒前" else "${it/60} 分钟前"}?:"无定位")
                 }
                 if((batteryLevel?:100)<=20) Text("电量不足 20%：建议开启省电模式、降低屏幕亮度，并准备备用电源。",fontSize=11.sp,color=Color(0xFF9A6A25))
+                nextTurnInfo?.let { (direction,distance) ->
+                    Text("前方约 ${distance.roundToInt()} 米 · $direction",fontWeight=FontWeight.Bold,fontSize=13.sp,color=Color(0xFF8B5A22))
+                } ?: if(routeMatch!=null) Text("前方 500 米内无明显转弯",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("真北方位",when { heading.isNaN()->"无传感器";compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE->"需校准";compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW->"精度较低";else->"${directionLabel(trueHeading)} ${trueHeading.roundToInt()}°" })
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")

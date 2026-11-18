@@ -60,6 +60,12 @@ data class Project(val id:String,val name:String,val place:String,val date:Strin
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val mode = window.windowManager.defaultDisplay.supportedModes.maxByOrNull { it.refreshRate }
+                if (mode != null && mode.refreshRate >= 90f) window.attributes = window.attributes.apply { preferredDisplayModeId = mode.modeId }
+            } catch (_: Exception) { }
+        }
         setContent { TrailKitApp() }
     }
 }

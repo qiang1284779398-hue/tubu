@@ -52,6 +52,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import kotlin.math.*
+import kotlinx.coroutines.delay
 
 private data class MbInfo(val name:String,val format:String,val minZoom:Int,val maxZoom:Int,val centerLon:Double,val centerLat:Double,val centerZoom:Float,val bounds:List<Double>,val tileCount:Int)
 private fun readMbInfo(db:SQLiteDatabase):MbInfo {
@@ -216,7 +217,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var current by remember(projectId) { mutableStateOf<Location?>(null) }
     var gpsStatusTick by remember(projectId) { mutableLongStateOf(0L) }
 
-    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
+    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick)
+    LaunchedEffect(active) {
+        while(active) { delay(1000L); gpsStatusTick++ }
+    }
     var gpsError by remember(projectId) { mutableStateOf("") }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
     var followGps by remember(projectId) { mutableStateOf(true) }
@@ -407,10 +411,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         } else onDispose { }
     }
     // Show system-assisted coarse fixes on the map; route matching stays strict.
-    val cp=current?.takeIf {
-        val age=System.currentTimeMillis()-it.time
-        age in 0L..30000L && it.accuracy<=1500f
-    }?.let{it.latitude to it.longitude}
+    // Keep the last known fix visible even when updates stop; age only disables navigation calculations.
+    val cp=current?.takeIf { it.accuracy<=1500f }?.let{it.latitude to it.longitude}
 
     val utmCoordinate=cp?.let{toUtm(it.first,it.second)}
     val magneticDeclination=current?.let { loc ->
@@ -419,8 +421,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     } ?: 0f
     val trueHeading=if(heading.isNaN()) Float.NaN else (heading+magneticDeclination+360f)%360f
     val reliableTrueHeading=if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) Float.NaN else trueHeading
-    val gpsCourse=current?.takeIf{it.hasBearing() && it.hasSpeed() && it.speed>=0.8f}?.bearing
-    val arrowHeading=if(!trueHeading.isNaN()) trueHeading else gpsCourse ?: Float.NaN
+    val gpsCourse=current?.takeIf{it.hasBearing() && it.hasSpeed() && it.speed>=0.8f && (gpsFixAgeSeconds?:999L)<=15L}?.bearing
+    val compassHeadingAvailable=!reliableTrueHeading.isNaN()
+    val arrowHeading=if(compassHeadingAvailable) reliableTrueHeading else gpsCourse ?: Float.NaN
+    val arrowCanDraw=compassHeadingAvailable || gpsCourse!=null
+
     val routeMatch=cp?.takeIf { current?.accuracy?.let{accuracy->accuracy<=50f}==true && (gpsFixAgeSeconds?:999L)<=15L }
         ?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
     val progressMatch=routeMatch?.takeIf {
@@ -763,12 +768,14 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val accuracyMeters=current?.accuracy?.toDouble()?:0.0
                         val metersPerPixel=(2.0*Math.PI*6378137.0*cos(Math.toRadians(it.first)).coerceAtLeast(0.01))/(256.0*2.0.pow(zoom.toDouble()))
                         val accuracyRadius=(accuracyMeters/metersPerPixel).toFloat().coerceIn(8f,120f)
-                        val accuracyHalo=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.argb(45,32,115,210);style=Paint.Style.FILL}
+                        val stale=(gpsFixAgeSeconds?:999L)>15L
+                        val markerColor=if(stale) android.graphics.Color.rgb(120,130,140) else android.graphics.Color.rgb(30,105,210)
+                        val accuracyHalo=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=if(stale)android.graphics.Color.argb(28,100,110,120) else android.graphics.Color.argb(45,32,115,210);style=Paint.Style.FILL}
                         canvas.drawCircle(x,y,accuracyRadius,accuracyHalo)
                         val p=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
-                        canvas.drawCircle(x,y,13f,p);p.color=android.graphics.Color.rgb(30,105,210);canvas.drawCircle(x,y,9f,p)
+                        canvas.drawCircle(x,y,13f,p);p.color=markerColor;canvas.drawCircle(x,y,9f,p)
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
-                        if(!arrowHeading.isNaN() && (gpsFixAgeSeconds?:999L)<=15L) {
+                        if(arrowCanDraw) {
                             val angle=Math.toRadians(arrowHeading.toDouble())
                             val ux=sin(angle).toFloat()
                             val uy=(-cos(angle)).toFloat()
@@ -821,7 +828,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("速度",if(current?.hasSpeed()==true) String.format(Locale.CHINA,"%.1f km/h",gpsSpeed*3.6) else "--")
                     MapStat("${currentElevationSource} 海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")
-                    MapStat("GPS",when { current==null->"等待定位";(gpsFixAgeSeconds?:0L)>15L->"定位已过期";else->"±${current!!.accuracy.roundToInt()} m" })
+                    MapStat("位置",when { current==null->"等待定位";(gpsFixAgeSeconds?:0L)>15L->"最后位置 · ${gpsFixAgeSeconds}s";else->"实时 · ±${current!!.accuracy.roundToInt()} m" })
                 }
                 if(navigationPoints.size>=2) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("预计剩余",etaText)
@@ -931,7 +938,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("20 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary);Text("300 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)}
                 } else Text("当前项目没有有效 GPX 轨迹，请先导入 GPX 文件。",fontSize=12.sp,color=MaterialTheme.colorScheme.error)
                 if(gpsError.isNotBlank())Text(gpsError,fontSize=12.sp,color=MaterialTheme.colorScheme.error)
-                if((gpsFixAgeSeconds?:0L)>15L) Text("GPS 最近一次定位已超过 15 秒，请检查定位权限、开阔度及手机省电限制。",fontSize=11.sp,color=Color(0xFF9A6A25))
+                if((gpsFixAgeSeconds?:0L)>15L) Text("位置更新暂时中断，地图保留灰色最后位置；导航进度和偏航判断已暂停，收到新定位后自动恢复。",fontSize=11.sp,color=Color(0xFF9A6A25))
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         MapStat("GPS 精度","±${current!!.accuracy.roundToInt()} m")

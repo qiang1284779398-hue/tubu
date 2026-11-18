@@ -182,9 +182,10 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         } catch(_:Exception) { gpsError="路线 GPX 导出失败，请检查保存位置" }
     }
     val viewPrefs=remember(projectId,path){context.getSharedPreferences("trailkit_map_view",Context.MODE_PRIVATE)}
-    var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$projectId",(info?.centerZoom?:14f)).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
-    var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$projectId",null)?.toDoubleOrNull() ?: if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
-    var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$projectId",null)?.toDoubleOrNull() ?: if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
+    val viewKey="${projectId}_${path.hashCode()}"
+    var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$viewKey",(info?.centerZoom?:14f)).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
+    var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
+    var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
     LaunchedEffect(projectId,path,zoom,centerLon,centerLat) {
         kotlinx.coroutines.delay(450L)
         viewPrefs.edit().putFloat("zoom_$projectId",zoom).putString("lon_$projectId",centerLon.toString()).putString("lat_$projectId",centerLat.toString()).apply()

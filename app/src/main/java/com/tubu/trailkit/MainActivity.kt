@@ -15,6 +15,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -77,7 +79,7 @@ private fun persist(context:Context, projects:List<Project>) {
 }
 private fun yuan(v:Double)="¥"+String.format(Locale.CHINA,"%.2f",v)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TrailKitApp() {
     val context= LocalContext.current
@@ -87,6 +89,10 @@ fun TrailKitApp() {
     var gearDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Gear?>(null) }
     var chosenPhoto by remember { mutableStateOf("") }
+    var manageProjectId by remember { mutableStateOf<String?>(null) }
+    var editProjectField by remember { mutableStateOf<String?>(null) }
+    var editProjectValue by remember { mutableStateOf("") }
+    var deleteProjectId by remember { mutableStateOf<String?>(null) }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if(uri!=null) chosenPhoto=uri.toString() }
     fun save(list:List<Project>) { projects=list; persist(context,list) }
     val project=projects.firstOrNull { it.id==selected }
@@ -116,7 +122,7 @@ fun TrailKitApp() {
                     }
                     if(projects.isEmpty()) item { Empty("还没有徒步项目","点击右下角 + 创建你的第一个计划") }
                     items(projects,key={it.id}) { p ->
-                        Card(Modifier.fillMaxWidth().clickable { selected=p.id },shape=RoundedCornerShape(20.dp)) {
+                        Card(Modifier.fillMaxWidth().combinedClickable(onClick={ selected=p.id },onLongClick={ manageProjectId=p.id }),shape=RoundedCornerShape(20.dp)) {
                             Column(Modifier.padding(18.dp)) {
                                 Row(verticalAlignment=Alignment.CenterVertically) {
                                     Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(36.dp))
@@ -167,6 +173,74 @@ fun TrailKitApp() {
     if(projectDialog) ProjectDialog({projectDialog=false}) { name,place,date ->
         val p=Project(System.currentTimeMillis().toString(),name,place,date,emptyList()); save(projects+p);selected=p.id;projectDialog=false
     }
+    val managedProject = projects.firstOrNull { it.id == manageProjectId }
+    if (manageProjectId != null && managedProject != null) {
+        AlertDialog(
+            onDismissRequest = { manageProjectId = null },
+            title = { Text(managedProject.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("长按项目可管理项目资料", color = muted, fontSize = 12.sp)
+                    TextButton(onClick = { editProjectField = "name"; editProjectValue = managedProject.name; manageProjectId = null }) { Text("重命名项目") }
+                    TextButton(onClick = { editProjectField = "place"; editProjectValue = managedProject.place; manageProjectId = null }) { Text("修改终点 / 目的地") }
+                    TextButton(onClick = { editProjectField = "date"; editProjectValue = managedProject.date; manageProjectId = null }) { Text("修改时间") }
+                    TextButton(onClick = { deleteProjectId = managedProject.id; manageProjectId = null }) { Text("删除项目", color = androidx.compose.ui.graphics.Color(0xFFB34D43)) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { manageProjectId = null }) { Text("完成") } }
+        )
+    }
+    if (editProjectField != null) {
+        val field = editProjectField!!
+        AlertDialog(
+            onDismissRequest = { editProjectField = null },
+            title = { Text(when(field) { "name" -> "重命名项目"; "place" -> "修改终点 / 目的地"; else -> "修改出行时间" }) },
+            text = {
+                OutlinedTextField(
+                    value = editProjectValue,
+                    onValueChange = { editProjectValue = it },
+                    label = { Text(when(field) { "name" -> "项目名称"; "place" -> "终点 / 目的地"; else -> "出行时间，例如 2026-11-20" }) },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val targetId = selected ?: projects.firstOrNull { it.id == selected }?.id
+                    val projectId = projects.firstOrNull { it.id == targetId }?.id
+                    val id = projectId
+                    if (id != null && (field != "name" || editProjectValue.isNotBlank())) {
+                        save(projects.map { p ->
+                            if (p.id != id) p else when(field) {
+                                "name" -> p.copy(name = editProjectValue.trim())
+                                "place" -> p.copy(place = editProjectValue.trim())
+                                else -> p.copy(date = editProjectValue.trim())
+                            }
+                        })
+                    }
+                    editProjectField = null
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { editProjectField = null }) { Text("取消") } }
+        )
+    }
+    if (deleteProjectId != null) {
+        val target = projects.firstOrNull { it.id == deleteProjectId }
+        AlertDialog(
+            onDismissRequest = { deleteProjectId = null },
+            title = { Text("删除徒步项目？") },
+            text = { Text("确定删除「${target?.name ?: ""}」及其全部装备记录吗？此操作无法撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val id = deleteProjectId
+                    save(projects.filterNot { it.id == id })
+                    if (selected == id) selected = null
+                    deleteProjectId = null
+                }) { Text("确认删除", color = androidx.compose.ui.graphics.Color(0xFFB34D43)) }
+            },
+            dismissButton = { TextButton(onClick = { deleteProjectId = null }) { Text("取消") } }
+        )
+    }
+
     if(gearDialog && project!=null) GearDialog(editing,chosenPhoto,{picker.launch("image/*")},{gearDialog=false}) { g ->
         val updated=if(editing==null) project.copy(gear=project.gear+g) else project.copy(gear=project.gear.map{if(it.id==g.id)g else it})
         save(projects.map{if(it.id==project.id)updated else it});gearDialog=false
@@ -187,7 +261,7 @@ fun TrailKitApp() {
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(name,{name=it},label={Text("项目名称 *")},singleLine=true)
             OutlinedTextField(place,{place=it},label={Text("目的地")},singleLine=true)
-            OutlinedTextField(date,{date=it},label={Text("出行日期")},singleLine=true)
+            OutlinedTextField(date,{date=it},label={Text("出行时间")},singleLine=true)
         }
     },confirmButton={TextButton(onClick={if(name.isNotBlank())save(name.trim(),place.trim(),date.trim())}){Text("创建")}},dismissButton={TextButton(onClick=close){Text("取消")}})
 }

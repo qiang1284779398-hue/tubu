@@ -336,6 +336,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("罗盘",if(heading.isNaN())"无传感器" else "${directionLabel(heading)} ${heading.roundToInt()}°")
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
+                    MapStat("方向提示",routeMatch?.let{turnGuidance(heading,it.bearingDegrees.toFloat())}?:"等待定位")
                 }
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {

@@ -380,7 +380,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         previousAccepted=Location(location)
                     }
                     current=Location(location)
-                    gpsError=if(location.accuracy<=75f) "" else "当前为网络辅助粗略定位（±\${location.accuracy.roundToInt()} 米）；导航进度和轨迹记录暂不启用"
+                    gpsError=if(location.accuracy<=75f) "" else "当前为网络辅助粗略定位（±${location.accuracy.roundToInt()} 米）；导航进度和轨迹记录暂不启用"
                     if(isRecording && location.provider==LocationManager.GPS_PROVIDER && location.accuracy<=25f &&
                         (recordedPoints.isEmpty() || mapDistance(recordedPoints.last().latitude to recordedPoints.last().longitude,location.latitude to location.longitude)>=3.0)) recordedPoints.add(Location(location))
                     if(followGps) { centerLat=location.latitude;centerLon=location.longitude }
@@ -402,7 +402,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                     gpsError=if(requested) "正在获取 GPS / Wi-Fi / 基站辅助定位…" else "系统定位源暂不可用，请检查手机定位开关和权限"
                 } else { active=false;gpsError="请允许 TrailKit 使用位置信息" }
-            } catch(e:Exception) { gpsError="定位启动失败：\${e.message ?: "请检查定位设置"}";active=false }
+            } catch(e:Exception) { gpsError="定位启动失败：${e.message ?: "请检查定位设置"}";active=false }
             onDispose { try{manager.removeUpdates(listener)}catch(_:Exception){} }
         } else onDispose { }
     }

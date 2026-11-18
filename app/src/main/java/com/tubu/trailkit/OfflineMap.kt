@@ -97,6 +97,22 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
             minLon>=west && maxLon<=east && minLat>=south && maxLat<=north
         } else null
     }
+    val sampledRouteTileCoverage=remember(db,navigationPoints,zoom) {
+        if(db==null || navigationPoints.isEmpty()) null
+        else try {
+            val z=zoom.roundToInt().coerceIn(info?.minZoom?:0,info?.maxZoom?:18)
+            val step=max(1,ceil(navigationPoints.size/24.0).toInt())
+            val samples=navigationPoints.filterIndexed{index,_->index%step==0 || index==navigationPoints.lastIndex}
+            val missing=samples.count { point ->
+                val x=floor(worldX(point.second,z)/256.0).toInt()
+                val y=floor(worldY(point.first,z)/256.0).toInt()
+                val tileX=((x%(1 shl z))+(1 shl z))%(1 shl z)
+                val tileY=(1 shl z)-1-y
+                db.rawQuery("SELECT 1 FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",arrayOf(z.toString(),tileX.toString(),tileY.toString())).use{!it.moveToFirst()}
+            }
+            missing to samples.size
+        } catch(_:Exception) { null }
+    }
     val waypoints=remember(encodedWaypoints){decodeGpxWaypoints(encodedWaypoints)}
     val customWaypointPrefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
     val customWaypoints=remember(projectId) {
@@ -351,6 +367,11 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                 if(db==null || info==null) {
                     Surface(color=Color(0xFFFFF3DD),shape=RoundedCornerShape(10.dp)) {
                         Text("当前没有可读取的 MBTiles 地图。导入地图包后，这里会显示真实地形；现在仍可使用 GPS + GPX 轨迹进行基础跟随导航。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF76521D))
+                    }
+                }
+                sampledRouteTileCoverage?.let { (missing,total) ->
+                    if(missing>0) Surface(color=Color(0xFFFFF3DD),shape=RoundedCornerShape(10.dp)) {
+                        Text("当前缩放级别抽样检查：路线附近有 $missing/$total 个瓦片缺失。请更换更完整的离线地图或检查缩放级别。",Modifier.padding(10.dp),fontSize=11.sp,color=Color(0xFF76521D))
                     }
                 }
                 if(info!=null && info.tileCount==0) Surface(color=Color(0xFFFFE8E4),shape=RoundedCornerShape(10.dp)) {

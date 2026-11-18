@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
 import java.io.File
 import android.widget.Toast
@@ -144,6 +145,12 @@ fun TrailKitApp() {
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
     val gpxImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) try {
+            val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            }.orEmpty()
+            if (!displayName.lowercase(Locale.ROOT).endsWith(".gpx")) {
+                error("请选择 .gpx 格式的轨迹文件")
+            }
             val track = readGpxTrack(context, uri)
             val summary = track.summary
             val target = gpxTargetProjectId
@@ -414,7 +421,7 @@ fun TrailKitApp() {
                                 Card(
                                     Modifier.fillMaxWidth().clickable {
                                         gpxTargetProjectId=p.id
-                                        gpxImporter.launch(arrayOf("application/gpx+xml"))
+                                        gpxImporter.launch(arrayOf("*/*"))
                                     },
                                     shape=RoundedCornerShape(20.dp),
                                     colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White),

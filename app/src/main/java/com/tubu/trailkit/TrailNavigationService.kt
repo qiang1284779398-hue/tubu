@@ -39,7 +39,7 @@ class TrailNavigationService : Service(), LocationListener {
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
         when(intent?.action) {
             ACTION_STOP_RECORDING -> { finishRecording(); return START_STICKY }
-            ACTION_START_RECORDING -> beginRecording(intent.getStringExtra(EXTRA_PROJECT_ID) ?: "default")
+            ACTION_START_RECORDING -> beginRecording(intent?.getStringExtra(EXTRA_PROJECT_ID) ?: "default")
         }
         startForeground(notificationId,buildNotification("正在启动 GPS 定位…"))
         val fine=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED

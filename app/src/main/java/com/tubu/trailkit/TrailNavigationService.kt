@@ -38,7 +38,6 @@ class TrailNavigationService : Service(), LocationListener {
 
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
         when(intent?.action) {
-            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
             ACTION_STOP_RECORDING -> { finishRecording(); return START_STICKY }
             ACTION_START_RECORDING -> beginRecording()
         }

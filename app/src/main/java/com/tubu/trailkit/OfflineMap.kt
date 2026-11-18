@@ -41,7 +41,7 @@ private fun worldY(lat:Double,z:Int):Double {
             if(db==null || info==null) {
                 Text("无法读取 MBTiles 地图文件。请导入标准栅格 MBTiles（PNG/JPG/WebP），矢量 PBF 暂不支持。")
             } else {
-                Text("离线地图 · \${info.format.uppercase()} · 缩放级别 \${info.minZoom}–\${info.maxZoom}",style=MaterialTheme.typography.labelSmall)
+                Text("离线地图 · ${info.format.uppercase()} · 缩放级别 ${info.minZoom}–${info.maxZoom}",style=MaterialTheme.typography.labelSmall)
                 Canvas(Modifier.fillMaxWidth().height(390.dp).pointerInput(Unit) {
                     detectTransformGestures { _,pan,zoomChange,_ ->
                         val next=(zoom+ln(zoomChange)/ln(2.0).toFloat()).coerceIn(info.minZoom.toFloat(),info.maxZoom.toFloat())

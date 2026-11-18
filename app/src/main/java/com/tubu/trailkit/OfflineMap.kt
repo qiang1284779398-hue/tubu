@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.Path as AndroidPath
 import android.graphics.RectF
+import android.util.LruCache
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -77,6 +78,20 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var confirmedProgress by remember(projectId) { mutableDoubleStateOf(0.0) }
     var offRouteWas by remember(projectId) { mutableStateOf(false) }
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
+    var isRecording by remember { mutableStateOf(false) }
+    val recordedPoints = remember { mutableStateListOf<Location>() }
+    var recordingStartedAt by remember { mutableLongStateOf(0L) }
+    val tileCache = remember(path) { LruCache<String, android.graphics.Bitmap>(8 * 1024) }
+    val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
+        if(uri!=null) try {
+            val body=buildString {
+                append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<gpx version=\"1.1\" creator=\"TrailKit\" xmlns=\"http://www.topografix.com/GPX/1/1\"><trk><name>TrailKit 实时记录</name><trkseg>\\n")
+                recordedPoints.forEach { p -> append("<trkpt lat=\"\\${p.latitude}\" lon=\"\\${p.longitude}\"><ele>\\${p.altitude}</ele><time>\\${java.time.Instant.ofEpochMilli(p.time)}</time></trkpt>\\n") }
+                append("</trkseg></trk></gpx>")
+            }
+            context.contentResolver.openOutputStream(uri)?.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+        } catch(_:Exception) { gpsError="GPX 导出失败，请检查保存位置" }
+    }
     var zoom by remember(path){mutableFloatStateOf((info?.centerZoom?:14f).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
     var centerLon by remember(path){mutableDoubleStateOf(if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
     var centerLat by remember(path){mutableDoubleStateOf(if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
@@ -91,6 +106,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
                     current=location
+                    if(isRecording && (recordedPoints.isEmpty() || mapDistance(recordedPoints.last().latitude to recordedPoints.last().longitude,location.latitude to location.longitude)>=3.0)) recordedPoints.add(Location(location))
                     if(followGps) { centerLat=location.latitude;centerLon=location.longitude }
                 }
                 @Deprecated("Deprecated in Java") override fun onStatusChanged(provider:String?,status:Int,extras:Bundle?) {}
@@ -116,12 +132,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val remaining=(total-travelled).coerceAtLeast(0.0)
     LaunchedEffect(routeMatch,active) {
         if(routeMatch!=null) confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters)
-        val off=active && routeMatch!=null && routeMatch.distanceMeters>threshold
+        val off=active && routeMatch!=null && (current?.accuracy?:999f)<=50f && routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
         if(off && !offRouteWas && System.currentTimeMillis()-lastVibrationAt>15000L) {
             try {
                 val vibrator=context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                 if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createOneShot(260L,VibrationEffect.DEFAULT_AMPLITUDE))
-                else @Suppress("DEPRECATION") vibrator.vibrate(260L)
+                else vibrator.vibrate(260L)
                 lastVibrationAt=System.currentTimeMillis()
             } catch(_:Exception) {}
         }
@@ -186,12 +202,23 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         for(tx in minX..maxX)for(ty in minY..maxY){
                             if(ty !in 0 until (1 shl z))continue
                             val wrapped=((tx%(1 shl z))+(1 shl z))%(1 shl z)
-                            try{db.rawQuery("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",arrayOf(z.toString(),wrapped.toString(),((1 shl z)-1-ty).toString())).use{c->
-                                if(c.moveToFirst()){val b=c.getBlob(0);val bitmap=BitmapFactory.decodeByteArray(b,0,b.size);if(bitmap!=null){
+                            try {
+                                val key="$z/$wrapped/$ty"
+                                var bitmap=tileCache.get(key)
+                                if(bitmap==null) {
+                                    db.rawQuery("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",arrayOf(z.toString(),wrapped.toString(),((1 shl z)-1-ty).toString())).use { c ->
+                                        if(c.moveToFirst()) {
+                                            val bytes=c.getBlob(0)
+                                            bitmap=BitmapFactory.decodeByteArray(bytes,0,bytes.size)
+                                            if(bitmap!=null) tileCache.put(key,bitmap!!)
+                                        }
+                                    }
+                                }
+                                if(bitmap!=null) {
                                     val x=((tx*256.0-left)*scale).toFloat();val y=((ty*256.0-top)*scale).toFloat()
-                                    canvas.drawBitmap(bitmap,null,RectF(x,y,x+256f*scale,y+256f*scale),paint);bitmap.recycle()
-                                }}
-                            }}catch(_:Exception){}
+                                    canvas.drawBitmap(bitmap!!,null,RectF(x,y,x+256f*scale,y+256f*scale),paint)
+                                }
+                            } catch(_:Exception) {}
                         }
                     }
                     if(points.isNotEmpty()) {
@@ -272,6 +299,20 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost((info?.maxZoom?:18).toFloat())},modifier=Modifier.weight(1f)){Text("+ 放大")}
                     OutlinedButton(onClick={confirmedProgress=0.0;offRouteWas=false},modifier=Modifier.weight(1f)){Text("重置进度")}
                 }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick={
+                        if(isRecording) {
+                            isRecording=false
+                            if(recordedPoints.size>=2) exportGpx.launch("TrailKit-${System.currentTimeMillis()}.gpx")
+                            else gpsError="记录点不足，至少需要两个定位点才能导出 GPX"
+                        } else {
+                            if(!active) gpsError="请先开启导航定位，再开始记录轨迹"
+                            else { recordedPoints.clear();recordingStartedAt=System.currentTimeMillis();isRecording=true }
+                        }
+                    },modifier=Modifier.weight(1f),enabled=active || isRecording) { Text(if(isRecording)"停止并导出 GPX（${recordedPoints.size}点）" else "开始记录新轨迹") }
+                    OutlinedButton(onClick={recordedPoints.clear();isRecording=false},modifier=Modifier.weight(1f),enabled=!isRecording && recordedPoints.isNotEmpty()) { Text("清空记录") }
+                }
+                if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))
                 Button(onClick={
                     if(active)active=false else {
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED

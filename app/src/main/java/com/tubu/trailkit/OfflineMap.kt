@@ -900,7 +900,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                     // Live GPS track: draw the points collected during this recording session
                     // above the imported route so the hiker can see the path already walked.
-                    if(isRecording && recordedPoints.isNotEmpty()) {
+                    if(recordedPoints.isNotEmpty()) {
                         val livePath=AndroidPath()
                         recordedPoints.forEachIndexed { index,location ->
                             val q=project(location.latitude,location.longitude)

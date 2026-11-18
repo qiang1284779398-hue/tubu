@@ -286,6 +286,7 @@ fun TrailKitApp() {
         TrailKitAdvancedDialog(
             project=project,
             onClose={advancedToolsOpen=false},
+            onImportGpx={ Toast.makeText(context,"GPX 导入功能正在接入",Toast.LENGTH_SHORT).show() },
             onAddSuggested={ additions ->
                 val fresh=additions.filterNot { a -> project.gear.any { it.name.equals(a.name,true) } }
                 if(fresh.isNotEmpty()) save(projects.map { if(it.id==project.id) it.copy(gear=it.gear+fresh) else it })

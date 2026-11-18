@@ -462,7 +462,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             }
         }
     }
-    val nearest=routeMatch?.segmentIndex?:0
+    val nearest=progressMatch?.segmentIndex?:0
     val deviation=routeMatch?.distanceMeters
     val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(progressMatch!=null) maxOf(confirmedProgress,progressMatch.progressMeters) else confirmedProgress
@@ -700,7 +700,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     if(navigationPoints.isNotEmpty()) {
                         fun point(p:Pair<Double,Double>)=android.graphics.PointF(((worldX(p.second,z)-left)*scale).toFloat(),((worldY(p.first,z)-top)*scale).toFloat())
                         val rp=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=5f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
-                        val snapped=routeMatch?.let { android.graphics.PointF(((worldX(it.snappedLon,z)-left)*scale).toFloat(),((worldY(it.snappedLat,z)-top)*scale).toFloat()) }
+                        val snapped=progressMatch?.let { android.graphics.PointF(((worldX(it.snappedLon,z)-left)*scale).toFloat(),((worldY(it.snappedLat,z)-top)*scale).toFloat()) }
                         val remainingPath=AndroidPath()
                         val firstRemaining=snapped?:point(navigationPoints[nearest])
                         remainingPath.moveTo(firstRemaining.x,firstRemaining.y)

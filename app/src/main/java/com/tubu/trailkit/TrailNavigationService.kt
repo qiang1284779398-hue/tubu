@@ -18,11 +18,19 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import java.util.Locale
+import java.io.BufferedWriter
+import java.io.File
+import java.io.FileOutputStream
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
+import java.time.Instant
 
 class TrailNavigationService : Service(), LocationListener {
     private lateinit var manager:LocationManager
     private val channelId="trailkit_navigation"
     private val notificationId=4107
+    private var trackWriter:BufferedWriter?=null
+    private var trackFile:File?=null
 
     override fun onCreate() {
         super.onCreate()
@@ -31,9 +39,10 @@ class TrailNavigationService : Service(), LocationListener {
     }
 
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
-        if(intent?.action==ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when(intent?.action) {
+            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP_RECORDING -> { finishRecording(); return START_STICKY }
+            ACTION_START_RECORDING -> beginRecording()
         }
         startForeground(notificationId,buildNotification("正在启动 GPS 定位…"))
         val fine=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
@@ -62,6 +71,30 @@ class TrailNavigationService : Service(), LocationListener {
         val text=String.format(Locale.US,"%.5f, %.5f · 精度 ±%.0f m · %.1f km/h",
             location.latitude,location.longitude,location.accuracy,if(location.hasSpeed())location.speed*3.6f else 0f)
         updateNotification(text)
+        try {
+            trackWriter?.apply {
+                write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\"><ele>%.1f</ele><time>%s</time></trkpt>\\n",location.latitude,location.longitude,if(location.hasAltitude())location.altitude else 0.0,Instant.ofEpochMilli(location.time)))
+                flush()
+            }
+        } catch(_:Exception) { finishRecording() }
+    }
+
+    private fun beginRecording() {
+        finishRecording()
+        try {
+            val file=File(filesDir,"trailkit_active_track.gpx")
+            trackFile=file
+            trackWriter=BufferedWriter(OutputStreamWriter(FileOutputStream(file,false),StandardCharsets.UTF_8)).apply {
+                write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<gpx version=\"1.1\" creator=\"TrailKit\" xmlns=\"http://www.topografix.com/GPX/1/1\"><trk><name>TrailKit 实时轨迹</name><trkseg>\\n")
+                flush()
+            }
+            updateNotification("轨迹记录已开始")
+        } catch(_:Exception) { trackWriter=null;updateNotification("无法创建轨迹记录文件") }
+    }
+
+    private fun finishRecording() {
+        try { trackWriter?.write("</trkseg></trk></gpx>");trackWriter?.flush();trackWriter?.close() } catch(_:Exception) {}
+        trackWriter=null
     }
 
     private fun createChannel() {
@@ -99,6 +132,7 @@ class TrailNavigationService : Service(), LocationListener {
     override fun onProviderDisabled(provider:String) { updateNotification("GPS 已关闭，请开启手机定位") }
 
     override fun onDestroy() {
+        finishRecording()
         try { manager.removeUpdates(this) } catch(_:Exception) {}
         if(Build.VERSION.SDK_INT>=24) stopForeground(STOP_FOREGROUND_REMOVE) else stopForeground(true)
         super.onDestroy()
@@ -108,5 +142,7 @@ class TrailNavigationService : Service(), LocationListener {
 
     companion object {
         const val ACTION_STOP="com.tubu.trailkit.STOP_NAVIGATION"
+        const val ACTION_START_RECORDING="com.tubu.trailkit.START_RECORDING"
+        const val ACTION_STOP_RECORDING="com.tubu.trailkit.STOP_RECORDING"
     }
 }

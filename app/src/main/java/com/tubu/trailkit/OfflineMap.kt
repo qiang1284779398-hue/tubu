@@ -369,7 +369,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     announcedTurns.add(index)
                     lastTurnAnnouncementProgress=match.progressMeters
                     val direction=if(delta>0)"右转" else "左转"
-                    speakNavigation("前方约${distanceToTurn.roundToInt()}米，$direction")
+                    speakNavigation("前方约${distanceToTurn.roundToInt()}米，$direction，约${kotlin.math.abs(delta).roundToInt()}度")
                 }
             }
         }

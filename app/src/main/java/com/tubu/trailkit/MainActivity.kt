@@ -409,7 +409,31 @@ fun TrailKitApp() {
                             }
                             item {
                                 OutlinedButton(onClick={mapTargetProjectId=p.id;mbtilesImporter.launch(arrayOf("*/*"))},modifier=Modifier.fillMaxWidth()) { Text(if(p.mapPath.isBlank()) "＋ 导入离线地图包" else "更换离线地图包") }
-                                OutlinedButton(onClick={advancedToolsOpen=true},modifier=Modifier.fillMaxWidth()) { Text("导入 GPX 轨迹 / 智能路线工具") }
+                            }
+                            item {
+                                Card(
+                                    Modifier.fillMaxWidth().clickable {
+                                        gpxTargetProjectId=p.id
+                                        gpxImporter.launch(arrayOf("application/gpx+xml","application/xml","text/xml","*/*"))
+                                    },
+                                    shape=RoundedCornerShape(20.dp),
+                                    colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White),
+                                    elevation=CardDefaults.cardElevation(defaultElevation=2.dp)
+                                ) {
+                                    Row(Modifier.fillMaxWidth().padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
+                                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(15.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center) {
+                                            Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(26.dp))
+                                        }
+                                        Spacer(Modifier.width(13.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(if(p.trackData.isBlank()) "导入 GPX 轨迹" else "更换 GPX 轨迹",fontWeight=FontWeight.Bold,color=forest,fontSize=15.sp)
+                                            Text(if(p.trackData.isBlank()) "选择手机中的 .gpx 文件，导入本项目" else "已有关联轨迹，点击可重新导入或替换",fontSize=11.sp,color=muted)
+                                        }
+                                        Icon(Icons.Default.Add,null,tint=forest)
+                                    }
+                                }
+                                Text("GPX 文件用于路线预览与户外导航；导入后会更新当前项目的轨迹数据。",fontSize=11.sp,color=muted,modifier=Modifier.padding(horizontal=4.dp))
+                            }
                             }
                             item {
                                 Text("天气与安全",fontWeight=FontWeight.Bold,color=forest,fontSize=16.sp)
@@ -445,7 +469,6 @@ fun TrailKitApp() {
         TrailKitAdvancedDialog(
             project=project,
             onClose={advancedToolsOpen=false},
-            onImportGpx={ gpxTargetProjectId=project.id; gpxImporter.launch(arrayOf("application/gpx+xml","application/xml","text/xml","*/*")) },
             onAddSuggested={ additions ->
                 val fresh=additions.filterNot { a -> project.gear.any { it.name.equals(a.name,true) } }
                 if(fresh.isNotEmpty()) save(projects.map { if(it.id==project.id) it.copy(gear=it.gear+fresh) else it })

@@ -333,6 +333,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.second)}
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
     var mapProjector by remember(projectId,path) { mutableStateOf<((Double,Double)->android.graphics.PointF)?>(null) }
+    var mapLayer by remember(projectId) { mutableStateOf("terrain") }
+    val activeMapStyle = if(mapLayer=="satellite") TRAILKIT_SATELLITE_STYLE else TRAILKIT_TERRAIN_STYLE
     LaunchedEffect(projectId,path,zoom,centerLon,centerLat) {
         kotlinx.coroutines.delay(450L)
         viewPrefs.edit().putFloat("zoom_$viewKey",zoom).putString("lon_$viewKey",centerLon.toString()).putString("lat_$viewKey",centerLat.toString()).apply()
@@ -627,7 +629,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 }
                 else if(db!=null && mapCoverage==null) Text("离线地图没有有效 bounds 元数据，无法自动核验是否覆盖整条 GPX 路线。",fontSize=10.sp,color=Color(0xFF9A6A25))
                 if (navigationPoints.size >= 2) {
-                    RouteOfflineDownloadCard(navigationPoints, projectId)
+                    RouteOfflineDownloadCard(navigationPoints, projectId, mapLayer, { mapLayer = it })
                 } else {
                     Text("导入 GPX 轨迹后，可按路线范围下载离线地图。", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                 }
@@ -636,6 +638,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         centerLat = centerLat,
                         centerLon = centerLon,
                         zoom = zoom,
+                        styleUrl = activeMapStyle,
                         onCameraChanged = { lat, lon, z ->
                             centerLat = lat
                             centerLon = lon

@@ -225,7 +225,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var locationUpdateCount by remember(projectId) { mutableIntStateOf(0) }
     var lastLocationProvider by remember(projectId) { mutableStateOf("等待定位源") }
 
-    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick)
+    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}
     var gpsError by remember(projectId) { mutableStateOf("") }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
     var followGps by remember(projectId) { mutableStateOf(true) }
@@ -1154,6 +1154,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     MapStat("GPS 更新",gpsFixAgeSeconds?.let{if(it<60L)"${it} 秒前" else "${it/60} 分钟前"}?:"无定位")
                 }
                 if((batteryLevel?:100)<=20) Text("电量不足 20%：建议开启省电模式、降低屏幕亮度，并准备备用电源。",fontSize=11.sp,color=Color(0xFF9A6A25))
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    MapStat("定位来源",lastLocationProvider)
+                    MapStat("定位回调",locationUpdateCount.toString()+" 次")
+                    MapStat("实时记录点",recordedPoints.size.toString()+" 点")
+                }
                 if(nextTurnInfo!=null) {
                     val (direction,distance,angle)=nextTurnInfo
                     Text("前方约 ${distance.roundToInt()} 米 · $direction ${angle.roundToInt()}°",fontWeight=FontWeight.Bold,fontSize=13.sp,color=Color(0xFF8B5A22))

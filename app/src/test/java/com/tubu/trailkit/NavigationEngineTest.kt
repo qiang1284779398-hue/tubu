@@ -27,6 +27,7 @@ class NavigationEngineTest {
         assertEquals("西",directionLabel(270f))
     }
     @Test fun turnGuidanceUsesShortestTurnDirection() {
+        assertEquals("等待罗盘",turnGuidance(Float.NaN,100f))
         assertEquals("方向基本正确",turnGuidance(90f,100f))
         assertEquals("向右修正 90°",turnGuidance(0f,90f))
         assertEquals("向左修正 90°",turnGuidance(180f,90f))

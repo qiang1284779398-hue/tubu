@@ -121,6 +121,7 @@ fun TrailKitApp() {
     var trackOpen by remember { mutableStateOf(false) }
     var gpxTargetProjectId by remember { mutableStateOf<String?>(null) }
     var mapOpen by remember { mutableStateOf(false) }
+    var navigationOpen by remember { mutableStateOf(false) }
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
     val gpxImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) try {
@@ -330,6 +331,7 @@ fun TrailKitApp() {
                             }
                         }
                     }
+                    if(p.trackData.isNotBlank()) item { Button(onClick={navigationOpen=true},modifier=Modifier.fillMaxWidth()) { Text("开始轨迹导航") } }
                     if(p.gear.isEmpty()) item { Empty("装备清单还是空的","点击右下角 + 添加第一件装备") }
                     categories.forEach { cat ->
                         val filtered=p.gear.filter{it.category==cat && (it.name.contains(searchQuery,true)||it.note.contains(searchQuery,true)) && (!packedOnly || !it.packed)}
@@ -364,6 +366,7 @@ fun TrailKitApp() {
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
     if (mapOpen && project != null && project.mapPath.isNotBlank()) OfflineMapDialog(project.mapPath, project.trackData) { mapOpen=false }
+    if (navigationOpen && project != null) TrailNavigationDialog(project.trackData) { navigationOpen=false }
 
     if (advancedToolsOpen && project != null) {
         TrailKitAdvancedDialog(

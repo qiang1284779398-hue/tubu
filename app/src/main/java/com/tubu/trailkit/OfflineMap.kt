@@ -97,6 +97,13 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val recordedPoints = remember { mutableStateListOf<Location>() }
     var recordingStartedAt by remember { mutableLongStateOf(0L) }
     var recordingClockTick by remember { mutableLongStateOf(0L) }
+    var gpsStatusTick by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(active) {
+        while(active) {
+            kotlinx.coroutines.delay(5000L)
+            gpsStatusTick++
+        }
+    }
     LaunchedEffect(isRecording) {
         while(isRecording) {
             kotlinx.coroutines.delay(1000L)
@@ -181,7 +188,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
     val remaining=(total-travelled).coerceAtLeast(0.0)
-    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}
+    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
     val gpsSpeed=current?.takeIf{it.hasSpeed()}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
     val etaSeconds=if(gpsSpeed>=0.5) (remaining/gpsSpeed).toLong() else null
     val etaText=etaSeconds?.let { seconds ->

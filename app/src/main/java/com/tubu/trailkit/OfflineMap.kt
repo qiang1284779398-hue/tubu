@@ -34,8 +34,8 @@ private fun worldY(lat:Double,z:Int):Double {
     val info=remember(db) { try{db?.let(::readMbInfo)}catch(_:Exception){null} }
     val points=remember(encoded){decodeTrackPoints(encoded)}
     var zoom by remember(path){mutableFloatStateOf((info?.centerZoom?:10f).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:16).toFloat()))}
-    var centerLon by remember(path){mutableDoubleStateOf(info?.centerLon?:points.firstOrNull()?.second?:0.0)}
-    var centerLat by remember(path){mutableDoubleStateOf(info?.centerLat?:points.firstOrNull()?.first?:0.0)}
+    var centerLon by remember(path){mutableDoubleStateOf(if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
+    var centerLat by remember(path){mutableDoubleStateOf(if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
     AlertDialog(onDismissRequest=onClose,title={Text(info?.name?: "离线地形地图")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             if(db==null || info==null) {

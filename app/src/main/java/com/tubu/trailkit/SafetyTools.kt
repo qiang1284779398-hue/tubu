@@ -8,7 +8,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 @Composable fun TrailSafetyDialog(project:Project,onClose:()->Unit){
  val context=LocalContext.current
- var contact by remember{mutableStateOf(project.emergency.substringAfter("|","").trim())}
+ var contact by remember{mutableStateOf(Regex("[+]?[0-9][0-9 -]{5,}").find(project.emergency)?.value?.trim()?:"")}
  val phone=contact.filter{it.isDigit()||it=='+'}
  val message="【TrailKit 徒步安全信息】\n项目："+project.name+"\n目的地："+project.place+"\n路线："+project.route+"\n住宿/营地："+project.lodging+"\n补给/水源："+project.resupply+"\n紧急联系人："+project.emergency+"\n请协助确认我的安全状况。"
  AlertDialog(onDismissRequest=onClose,title={Text("户外安全中心")},text={Column(verticalArrangement=Arrangement.spacedBy(9.dp)){

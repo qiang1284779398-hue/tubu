@@ -83,3 +83,13 @@ fun directionLabel(degrees:Float):String {
     val names=listOf("北","东北","东","东南","南","西南","西","西北")
     return names[(kotlin.math.floor(((degrees%360f+360f)%360f+22.5f)/45f).toInt())%8]
 }
+
+fun turnGuidance(currentHeading:Float,targetBearing:Float):String {
+    if(currentHeading.isNaN() || targetBearing.isNaN()) return "等待罗盘"
+    val delta=((targetBearing-currentHeading+540f)%360f)-180f
+    return when {
+        kotlin.math.abs(delta)<18f -> "方向基本正确"
+        delta>0f -> "向右修正 ${delta.roundToInt()}°"
+        else -> "向左修正 ${kotlin.math.abs(delta).roundToInt()}°"
+    }
+}

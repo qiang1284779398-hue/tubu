@@ -273,6 +273,44 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             } catch(_:Exception) {}
                         }
                     }
+                    // WGS84 graticule for compass-and-map coordinate reading.
+                    run {
+                        val interval=when {
+                            zoom>=16f -> 0.002
+                            zoom>=14f -> 0.005
+                            zoom>=12f -> 0.01
+                            zoom>=10f -> 0.05
+                            zoom>=8f -> 0.1
+                            else -> 0.25
+                        }
+                        fun inverseY(pixel:Double):Double {
+                            val n=Math.PI-2.0*Math.PI*pixel/(256.0*(1 shl z))
+                            return Math.toDegrees(atan(sinh(n)))
+                        }
+                        fun screen(lon:Double,lat:Double)=android.graphics.PointF(((worldX(lon,z)-left)*scale).toFloat(),((worldY(lat,z)-top)*scale).toFloat())
+                        val minLon=left/(256.0*(1 shl z))*360.0-180.0
+                        val maxLon=(left+size.width/scale)/(256.0*(1 shl z))*360.0-180.0
+                        val maxLat=inverseY(top)
+                        val minLat=inverseY(top+size.height/scale)
+                        val grid=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.argb(95,65,91,78);strokeWidth=1f;style=Paint.Style.STROKE}
+                        val label=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(54,76,63);textSize=18f;typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)}
+                        val lonStart=floor(minLon/interval).toInt()
+                        val lonEnd=ceil(maxLon/interval).toInt()
+                        for(k in lonStart..lonEnd) {
+                            val lon=k*interval
+                            val p1=screen(lon,minLat);val p2=screen(lon,maxLat)
+                            canvas.drawLine(p1.x,p1.y,p2.x,p2.y,grid)
+                            if(p1.x in 0f..size.width) canvas.drawText(String.format(Locale.US,"%.3f°",lon),p1.x+3f,size.height-7f,label)
+                        }
+                        val latStart=floor(minLat/interval).toInt()
+                        val latEnd=ceil(maxLat/interval).toInt()
+                        for(k in latStart..latEnd) {
+                            val lat=k*interval
+                            val p1=screen(minLon,lat);val p2=screen(maxLon,lat)
+                            canvas.drawLine(p1.x,p1.y,p2.x,p2.y,grid)
+                            if(p1.y in 18f..size.height) canvas.drawText(String.format(Locale.US,"%.3f°",lat),5f,p1.y-4f,label)
+                        }
+                    }
                     if(points.isNotEmpty()) {
                         fun point(p:Pair<Double,Double>)=android.graphics.PointF(((worldX(p.second,z)-left)*scale).toFloat(),((worldY(p.first,z)-top)*scale).toFloat())
                         val rp=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=5f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}

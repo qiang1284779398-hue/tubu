@@ -43,6 +43,7 @@ class TrailNavigationService : Service(), LocationListener {
             ACTION_START_RECORDING -> beginRecording(intent?.getStringExtra(EXTRA_PROJECT_ID) ?: "default")
         }
         startForeground(notificationId,buildNotification("正在启动 GPS 定位…"))
+        try { manager.removeUpdates(this) } catch(_:Exception) {}
         val fine=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
         val coarse=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
         if(!fine && !coarse) {
@@ -53,16 +54,16 @@ class TrailNavigationService : Service(), LocationListener {
         try {
             var providersRequested=0
             if(fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,0f,this)
+                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,0f,this,android.os.Looper.getMainLooper())
                 manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let(::onLocationChanged)
                 providersRequested++
             }
             if(manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,2500L,0f,this)
+                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,2500L,0f,this,android.os.Looper.getMainLooper())
                 manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)?.let(::onLocationChanged)
                 providersRequested++
             }
-            try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,5000L,0f,this); providersRequested++ } catch(_:Exception) {}
+            try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,5000L,0f,this,android.os.Looper.getMainLooper()); providersRequested++ } catch(_:Exception) {}
             if(providersRequested==0) updateNotification("定位源未启用，请打开手机系统定位")
         } catch(_:SecurityException) {
             updateNotification("定位权限不足")

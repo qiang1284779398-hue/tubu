@@ -105,8 +105,6 @@ class TrailNavigationService : Service(), LocationListener {
     }
 
     private fun buildNotification(message:String):Notification {
-        val stopIntent=Intent(this,TrailNavigationService::class.java).setAction(ACTION_STOP)
-        val stopPending=PendingIntent.getService(this,1,stopIntent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val openIntent=packageManager.getLaunchIntentForPackage(packageName)
         val openPending=openIntent?.let{PendingIntent.getActivity(this,2,it,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)}
         val builder=if(Build.VERSION.SDK_INT>=26) Notification.Builder(this,channelId) else Notification.Builder(this)
@@ -114,7 +112,6 @@ class TrailNavigationService : Service(), LocationListener {
             .setContentTitle("TrailKit · 徒步导航运行中")
             .setContentText(message)
             .setOngoing(true)
-            .addAction(android.R.drawable.ic_media_pause,"停止导航",stopPending)
         if(openPending!=null)builder.setContentIntent(openPending)
         return builder.build()
     }
@@ -138,7 +135,6 @@ class TrailNavigationService : Service(), LocationListener {
     override fun onBind(intent:Intent?):IBinder?=null
 
     companion object {
-        const val ACTION_STOP="com.tubu.trailkit.STOP_NAVIGATION"
         const val ACTION_START_RECORDING="com.tubu.trailkit.START_RECORDING"
         const val ACTION_STOP_RECORDING="com.tubu.trailkit.STOP_RECORDING"
     }

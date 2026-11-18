@@ -344,7 +344,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0,180,100,180),-1))
                     else vibrator.vibrate(longArrayOf(0,180,100,180),-1)
                 } catch(_:Exception) {}
-                android.widget.Toast.makeText(context,"已到达途经点：${closestWaypoint.name}",android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(context,"已到达途经点：${closestWaypoint.name}",android.widget.Toast.LENGTH_LONG).show()\n                speakNavigation("已到达途经点，${closestWaypoint.name}")
             }
         }
     }
@@ -391,7 +391,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 val vibrator=context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                 if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createOneShot(260L,VibrationEffect.DEFAULT_AMPLITUDE))
                 else vibrator.vibrate(260L)
-                lastVibrationAt=System.currentTimeMillis()
+                lastVibrationAt=System.currentTimeMillis()\n                speakNavigation("警告，已偏离 GPX 徒步路线，请核对地图和当前位置")
             } catch(_:Exception) {}
         }
         if(off) offRouteWas=true
@@ -892,6 +892,15 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
                     OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
                     OutlinedButton(onClick={if(current!=null){centerLat=current!!.latitude;centerLon=current!!.longitude;followGps=true}else if(navigationPoints.isNotEmpty()){centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second}} ,modifier=Modifier.weight(1f)){Text("回到当前位置")}
+                }
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                    Checkbox(checked=voiceGuidance,onCheckedChange={
+                        voiceGuidance=it
+                        prefs.edit().putBoolean("voice_$projectId",it).apply()
+                        if(it && voiceReady.value) speakNavigation("语音导航已开启")
+                    })
+                    Text("语音播报途经点到达和偏航提醒",fontSize=12.sp)
+                    if(voiceGuidance && !voiceReady.value) Text("语音引擎启动中",fontSize=10.sp,color=Color(0xFF9A6A25))
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}

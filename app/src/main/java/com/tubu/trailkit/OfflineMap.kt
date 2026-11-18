@@ -162,12 +162,16 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val prefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
     var voiceGuidance by remember(projectId){mutableStateOf(prefs.getBoolean("voice_$projectId",false))}
     val voiceReady=remember{mutableStateOf(false)}
+    val voiceInitComplete=remember{mutableStateOf(false)}
     val textToSpeech=remember(context) {
         lateinit var engine:TextToSpeech
         engine=TextToSpeech(context) { status ->
             if(status==TextToSpeech.SUCCESS) {
-                engine.language=Locale.SIMPLIFIED_CHINESE
-                voiceReady.value=true
+                voiceReady.value=engine.setLanguage(Locale.SIMPLIFIED_CHINESE)>=TextToSpeech.LANG_AVAILABLE
+            }
+            voiceInitComplete.value=true
+            if(status!=TextToSpeech.SUCCESS) voiceReady.value=false
+        }
             }
         }
         engine
@@ -900,7 +904,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         if(it && voiceReady.value) speakNavigation("语音导航已开启")
                     })
                     Text("语音播报途经点到达和偏航提醒",fontSize=12.sp)
-                    if(voiceGuidance && !voiceReady.value) Text("语音引擎启动中",fontSize=10.sp,color=Color(0xFF9A6A25))
+                    if(voiceGuidance && !voiceReady.value) Text(if(voiceInitComplete.value)"语音不可用" else "语音启动中",fontSize=10.sp,color=Color(0xFF9A6A25))
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}

@@ -26,6 +26,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -226,7 +227,8 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         Text("当前没有可读取的 MBTiles 地图。导入地图包后，这里会显示真实地形；现在仍可使用 GPS + GPX 轨迹进行基础跟随导航。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF76521D))
                     }
                 }
-                Canvas(Modifier.fillMaxWidth().height(310.dp).pointerInput(active) {
+                Canvas(Modifier.fillMaxWidth().height(310.dp)
+                    .pointerInput(active) {
                     detectTransformGestures { _,pan,zoomChange,_ ->
                             val minZ=(info?.minZoom?:3).toFloat();val maxZ=(info?.maxZoom?:18).toFloat()
                             val next=(zoom+ln(zoomChange)/ln(2.0).toFloat()).coerceIn(minZ,maxZ)
@@ -240,6 +242,23 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             centerLat=(atan(sinh(n))*180.0/Math.PI).coerceIn(-85.0,85.0)
                             zoom=next
                     }
+                }.pointerInput(zoom,centerLon,centerLat) {
+                    detectTapGestures(onLongPress={offset->
+                        val z=zoom.roundToInt()
+                        val scale=2.0.pow((zoom-z).toDouble())
+                        val world=256.0*(1 shl z)
+                        val left=worldX(centerLon,z)-size.width/(2.0*scale)
+                        val top=worldY(centerLat,z)-size.height/(2.0*scale)
+                        val px=left+offset.x/scale
+                        val py=top+offset.y/scale
+                        val lon=(px/world*360.0-180.0).coerceIn(-180.0,180.0)
+                        val n=Math.PI-2.0*Math.PI*py/world
+                        val lat=Math.toDegrees(atan(sinh(n))).coerceIn(-85.0,85.0)
+                        val coords=String.format(Locale.US,"%.6f, %.6f",lat,lon)
+                        val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("地图坐标",coords))
+                        android.widget.Toast.makeText(context,"已复制地图位置：$coords",android.widget.Toast.LENGTH_LONG).show()
+                    })
                 }) {
                     val canvas=drawContext.canvas.nativeCanvas
                     canvas.drawColor(android.graphics.Color.rgb(239,242,235))

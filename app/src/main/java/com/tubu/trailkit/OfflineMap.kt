@@ -74,7 +74,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     DisposableEffect(db) { onDispose { try{db?.close()}catch(_:Exception){} } }
     val info=remember(db) { try{db?.let(::readMbInfo)}catch(_:Exception){null} }
     val points=remember(encoded){decodeTrackPoints(encoded)}
-    var reverseRoute by remember(projectId){mutableStateOf(false)}
+    var reverseRoute by remember(projectId){mutableStateOf(context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE).getBoolean("reverse_$projectId",false))}
     val navigationPoints=remember(points,reverseRoute){if(reverseRoute)points.asReversed() else points}
     val waypoints=remember(encodedWaypoints){decodeGpxWaypoints(encodedWaypoints)}
     val customWaypointPrefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
@@ -103,7 +103,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     }
     val elevationProfile=remember(encodedElevations){decodeGpxElevations(encodedElevations)}
     val navigationElevations=remember(elevationProfile,reverseRoute){if(reverseRoute)elevationProfile.asReversed() else elevationProfile}
-    val elevationStats=remember(elevationProfile){
+    val elevationStats=remember(navigationElevations){
         val pairs=navigationElevations.zipWithNext().filter{it.first!=null&&it.second!=null}
         Triple(pairs.sumOf{(a,b)->(b!!-a!!).coerceAtLeast(0.0)},pairs.sumOf{(a,b)->(a!!-b!!).coerceAtLeast(0.0)},navigationElevations.filterNotNull())
     }
@@ -115,8 +115,10 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var followGps by remember { mutableStateOf(true) }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
     var compassAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_UNRELIABLE) }
-    var confirmedProgress by remember(projectId) { mutableDoubleStateOf(0.0) }
-    var lastMatchedSegment by remember(projectId) { mutableIntStateOf(0) }
+    val progressKey="progress_${projectId}_${encoded.hashCode()}_${if(reverseRoute)"rev" else "fwd"}"
+    val segmentKey="segment_${projectId}_${encoded.hashCode()}_${if(reverseRoute)"rev" else "fwd"}"
+    var confirmedProgress by remember(projectId,encoded,reverseRoute) { mutableDoubleStateOf(prefs.getFloat(progressKey,0f).toDouble()) }
+    var lastMatchedSegment by remember(projectId,encoded,reverseRoute) { mutableIntStateOf(prefs.getInt(segmentKey,0)) }
     var offRouteWas by remember(projectId) { mutableStateOf(false) }
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember { mutableStateOf(false) }
@@ -263,8 +265,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         val b=elevationProfile.getOrNull(match.segmentIndex+1)
         if(a!=null&&b!=null) a+(b-a)*match.fraction else current?.takeIf{it.hasAltitude()}?.altitude
     } ?: current?.takeIf{it.hasAltitude()}?.altitude
-    LaunchedEffect(routeMatch,active) {
-        if(routeMatch!=null) { confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters);lastMatchedSegment=routeMatch.segmentIndex }
+    LaunchedEffect(routeMatch,active,reverseRoute) {
+        if(routeMatch!=null) {
+            confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters)
+            lastMatchedSegment=routeMatch.segmentIndex
+            prefs.edit().putFloat(progressKey,confirmedProgress.toFloat()).putInt(segmentKey,lastMatchedSegment).apply()
+        }
         val off=active && routeMatch!=null && (current?.accuracy?:999f)<=50f && routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
         if(off && !offRouteWas && System.currentTimeMillis()-lastVibrationAt>15000L) {
             try {
@@ -728,7 +734,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick={reverseRoute=!reverseRoute;confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear()},modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
+                    OutlinedButton(onClick={reverseRoute=!reverseRoute;context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE).edit().putBoolean("reverse_$projectId",!reverseRoute).apply();confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear()},modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
                     OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
                     OutlinedButton(onClick={if(current!=null){centerLat=current!!.latitude;centerLon=current!!.longitude;followGps=true}else if(navigationPoints.isNotEmpty()){centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second}} ,modifier=Modifier.weight(1f)){Text("回到当前位置")}
                 }

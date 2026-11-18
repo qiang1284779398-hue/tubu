@@ -462,7 +462,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val labelStroke=Paint(labelFill).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
                         var lastLabelX=-1000f;var lastLabelY=-1000f
                         allWaypoints.forEachIndexed { index,wp ->
-                            marker.color=if(index<waypoints.size)android.graphics.Color.rgb(235,151,47) else android.graphics.Color.rgb(48,119,190)
+                            marker.color=if(index<waypoints.size)android.graphics.Color.rgb(235,151,47) else android.graphics.Color.rgb(123,87,164)
                             val x=((worldX(wp.lon,z)-left)*scale).toFloat()
                             val y=((worldY(wp.lat,z)-top)*scale).toFloat()
                             if(x in 0f..size.width && y in 0f..size.height) {
@@ -520,7 +520,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     canvas.drawLine(bx,by-7f,bx,by+5f,overlay);canvas.drawLine(bx+bar,by-7f,bx+bar,by+5f,overlay)
                     canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
                 }
-                Text("绿线：已走   橙线：剩余   蓝点：定位   橙色点：途经点（${allWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Text("绿线：已走   橙线：剩余   蓝点：定位   橙点：GPX途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={measureMode=!measureMode;if(!measureMode)measurePoints.clear()},modifier=Modifier.weight(1f)){Text(if(measureMode)"结束测距" else "地图测距")}
                     OutlinedButton(onClick={measurePoints.clear()},modifier=Modifier.weight(1f),enabled=measurePoints.isNotEmpty()){Text("清除测距点")}

@@ -243,12 +243,22 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             val z=zoom.roundToInt().coerceIn(info?.minZoom?:0,info?.maxZoom?:18)
             val step=max(1,ceil(navigationPoints.size/24.0).toInt())
             val samples=navigationPoints.filterIndexed{index,_->index%step==0 || index==navigationPoints.lastIndex}
+            val minZ=info?.minZoom?:0
             val missing=samples.count { point ->
                 val x=floor(worldX(point.second,z)/256.0).toInt()
                 val y=floor(worldY(point.first,z)/256.0).toInt()
                 val tileX=((x%(1 shl z))+(1 shl z))%(1 shl z)
-                val tileY=(1 shl z)-1-y
-                db.rawQuery("SELECT 1 FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",arrayOf(z.toString(),tileX.toString(),tileY.toString())).use{!it.moveToFirst()}
+                var level=z
+                var found=false
+                while(level>=minZ && !found) {
+                    val shift=z-level
+                    val parentX=tileX shr shift
+                    val parentY=y shr shift
+                    val tmsY=(1 shl level)-1-parentY
+                    found=db.rawQuery("SELECT 1 FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",arrayOf(level.toString(),parentX.toString(),tmsY.toString())).use{it.moveToFirst()}
+                    level--
+                }
+                !found
             }
             missing to samples.size
         } catch(_:Exception) { null }

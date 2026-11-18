@@ -121,26 +121,26 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
     var active by remember(projectId) { mutableStateOf(false) }
     var current by remember(projectId) { mutableStateOf<Location?>(null) }
-    var gpsError by remember { mutableStateOf("") }
-    var followGps by remember { mutableStateOf(true) }
+    var gpsError by remember(projectId) { mutableStateOf("") }
+    var followGps by remember(projectId) { mutableStateOf(true) }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
     var compassAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_UNRELIABLE) }
     val progressKey="progress_${projectId}_${encoded.hashCode()}_${if(reverseRoute)"rev" else "fwd"}"
     val segmentKey="segment_${projectId}_${encoded.hashCode()}_${if(reverseRoute)"rev" else "fwd"}"
     var confirmedProgress by remember(projectId,encoded,reverseRoute) { mutableDoubleStateOf(prefs.getFloat(progressKey,0f).toDouble()) }
     var lastMatchedSegment by remember(projectId,encoded,reverseRoute) { mutableIntStateOf(prefs.getInt(segmentKey,0)) }
-    var offRouteWas by remember(projectId) { mutableStateOf(false) }
+    var offRouteWas by remember(projectId,encoded,reverseRoute) { mutableStateOf(false) }
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember(projectId) { mutableStateOf(false) }
-    var showWaypointList by remember { mutableStateOf(false) }
-    var editingCustomWaypoint by remember { mutableStateOf<GpxWaypoint?>(null) }
-    var waypointNameDraft by remember { mutableStateOf("") }
+    var showWaypointList by remember(projectId) { mutableStateOf(false) }
+    var editingCustomWaypoint by remember(projectId) { mutableStateOf<GpxWaypoint?>(null) }
+    var waypointNameDraft by remember(projectId) { mutableStateOf("") }
     var measureMode by remember(projectId) { mutableStateOf(false) }
     val measurePoints=remember(projectId){mutableStateListOf<Pair<Double,Double>>()}
     val measureDistance=remember(measurePoints.toList()){measurePoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val recordedPoints = remember(projectId) { mutableStateListOf<Location>() }
-    var recordingClockTick by remember { mutableLongStateOf(0L) }
-    var gpsStatusTick by remember { mutableLongStateOf(0L) }
+    var recordingClockTick by remember(projectId) { mutableLongStateOf(0L) }
+    var gpsStatusTick by remember(projectId) { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
         while(active) {
             kotlinx.coroutines.delay(5000L)
@@ -244,7 +244,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
     val trueHeading=if(heading.isNaN()) Float.NaN else (heading+magneticDeclination+360f)%360f
     val routeMatch=cp?.let { matchRoute(navigationPoints,it,lastMatchedSegment) }
     val closestWaypoint=if(cp!=null) allWaypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
-    val announcedWaypoints = remember(projectId) { mutableStateListOf<Int>() }
+    val announcedWaypoints = remember(projectId,encoded) { mutableStateListOf<Int>() }
     LaunchedEffect(active, closestWaypoint, current?.accuracy) {
         if(active && cp!=null && closestWaypoint!=null && (current?.accuracy ?: 999f)<=25f) {
             val index=allWaypoints.indexOf(closestWaypoint)

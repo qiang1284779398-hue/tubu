@@ -102,7 +102,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         val halfWidth=parent.width/2
         val halfHeight=parent.height/2
         val crop=Bitmap.createBitmap(parent,(x%2)*halfWidth,(y%2)*halfHeight,halfWidth,halfHeight)
-        Bitmap.createScaledBitmap(crop,256,256,true).also{cache.put(key,it)}
+        val scaled=Bitmap.createScaledBitmap(crop,256,256,true)
+        if(crop!==scaled) crop.recycle()
+        scaled.also{cache.put(key,it)}
     } catch(_:Exception) { null }
 }
 

@@ -240,8 +240,8 @@ fun TrailKitApp() {
                 navigationIcon={ if(project!=null) IconButton(onClick={selected=null}) { Icon(Icons.Default.ArrowBack,"返回") } },
                 actions={
                     if(project!=null) {
-                        IconButton(onClick={makePoster(context,project)}) { Icon(Icons.Default.Image,"生成海报") }
-                        IconButton(onClick={itineraryProjectId=project.id}) { Icon(Icons.Default.Landscape,"行程信息") }
+                        if(projectPage=="gear") IconButton(onClick={makePoster(context,project)}) { Icon(Icons.Default.Image,"生成海报") }
+                        if(projectPage=="nav") IconButton(onClick={itineraryProjectId=project.id}) { Icon(Icons.Default.Landscape,"行程信息") }
                     } else {
                         IconButton(onClick={exportBackup.launch("TrailKit-备份.json")}) { Icon(Icons.Default.Image,"导出备份") }
                         IconButton(onClick={importBackup.launch(arrayOf("application/json","text/*"))}) { Icon(Icons.Default.Add,"恢复备份") }
@@ -249,7 +249,7 @@ fun TrailKitApp() {
                 }
             )
         }, floatingActionButton={
-            FloatingActionButton(onClick={ if(project==null) projectDialog=true else {editing=null;chosenPhoto="";gearDialog=true} },containerColor=forest,contentColor=androidx.compose.ui.graphics.Color.White) { Icon(Icons.Default.Add,"新增") }
+            if(project==null || projectPage=="gear") FloatingActionButton(onClick={ if(project==null) projectDialog=true else {editing=null;chosenPhoto="";gearDialog=true} },containerColor=forest,contentColor=androidx.compose.ui.graphics.Color.White) { Icon(Icons.Default.Add,"新增") }
         }) { padding ->
             if(project==null) {
                 LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(14.dp),contentPadding=PaddingValues(top=18.dp,bottom=90.dp)) {

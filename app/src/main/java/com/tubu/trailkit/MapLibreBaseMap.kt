@@ -59,7 +59,7 @@ internal fun MapLibreBaseMap(
                     .build()
                 chain.proceed(request)
             }.build()
-        HttpRequestUtil().setOkHttpClient(http)
+        HttpRequestUtil.setOkHttpClient(http)
         MapView(context).also { it.onCreate(null) }
     }
     var map by remember(mapView) { mutableStateOf<MapLibreMap?>(null) }
@@ -72,7 +72,6 @@ internal fun MapLibreBaseMap(
                 Lifecycle.Event.ON_RESUME -> mapView.onResume()
                 Lifecycle.Event.ON_PAUSE -> mapView.onPause()
                 Lifecycle.Event.ON_STOP -> mapView.onStop()
-                Lifecycle.Event.ON_LOW_MEMORY -> mapView.onLowMemory()
                 else -> Unit
             }
         }
@@ -94,7 +93,8 @@ internal fun MapLibreBaseMap(
                 nativeMap.uiSettings.isCompassEnabled = false
                 nativeMap.addOnCameraIdleListener {
                     val pos = nativeMap.cameraPosition
-                    cameraCallback(pos.target.latitude, pos.target.longitude, pos.zoom.toFloat())
+                    val target = pos.target
+                    if (target != null) cameraCallback(target.latitude, target.longitude, pos.zoom.toFloat())
                 }
                 nativeMap.addOnMapClickListener { point ->
                     tapCallback(point.latitude, point.longitude)
@@ -119,8 +119,9 @@ internal fun MapLibreBaseMap(
             val nativeMap = map
             if (ready && nativeMap != null) {
                 val p = nativeMap.cameraPosition
-                if (abs(p.target.latitude - centerLat) > 0.00015 ||
-                    abs(p.target.longitude - centerLon) > 0.00015 ||
+                val target = p.target
+                if (target == null || abs(target.latitude - centerLat) > 0.00015 ||
+                    abs(target.longitude - centerLon) > 0.00015 ||
                     abs(p.zoom - zoom.toDouble()) > 0.08) {
                     nativeMap.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(centerLat, centerLon))

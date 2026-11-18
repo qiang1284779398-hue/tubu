@@ -311,6 +311,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         } catch(_:Exception) { gpsError="路线 GPX 导出失败，请检查保存位置" }
     }
     val viewPrefs=remember(projectId,path){context.getSharedPreferences("trailkit_map_view",Context.MODE_PRIVATE)}
+    var precisionMode by remember(projectId){mutableStateOf(prefs.getBoolean("precision_mode_$projectId",false))}
+    val zoomLimit = if(precisionMode) 20f else 18f
     // Use a versioned camera key so stale zoom/center values from the previous
     // map renderer cannot open the new MapLibre navigation view at a world-scale zoom.
     val viewKey="${projectId}_${path.hashCode()}_routefit2"
@@ -331,7 +333,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             val width=context.resources.displayMetrics.widthPixels*0.78
             val height=310.0*context.resources.displayMetrics.density*0.72
             val fitScale=min((width-48.0)/dx,(height-48.0)/dy).coerceAtLeast(0.25)
-            (ln(fitScale)/ln(2.0)).toFloat().coerceIn(2f,18f)
+            (ln(fitScale)/ln(2.0)).toFloat().coerceIn(2f,20f)
         } else (info?.centerZoom?:12f).coerceIn(2f,18f)
     }
     var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$viewKey",initialRouteZoom).coerceIn(2f,18f))}
@@ -676,6 +678,14 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     Text("导入 GPX 轨迹后，可按路线范围下载离线地图。", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected=precisionMode,onClick={
+                        precisionMode=!precisionMode
+                        prefs.edit().putBoolean("precision_mode_$projectId",precisionMode).apply()
+                        zoom=zoom.coerceAtMost(if(precisionMode)20f else 18f)
+                    },label={Text(if(precisionMode)"精确模式·开" else "精确模式")})
+                    Text(if(precisionMode)"放大上限 20 级；超出地图原始细节时可能只是放大现有数据" else "普通模式：最高 18 级",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary,modifier=Modifier.align(Alignment.CenterVertically))
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected=mapOrientation=="north",onClick={mapOrientation="north";prefs.edit().putString("orientation_$projectId","north").apply()},label={Text("北向上")})
                     FilterChip(selected=mapOrientation=="heading",onClick={mapOrientation="heading";prefs.edit().putString("orientation_$projectId","heading").apply()},label={Text("航向朝上")})
                     FilterChip(selected=mapOrientation=="track",onClick={mapOrientation="track";prefs.edit().putString("orientation_$projectId","track").apply()},label={Text("轨迹朝上")})
@@ -691,7 +701,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         onCameraChanged = { lat, lon, z ->
                             centerLat = lat
                             centerLon = lon
-                            zoom = z.coerceIn(2f, 18f)
+                            zoom = z.coerceIn(2f, zoomLimit)
                         },
                         onTap = { lat, lon -> if (measureMode) measurePoints.add(lat to lon) },
                         onProjectionChanged = { projector -> mapProjector = projector },
@@ -1158,7 +1168,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}
-                    OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost((info?.maxZoom?:18).toFloat())},modifier=Modifier.weight(1f)){Text("+ 放大")}
+                    OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost(zoomLimit)},modifier=Modifier.weight(1f)){Text("+ 放大")}
                     OutlinedButton(onClick={confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear();announcedApproaches.clear();announcedTurns.clear();lastTurnAnnouncementProgress=-1000.0;prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()},modifier=Modifier.weight(1f)){Text("重置进度")}
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -1172,7 +1182,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             val width=context.resources.displayMetrics.widthPixels*0.86
                             val height=310.0*context.resources.displayMetrics.density
                             val fitScale=min((width-80.0)/dx,(height-80.0)/dy).coerceAtLeast(1.0)
-                            zoom=(ln(fitScale)/ln(2.0)).toFloat().coerceIn((info?.minZoom?:3).toFloat(),(info?.maxZoom?:18).toFloat())
+                            zoom=(ln(fitScale)/ln(2.0)).toFloat().coerceIn((info?.minZoom?:3).toFloat(),zoomLimit)
                             followGps=false
                         }
                     },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text("全览整条路线")}

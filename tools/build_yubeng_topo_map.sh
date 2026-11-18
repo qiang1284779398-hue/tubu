@@ -94,7 +94,7 @@ sqlite3 "${WORK}/yubeng_topo.mbtiles" <<'SQL'
 INSERT OR REPLACE INTO metadata(name,value) VALUES
 ('attribution','Produced using Copernicus WorldDEM-30 © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA; all rights reserved.'),
 ('minzoom','10'),
-('maxzoom','15');
+('maxzoom','15'),\n('center','98.81,28.385,13');
 SQL
 
 sqlite3 "${WORK}/yubeng_topo.mbtiles" "SELECT name,value FROM metadata WHERE name IN ('name','format','minzoom','maxzoom','bounds','center','attribution');"

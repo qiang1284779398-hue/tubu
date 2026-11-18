@@ -427,6 +427,10 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val start=point(navigationPoints.first());val end=point(navigationPoints.last())
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,130,75);style=Paint.Style.FILL}
                         canvas.drawCircle(start.x,start.y,7f,marker);marker.color=android.graphics.Color.rgb(205,78,58);canvas.drawCircle(end.x,end.y,7f,marker)
+                        val endpointText=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(45,58,48);textSize=23f;typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)}
+                        val endpointHalo=Paint(endpointText).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
+                        canvas.drawText("起点",start.x+10f,start.y-10f,endpointHalo);canvas.drawText("起点",start.x+10f,start.y-10f,endpointText)
+                        canvas.drawText("终点",end.x+10f,end.y-10f,endpointHalo);canvas.drawText("终点",end.x+10f,end.y-10f,endpointText)
                     }
                     if(allWaypoints.isNotEmpty()) {
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(235,151,47);style=Paint.Style.FILL}

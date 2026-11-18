@@ -342,7 +342,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             val lon=k*interval
                             val p1=screen(lon,minLat);val p2=screen(lon,maxLat)
                             canvas.drawLine(p1.x,p1.y,p2.x,p2.y,grid)
-                            if(p1.x in 0f..size.width) canvas.drawText(String.format(Locale.US,"%.3f°",lon),p1.x+3f,size.height-7f,label)
+                            if(p1.x in 0f..size.width) canvas.drawText(String.format(Locale.US,"%.3f°%s",kotlin.math.abs(lon),if(lon>=0)"E" else "W"),p1.x+3f,size.height-7f,label)
                         }
                         val latStart=floor(minLat/interval).toInt()
                         val latEnd=ceil(maxLat/interval).toInt()
@@ -350,7 +350,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             val lat=k*interval
                             val p1=screen(minLon,lat);val p2=screen(maxLon,lat)
                             canvas.drawLine(p1.x,p1.y,p2.x,p2.y,grid)
-                            if(p1.y in 18f..size.height) canvas.drawText(String.format(Locale.US,"%.3f°",lat),5f,p1.y-4f,label)
+                            if(p1.y in 18f..size.height) canvas.drawText(String.format(Locale.US,"%.3f°%s",kotlin.math.abs(lat),if(lat>=0)"N" else "S"),5f,p1.y-4f,label)
                         }
                     }
                     if(navigationPoints.isNotEmpty()) {

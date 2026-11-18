@@ -90,6 +90,24 @@ private fun persist(context:Context, projects:List<Project>) {
 }
 private fun yuan(v:Double)="¥"+String.format(Locale.CHINA,"%.2f",v)
 
+private fun deleteProjectNavigationData(context:Context,project:Project) {
+    File(context.filesDir,"trailkit_track_${project.id.hashCode()}.gpx").delete()
+    val navigation=context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)
+    val routeHash=project.trackData.hashCode()
+    navigation.edit()
+        .remove("custom_waypoints_${project.id}")
+        .remove("reverse_${project.id}")
+        .remove("offroute_${project.id}")
+        .remove("progress_${project.id}_${routeHash}_fwd")
+        .remove("progress_${project.id}_${routeHash}_rev")
+        .remove("segment_${project.id}_${routeHash}_fwd")
+        .remove("segment_${project.id}_${routeHash}_rev")
+        .apply()
+    val view=context.getSharedPreferences("trailkit_map_view",Context.MODE_PRIVATE)
+    val viewKey="${project.id}_${project.mapPath.hashCode()}"
+    view.edit().remove("zoom_$viewKey").remove("lon_$viewKey").remove("lat_$viewKey").apply()
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TrailKitApp() {
@@ -439,6 +457,7 @@ fun TrailKitApp() {
             confirmButton = {
                 TextButton(onClick = {
                     val id = deleteProjectId
+                    projects.firstOrNull { it.id == id }?.let { deleteProjectNavigationData(context,it) }
                     save(projects.filterNot { it.id == id })
                     if (selected == id) selected = null
                     deleteProjectId = null

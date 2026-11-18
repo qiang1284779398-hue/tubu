@@ -80,6 +80,32 @@ private fun recoverRecordedGpx(file:File):ByteArray {
 }
 private fun projectTrackFile(context:Context,projectId:String)=File(context.filesDir,"trailkit_track_${projectId.hashCode()}.gpx")
 
+private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:LruCache<String,Bitmap>):Bitmap? {
+    val key="$z/$x/$y"
+    cache.get(key)?.let{return it}
+    var direct:Bitmap?=null
+    try {
+        db.rawQuery("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",arrayOf(z.toString(),x.toString(),((1 shl z)-1-y).toString())).use { cursor ->
+            if(cursor.moveToFirst()) {
+                val bytes=cursor.getBlob(0)
+                direct=BitmapFactory.decodeByteArray(bytes,0,bytes.size)
+            }
+        }
+    } catch(_:Exception) {}
+    if(direct!=null) {
+        cache.put(key,direct!!)
+        return direct
+    }
+    if(z<=minZoom) return null
+    val parent=loadMbTile(db,z-1,x/2,y/2,minZoom,cache) ?: return null
+    return try {
+        val halfWidth=parent.width/2
+        val halfHeight=parent.height/2
+        val crop=Bitmap.createBitmap(parent,(x%2)*halfWidth,(y%2)*halfHeight,halfWidth,halfHeight)
+        Bitmap.createScaledBitmap(crop,256,256,true).also{cache.put(key,it)}
+    } catch(_:Exception) { null }
+}
+
 @Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",encodedElevations:String="[]",onClose:()->Unit) {
     val context=androidx.compose.ui.platform.LocalContext.current
     val db=remember(path) { if(path.isBlank()) null else try { SQLiteDatabase.openDatabase(path,null,SQLiteDatabase.OPEN_READONLY) } catch(_:Exception){null} }
@@ -437,20 +463,10 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                             if(ty !in 0 until (1 shl z))continue
                             val wrapped=((tx%(1 shl z))+(1 shl z))%(1 shl z)
                             try {
-                                val key="$z/$wrapped/$ty"
-                                var bitmap=tileCache.get(key)
-                                if(bitmap==null) {
-                                    db.rawQuery("SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=?",arrayOf(z.toString(),wrapped.toString(),((1 shl z)-1-ty).toString())).use { c ->
-                                        if(c.moveToFirst()) {
-                                            val bytes=c.getBlob(0)
-                                            bitmap=BitmapFactory.decodeByteArray(bytes,0,bytes.size)
-                                            if(bitmap!=null) tileCache.put(key,bitmap!!)
-                                        }
-                                    }
-                                }
+                                val bitmap=loadMbTile(db,z,wrapped,ty,info.minZoom, tileCache)
                                 if(bitmap!=null) {
                                     val x=((tx*256.0-left)*scale).toFloat();val y=((ty*256.0-top)*scale).toFloat()
-                                    canvas.drawBitmap(bitmap!!,null,RectF(x,y,x+256f*scale,y+256f*scale),paint)
+                                    canvas.drawBitmap(bitmap,null,RectF(x,y,x+256f*scale,y+256f*scale),paint)
                                 }
                             } catch(_:Exception) {}
                         }

@@ -333,8 +333,12 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.second)}
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
     var mapProjector by remember(projectId,path) { mutableStateOf<((Double,Double)->android.graphics.PointF)?>(null) }
-    var mapLayer by remember(projectId) { mutableStateOf("terrain") }
-    val activeMapStyle = if(mapLayer=="satellite") TRAILKIT_SATELLITE_STYLE else TRAILKIT_TERRAIN_STYLE
+    var mapLayer by remember(projectId) { mutableStateOf("standard") }
+    val activeMapStyle = when(mapLayer) {
+        "satellite" -> TRAILKIT_SATELLITE_STYLE
+        "terrain" -> TRAILKIT_TERRAIN_STYLE
+        else -> TRAILKIT_MAP_STYLE
+    }
     LaunchedEffect(projectId,path,zoom,centerLon,centerLat) {
         kotlinx.coroutines.delay(450L)
         viewPrefs.edit().putFloat("zoom_$viewKey",zoom).putString("lon_$viewKey",centerLon.toString()).putString("lat_$viewKey",centerLat.toString()).apply()

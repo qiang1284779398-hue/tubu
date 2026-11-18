@@ -89,6 +89,17 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         }
     }
     val allWaypoints=waypoints+customWaypoints
+    fun persistCustomWaypoints() {
+        val saved=JSONArray()
+        customWaypoints.forEach{wp->saved.put(JSONObject().put("lat",wp.lat).put("lon",wp.lon).put("name",wp.name))}
+        customWaypointPrefs.edit().putString("custom_waypoints_$projectId",saved.toString()).apply()
+    }
+    fun addCustomWaypoint(lat:Double,lon:Double) {
+        val markerName="地图标记 ${customWaypoints.size+1}"
+        customWaypoints.add(GpxWaypoint(lat,lon,markerName))
+        persistCustomWaypoints()
+        android.widget.Toast.makeText(context,"已添加标记：$markerName",android.widget.Toast.LENGTH_LONG).show()
+    }
     val elevationProfile=remember(encodedElevations){decodeGpxElevations(encodedElevations)}
     val navigationElevations=remember(elevationProfile,reverseRoute){if(reverseRoute)elevationProfile.asReversed() else elevationProfile}
     val elevationStats=remember(elevationProfile){
@@ -313,12 +324,8 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val coords=String.format(Locale.US,"%.6f, %.6f",lat,lon)
                         val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("地图坐标",coords))
-                        val markerName="地图标记 ${customWaypoints.size+1}"
-                        customWaypoints.add(GpxWaypoint(lat,lon,markerName))
-                        val saved=JSONArray()
-                        customWaypoints.forEach{wp->saved.put(JSONObject().put("lat",wp.lat).put("lon",wp.lon).put("name",wp.name))}
-                        customWaypointPrefs.edit().putString("custom_waypoints_$projectId",saved.toString()).apply()
-                        android.widget.Toast.makeText(context,"已添加标记：$markerName（$coords）",android.widget.Toast.LENGTH_LONG).show()
+                        addCustomWaypoint(lat,lon)
+                        android.widget.Toast.makeText(context,"坐标：$coords",android.widget.Toast.LENGTH_SHORT).show()
                     })
                 }) {
                     val canvas=drawContext.canvas.nativeCanvas
@@ -614,6 +621,10 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 }
                 if(current!=null) OutlinedButton(onClick={
                     val loc=current!!
+                    addCustomWaypoint(loc.latitude,loc.longitude)
+                },modifier=Modifier.fillMaxWidth()) { Text("将当前位置保存为标记点") }
+                if(current!=null) OutlinedButton(onClick={
+                    val loc=current!!
                     val coordinates=String.format(Locale.US,"%.6f, %.6f",loc.latitude,loc.longitude)
                     val mapUrl="https://maps.google.com/?q=${loc.latitude},${loc.longitude}"
                     val message="我的 TrailKit 徒步位置：$coordinates\n地图：$mapUrl\nGPS 精度：±${loc.accuracy.roundToInt()} 米\n请根据现场情况协助确认位置。"
@@ -643,9 +654,8 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             }
                             if(index>=waypoints.size) OutlinedButton(onClick={
                                 customWaypoints.remove(wp)
-                                val saved=JSONArray()
-                                customWaypoints.forEach{item->saved.put(JSONObject().put("lat",item.lat).put("lon",item.lon).put("name",item.name))}
-                                customWaypointPrefs.edit().putString("custom_waypoints_$projectId",saved.toString()).apply()
+                                persistCustomWaypoints()
+                                announcedWaypoints.clear()
                             }) { Text("删除") }
                         }
                     }

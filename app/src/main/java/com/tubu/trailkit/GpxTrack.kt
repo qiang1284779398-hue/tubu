@@ -35,7 +35,7 @@ fun readGpxTrack(context:Context,uri:Uri):GpxTrackResult {
  }
  val meters=points.zipWithNext().sumOf{segment(it.first,it.second)}
  val ascent=elevations.zipWithNext().sumOf{(a,b)->if(a!=null&&b!=null)(b-a).coerceAtLeast(0.0)else 0.0}
- val elevationJson=JSONArray();elevations.forEach{elevationJson.put(elevation?:JSONObject.NULL)}
+ val elevationJson=JSONArray();elevations.forEach{elevationJson.put(it?:JSONObject.NULL)}
  val json=JSONArray();points.forEach{json.put(JSONArray().put(it.first).put(it.second))}
  val summary="GPX轨迹："+points.size+" 个轨迹点 · "+String.format(Locale.CHINA,"%.2f",meters/1000.0)+" km · 累计爬升约 "+ascent.roundToInt()+" m · "+waypoints.length()+" 个途经点"
  return GpxTrackResult(summary,json.toString(),waypoints.toString(),elevationJson.toString())

@@ -141,7 +141,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     } catch(_:Exception) { null }
 }
 
-@Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",encodedElevations:String="[]",onClose:()->Unit) {
+@Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",encodedElevations:String="[]",visible:Boolean=true,onClose:()->Unit) {
     val context=androidx.compose.ui.platform.LocalContext.current
     val db=remember(path) { if(path.isBlank()) null else try { SQLiteDatabase.openDatabase(path,null,SQLiteDatabase.OPEN_READONLY) } catch(_:Exception){null} }
     DisposableEffect(db) { onDispose { try{db?.close()}catch(_:Exception){} } }
@@ -583,7 +583,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     }
     val recordingSeconds=if(isRecording) recordingClockTick else 0L
     val recordingElapsedText=String.format(Locale.CHINA,"%02d:%02d",recordingSeconds/60,recordingSeconds%60)
-    DisposableEffect(context) {
+    DisposableEffect(context,visible) {
         val manager=context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val rotationSensor=manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         @Suppress("DEPRECATION")
@@ -614,10 +614,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 if(compassAccuracy!=accuracy) compassAccuracy=accuracy
             }
         }
-        if(sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
+        if(visible && sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
         onDispose { manager.unregisterListener(listener) }
     }
-    Dialog(onDismissRequest={active=false;onClose()}) {
+    if(visible) Dialog(onDismissRequest={onClose()}) {
         Surface(shape=RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().heightIn(max=780.dp)) {
             Column(Modifier.padding(14.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
@@ -625,7 +625,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         Text(if(active)"轨迹跟随导航" else info?.name?:"离线地图导航",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
                         Text(if(info!=null)"离线地形 · ${info.format.uppercase()} · ${info.tileCount} 瓦片 · 缩放 ${info.minZoom}–${info.maxZoom}" else "轨迹导航模式 · 尚未导入离线地图",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.secondary)
                     }
-                    TextButton(onClick={active=false;onClose()}){Text("关闭")}
+                    TextButton(onClick={onClose}){Text("关闭")}
                 }
                 if(db==null || info==null) {
                     Surface(color=Color(0xFFFFF3DD),shape=RoundedCornerShape(10.dp)) {

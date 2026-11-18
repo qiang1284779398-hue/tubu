@@ -511,6 +511,9 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
                     MapStat("方向提示",routeMatch?.let{turnGuidance(heading,it.bearingDegrees.toFloat())}?:"等待定位")
                 }
+                if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) {
+                    Text("罗盘精度不足：远离手机磁吸配件、磁铁和金属物；按手机提示做 8 字形校准，并以纸质指北针复核。",fontSize=10.sp,color=Color(0xFF9A6A25))
+                }
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         MapStat("当前位置",String.format(Locale.US,"%.5f, %.5f",current!!.latitude,current!!.longitude))

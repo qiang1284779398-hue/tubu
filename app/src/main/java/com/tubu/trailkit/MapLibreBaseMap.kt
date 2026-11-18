@@ -91,11 +91,21 @@ internal fun MapLibreBaseMap(
             mapView.getMapAsync { nativeMap ->
                 map = nativeMap
                 nativeMap.uiSettings.isCompassEnabled = false
+                // Keep Compose route overlays synchronized while the user is dragging/zooming.
+                // Waiting for camera-idle leaves GPX overlays visually detached during gestures.
+                nativeMap.addOnCameraMoveListener {
+                    val pos = nativeMap.cameraPosition
+                    val target = pos.target
+                    if (target != null) cameraCallback(target.latitude, target.longitude, pos.zoom.toFloat())
+                }
                 nativeMap.addOnCameraIdleListener {
                     val pos = nativeMap.cameraPosition
                     val target = pos.target
                     if (target != null) cameraCallback(target.latitude, target.longitude, pos.zoom.toFloat())
                 }
+                // The GPX overlay is drawn in an unrotated Web-Mercator screen space.
+                nativeMap.uiSettings.isRotateGesturesEnabled = false
+                nativeMap.uiSettings.isTiltGesturesEnabled = false
                 nativeMap.addOnMapClickListener { point ->
                     tapCallback(point.latitude, point.longitude)
                     true

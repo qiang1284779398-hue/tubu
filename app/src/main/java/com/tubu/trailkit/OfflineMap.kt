@@ -758,6 +758,29 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={
+                        if(navigationPoints.size>=2) {
+                            val minLat=navigationPoints.minOf{it.first};val maxLat=navigationPoints.maxOf{it.first}
+                            val minLon=navigationPoints.minOf{it.second};val maxLon=navigationPoints.maxOf{it.second}
+                            centerLat=(minLat+maxLat)/2.0;centerLon=(minLon+maxLon)/2.0
+                            val dx=(worldX(maxLon,0)-worldX(minLon,0)).coerceAtLeast(1.0)
+                            val dy=(worldY(maxLat,0)-worldY(minLat,0)).coerceAtLeast(1.0)
+                            val width=context.resources.displayMetrics.widthPixels*0.86
+                            val height=310.0*context.resources.displayMetrics.density
+                            val fitScale=min((width-80.0)/dx,(height-80.0)/dy).coerceAtLeast(1.0)
+                            zoom=(ln(fitScale)/ln(2.0)).toFloat().coerceIn((info?.minZoom?:3).toFloat(),(info?.maxZoom?:18).toFloat())
+                            followGps=false
+                        }
+                    },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text("全览整条路线")}
+                    OutlinedButton(onClick={
+                        if(navigationPoints.isNotEmpty()) {
+                            centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second
+                            zoom=(info?.centerZoom?:14f).coerceIn((info?.minZoom?:3).toFloat(),(info?.maxZoom?:18).toFloat())
+                            followGps=false
+                        }
+                    },modifier=Modifier.weight(1f),enabled=navigationPoints.isNotEmpty()){Text("定位路线起点")}
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick={
                         if(isRecording) {
                             isRecording=false
                             hasSavedRecording=true

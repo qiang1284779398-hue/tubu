@@ -224,14 +224,18 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     if(points.isNotEmpty()) {
                         fun point(p:Pair<Double,Double>)=android.graphics.PointF(((worldX(p.second,z)-left)*scale).toFloat(),((worldY(p.first,z)-top)*scale).toFloat())
                         val rp=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=5f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
+                        val snapped=routeMatch?.let { android.graphics.PointF(((worldX(it.snappedLon,z)-left)*scale).toFloat(),((worldY(it.snappedLat,z)-top)*scale).toFloat()) }
                         val remainingPath=AndroidPath()
-                        points.forEachIndexed{i,p->val q=point(p);if(i==nearest)remainingPath.moveTo(q.x,q.y) else if(i>nearest)remainingPath.lineTo(q.x,q.y)}
+                        val firstRemaining=snapped?:point(points[nearest])
+                        remainingPath.moveTo(firstRemaining.x,firstRemaining.y)
+                        for(i in (nearest+1)..points.lastIndex) { val q=point(points[i]);remainingPath.lineTo(q.x,q.y) }
                         rp.color=android.graphics.Color.rgb(218,145,54)
                         if(nearest<points.lastIndex)canvas.drawPath(remainingPath,rp)
                         val passedPath=AndroidPath()
                         points.take(nearest+1).forEachIndexed{i,p->val q=point(p);if(i==0)passedPath.moveTo(q.x,q.y)else passedPath.lineTo(q.x,q.y)}
+                        if(snapped!=null)passedPath.lineTo(snapped.x,snapped.y)
                         rp.color=android.graphics.Color.rgb(30,125,78)
-                        if(nearest>0)canvas.drawPath(passedPath,rp)
+                        if(nearest>0 || snapped!=null)canvas.drawPath(passedPath,rp)
                         val start=point(points.first());val end=point(points.last())
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,130,75);style=Paint.Style.FILL}
                         canvas.drawCircle(start.x,start.y,7f,marker);marker.color=android.graphics.Color.rgb(205,78,58);canvas.drawCircle(end.x,end.y,7f,marker)
@@ -282,8 +286,8 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         MapStat("GPS 精度","±${current!!.accuracy.roundToInt()} m")
-                        MapStat("海拔","%.0f m".format(Locale.CHINA,current!!.altitude))
-                        MapStat("速度","%.1f km/h".format(Locale.CHINA,current!!.speed*3.6f))
+                        MapStat("海拔",if(current!!.hasAltitude())"%.0f m".format(Locale.CHINA,current!!.altitude) else "暂无")
+                        MapStat("速度",if(current!!.hasSpeed())"%.1f km/h".format(Locale.CHINA,current!!.speed*3.6f) else "暂无")
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -312,7 +316,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     },modifier=Modifier.weight(1f),enabled=active || isRecording) { Text(if(isRecording)"停止并导出 GPX（${recordedPoints.size}点）" else "开始记录新轨迹") }
                     OutlinedButton(onClick={recordedPoints.clear();isRecording=false},modifier=Modifier.weight(1f),enabled=!isRecording && recordedPoints.isNotEmpty()) { Text("清空记录") }
                 }
-                if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))
+                if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · ${((System.currentTimeMillis()-recordingStartedAt)/1000).let{String.format(Locale.CHINA,\"%02d:%02d\",it/60,it%60)}} · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))
                 Button(onClick={
                     if(active)active=false else {
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED

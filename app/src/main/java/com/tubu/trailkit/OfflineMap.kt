@@ -268,7 +268,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         }
     }
     var hasSavedRecording by remember(projectId) { mutableStateOf(projectTrackFile(context,projectId).exists()) }
-    val tileCache = remember(path) { object : LruCache<String, android.graphics.Bitmap>(8 * 1024) { override fun sizeOf(key:String,value:android.graphics.Bitmap)=value.byteCount/1024 } }
+    val tileCache = remember(path) { object : LruCache<String, android.graphics.Bitmap>(24 * 1024) { override fun sizeOf(key:String,value:android.graphics.Bitmap)=value.byteCount/1024 } }
     val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
         if(uri!=null) try {
             val body=buildString {
@@ -637,7 +637,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 } else {
                     Text("导入 GPX 轨迹后，可按路线范围下载离线地图。", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                 }
-                Box(Modifier.fillMaxWidth().height(310.dp)) {
+                Box(Modifier.fillMaxWidth().height(420.dp)) {
                     MapLibreBaseMap(
                         centerLat = centerLat,
                         centerLon = centerLon,

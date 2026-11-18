@@ -461,7 +461,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val labelFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(66,55,39);textSize=26f;typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)}
                         val labelStroke=Paint(labelFill).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
                         var lastLabelX=-1000f;var lastLabelY=-1000f
-                        allWaypoints.forEach { wp ->
+                        allWaypoints.forEachIndexed { index,wp ->
                             marker.color=if(index<waypoints.size)android.graphics.Color.rgb(235,151,47) else android.graphics.Color.rgb(48,119,190)
                             val x=((worldX(wp.lon,z)-left)*scale).toFloat()
                             val y=((worldY(wp.lat,z)-top)*scale).toFloat()

@@ -29,6 +29,8 @@ private fun bearingDegrees(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     return (Math.toDegrees(atan2(sin(dl)*cos(p2),cos(p1)*sin(p2)-sin(p1)*cos(p2)*cos(dl)))+360.0)%360.0
 }
 
+fun bearingToPoint(from:Pair<Double,Double>,to:Pair<Double,Double>):Double = bearingDegrees(from,to)
+
 /** Projects a GPS fix onto every GPX segment in a local metric plane. */
 fun matchRoute(points:List<Pair<Double,Double>>,location:Pair<Double,Double>,lastSegmentIndex:Int?=null):RouteMatch? {
     if(points.size<2)return null

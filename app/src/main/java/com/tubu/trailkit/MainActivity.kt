@@ -121,7 +121,6 @@ fun TrailKitApp() {
     var trackOpen by remember { mutableStateOf(false) }
     var gpxTargetProjectId by remember { mutableStateOf<String?>(null) }
     var mapOpen by remember { mutableStateOf(false) }
-    var navigationOpen by remember { mutableStateOf(false) }
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
     val gpxImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) try {
@@ -325,13 +324,12 @@ fun TrailKitApp() {
                                 OutlinedButton(onClick={safetyOpen=true},modifier=Modifier.weight(1f)){Text("安全中心")}
                             }
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick={mapOpen=true},enabled=p.mapPath.isNotBlank(),modifier=Modifier.weight(1f)){Text("离线地形地图")}
+                                OutlinedButton(onClick={mapOpen=true},enabled=p.mapPath.isNotBlank() || p.trackData.isNotBlank(),modifier=Modifier.weight(1f)){Text("地图 / 轨迹导航")}
                                 OutlinedButton(onClick={mapTargetProjectId=p.id;mbtilesImporter.launch(arrayOf("*/*"))},modifier=Modifier.weight(1f)){Text(if(p.mapPath.isBlank())"导入地图包" else "更换地图包")}
                                 OutlinedButton(onClick={trackOpen=true},enabled=p.trackData.isNotBlank(),modifier=Modifier.weight(1f)){Text("轨迹预览")}
                             }
                         }
                     }
-                    if(p.trackData.isNotBlank()) item { Button(onClick={navigationOpen=true},modifier=Modifier.fillMaxWidth()) { Text("开始轨迹导航") } }
                     if(p.gear.isEmpty()) item { Empty("装备清单还是空的","点击右下角 + 添加第一件装备") }
                     categories.forEach { cat ->
                         val filtered=p.gear.filter{it.category==cat && (it.name.contains(searchQuery,true)||it.note.contains(searchQuery,true)) && (!packedOnly || !it.packed)}
@@ -365,8 +363,7 @@ fun TrailKitApp() {
     if (weatherOpen && project != null) TrailWeatherDialog(project.place) { weatherOpen=false }
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
-    if (mapOpen && project != null && project.mapPath.isNotBlank()) OfflineMapDialog(project.mapPath, project.trackData) { mapOpen=false }
-    if (navigationOpen && project != null) TrailNavigationDialog(project.trackData) { navigationOpen=false }
+    if (mapOpen && project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id) { mapOpen=false }
 
     if (advancedToolsOpen && project != null) {
         TrailKitAdvancedDialog(

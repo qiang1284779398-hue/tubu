@@ -9,7 +9,7 @@ TrailKit 是一款面向徒步行程准备、装备管理与离线轨迹导航�
 
 ## 导航能力
 - 导入 GPX 轨迹与 GPX 途经点
-- 导入栅格 MBTiles 离线地图（PNG/JPEG/WebP），自动核对 bounds，并抽样检查当前缩放级别的 GPX 路线瓦片覆盖
+- 导入栅格 MBTiles 离线地图（PNG/JPEG/WebP），自动核对 bounds、抽样检查 GPX 路线瓦片，并在缺瓦片时尝试父级缩放回退
 - GPX 轨迹叠加，已走/剩余路段区分
 - GPS 实时定位、精度、海拔和速度显示
 - GPS 到 GPX 线段投影匹配、进度与剩余距离

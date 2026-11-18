@@ -55,7 +55,7 @@ private val sand = androidx.compose.ui.graphics.Color(0xFFF3F0E7)
 private val muted = androidx.compose.ui.graphics.Color(0xFF78827A)
 
 data class Gear(val id:String,val name:String,val category:String,val price:Double,val quantity:Int,val note:String,val photo:String,val weightGrams:Double=0.0,val packed:Boolean=false,val warrantyUntil:String="",val maintenanceLog:String="")
-data class Project(val id:String,val name:String,val place:String,val date:String,val gear:List<Gear>,val route:String="",val lodging:String="",val resupply:String="",val emergency:String="",val trackData:String="",val mapPath:String="")
+data class Project(val id:String,val name:String,val place:String,val date:String,val gear:List<Gear>,val route:String="",val lodging:String="",val resupply:String="",val emergency:String="",val trackData:String="",val mapPath:String="",val waypointData:String="[]")
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,7 +75,7 @@ private fun load(context:Context): List<Project> = try {
     List(a.length()) { i ->
         val p=a.getJSONObject(i); val ga=p.optJSONArray("gear") ?: JSONArray()
         val gs=List(ga.length()) { j -> val g=ga.getJSONObject(j); Gear(g.optString("id"),g.optString("name"),g.optString("category"),g.optDouble("price"),g.optInt("quantity",1),g.optString("note"),g.optString("photo"),g.optDouble("weightGrams",0.0),g.optBoolean("packed",false),g.optString("warrantyUntil"),g.optString("maintenanceLog")) }
-        Project(p.optString("id"),p.optString("name"),p.optString("place"),p.optString("date"),gs,p.optString("route"),p.optString("lodging"),p.optString("resupply"),p.optString("emergency"),p.optString("trackData"),p.optString("mapPath"))
+        Project(p.optString("id"),p.optString("name"),p.optString("place"),p.optString("date"),gs,p.optString("route"),p.optString("lodging"),p.optString("resupply"),p.optString("emergency"),p.optString("trackData"),p.optString("mapPath"),p.optString("waypointData","[]"))
     }
 } catch (_:Exception) { emptyList() }
 
@@ -84,7 +84,7 @@ private fun persist(context:Context, projects:List<Project>) {
     projects.forEach { p ->
         val ga=JSONArray()
         p.gear.forEach { g -> ga.put(JSONObject().put("id",g.id).put("name",g.name).put("category",g.category).put("price",g.price).put("quantity",g.quantity).put("note",g.note).put("photo",g.photo).put("weightGrams",g.weightGrams).put("packed",g.packed).put("warrantyUntil",g.warrantyUntil).put("maintenanceLog",g.maintenanceLog)) }
-        a.put(JSONObject().put("id",p.id).put("name",p.name).put("place",p.place).put("date",p.date).put("gear",ga).put("route",p.route).put("lodging",p.lodging).put("resupply",p.resupply).put("emergency",p.emergency).put("trackData",p.trackData).put("mapPath",p.mapPath))
+        a.put(JSONObject().put("id",p.id).put("name",p.name).put("place",p.place).put("date",p.date).put("gear",ga).put("route",p.route).put("lodging",p.lodging).put("resupply",p.resupply).put("emergency",p.emergency).put("trackData",p.trackData).put("mapPath",p.mapPath).put("waypointData",p.waypointData))
     }
     context.getSharedPreferences("trailkit",0).edit().putString("projects",a.toString()).apply()
 }
@@ -129,7 +129,7 @@ fun TrailKitApp() {
             val target = gpxTargetProjectId
             if (target != null) {
                 val updated = projects.map { item ->
-                    if (item.id == target) item.copy(route = listOf(item.route, summary).filter { it.isNotBlank() }.joinToString("\n"), trackData=track.encodedPoints) else item
+                    if (item.id == target) item.copy(route = listOf(item.route, summary).filter { it.isNotBlank() }.joinToString("\n"), trackData=track.encodedPoints,waypointData=track.encodedWaypoints) else item
                 }
                 persist(context, updated)
                 projects = updated
@@ -363,7 +363,7 @@ fun TrailKitApp() {
     if (weatherOpen && project != null) TrailWeatherDialog(project.place) { weatherOpen=false }
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
-    if (mapOpen && project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id) { mapOpen=false }
+    if (mapOpen && project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData) { mapOpen=false }
 
     if (advancedToolsOpen && project != null) {
         TrailKitAdvancedDialog(

@@ -14,18 +14,21 @@ class NavigationEngineTest {
         assertTrue(match.progressMeters in 545.0..570.0)
         assertTrue(match.remainingMeters in 545.0..570.0)
     }
-
     @Test fun exactRouteFixHasNearZeroDeviation() {
         val points=listOf(31.0 to 121.0,31.001 to 121.001,31.002 to 121.002)
         val match=matchRoute(points,31.001 to 121.001)
         assertNotNull(match)
         assertTrue(match!!.distanceMeters<0.5)
     }
-
     @Test fun directionLabelsCoverEightSectors() {
         assertEquals("北",directionLabel(0f))
         assertEquals("东",directionLabel(90f))
         assertEquals("南",directionLabel(180f))
         assertEquals("西",directionLabel(270f))
+    }
+    @Test fun turnGuidanceUsesShortestTurnDirection() {
+        assertEquals("方向基本正确",turnGuidance(90f,100f))
+        assertEquals("向右修正 90°",turnGuidance(0f,90f))
+        assertEquals("向左修正 90°",turnGuidance(180f,90f))
     }
 }

@@ -65,13 +65,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var centerLon by remember(path){mutableDoubleStateOf(if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
     var centerLat by remember(path){mutableDoubleStateOf(if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
     val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true || result[Manifest.permission.ACCESS_COARSE_LOCATION]==true) { active=true;gpsError="" }
-        else gpsError="未获得定位权限，无法开始导航"
+        if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true) { active=true;gpsError="" }
+        else gpsError="请授予精确位置权限，徒步轨迹导航需要 GPS 精度"
     }
     DisposableEffect(active) {
         if(active) {
             val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
-            val coarse=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
             val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
@@ -83,7 +82,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 override fun onProviderDisabled(provider:String) { gpsError="GPS 已关闭，请在系统设置中开启定位" }
             }
             try {
-                if(fine||coarse) {
+                if(fine) {
                     if(!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) gpsError="请开启手机 GPS 定位"
                     manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { current=it;centerLat=it.latitude;centerLon=it.longitude }
                     manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,2000L,3f,listener)
@@ -188,8 +187,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 Button(onClick={
                     if(active)active=false else {
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
-                        val coarse=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
-                        if(fine||coarse)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
+                        if(fine)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
                     }
                 },modifier=Modifier.fillMaxWidth(),enabled=points.size>=2){Text(if(active)"暂停 GPS 跟随" else "开始导航 / 开启 GPS")}
                 Text("导航使用手机 GPS 和导入的 GPX；离线地图数据需要事先导入。山区 GPS 可能漂移，请结合指北针、纸质地图和现场判断。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)

@@ -16,7 +16,8 @@ import java.util.Locale
 fun TrailKitAdvancedDialog(
     project: Project,
     onClose: () -> Unit,
-    onAddSuggested: (List<Gear>) -> Unit
+    onAddSuggested: (List<Gear>) -> Unit,
+    onImportGpx: () -> Unit
 ) {
     val categories = listOf("背负系统","露营睡眠","服装系统","鞋袜防护","炊具饮食","电子导航","照明工具","其他")
     val forest = Color(0xFF183C32)
@@ -72,6 +73,10 @@ fun TrailKitAdvancedDialog(
                 suggestions.forEach { Text("• "+it.name+" · "+it.note,fontSize=12.sp) }
                 OutlinedButton(onClick={onAddSuggested(suggestions)},modifier=Modifier.fillMaxWidth()) { Text("将建议装备加入清单") }
                 Text("提示：建议装备加入后重量是参考估值，实际重量需要按你购买的装备重新录入。",fontSize=11.sp,color=muted)
+                HorizontalDivider()
+                Text("GPX 轨迹文件",fontWeight=FontWeight.Bold,color=forest)
+                Text("导入 GPX 后计算轨迹点数量、距离和文件记录的累计爬升，并保存到行程路线备注。此功能不等于离线地图导航。",fontSize=12.sp,color=muted)
+                OutlinedButton(onClick=onImportGpx,modifier=Modifier.fillMaxWidth()) { Text("导入 GPX 文件") }
             }
         },
         confirmButton={TextButton(onClick=onClose){Text("完成")}}

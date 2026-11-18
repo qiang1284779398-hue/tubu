@@ -675,6 +675,11 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false},modifier=Modifier.weight(1f)) {
                                 Text("${index+1}. ${wp.name}  ·  $coordinateText",fontSize=11.sp)
                             }
+                            OutlinedButton(onClick={
+                                val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText(wp.name,String.format(Locale.US,"%.6f, %.6f",wp.lat,wp.lon)))
+                                android.widget.Toast.makeText(context,"已复制 ${wp.name} 坐标",android.widget.Toast.LENGTH_SHORT).show()
+                            }) { Text("复制") }
                             if(index>=waypoints.size) OutlinedButton(onClick={
                                 customWaypoints.remove(wp)
                                 persistCustomWaypoints()

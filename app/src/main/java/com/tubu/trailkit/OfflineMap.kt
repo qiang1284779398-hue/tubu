@@ -76,6 +76,7 @@ private fun recoverRecordedGpx(file:File):ByteArray {
     val safe=if(lastPointEnd>=0)source.substring(0,lastPointEnd+8) else source.substringBefore("<trkpt")
     return (safe.trimEnd()+"\n</trkseg></trk></gpx>").toByteArray(Charsets.UTF_8)
 }
+private fun projectTrackFile(context:Context,projectId:String)=File(context.filesDir,"trailkit_track_${projectId.hashCode()}.gpx")
 
 @Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",encodedElevations:String="[]",onClose:()->Unit) {
     val context=androidx.compose.ui.platform.LocalContext.current
@@ -152,7 +153,7 @@ private fun recoverRecordedGpx(file:File):ByteArray {
             recordingClockTick++
         }
     }
-    var hasSavedRecording by remember { mutableStateOf(File(context.filesDir,"trailkit_active_track.gpx").exists()) }
+    var hasSavedRecording by remember { mutableStateOf(projectTrackFile(context,projectId).exists()) }
     val tileCache = remember(path) { object : LruCache<String, android.graphics.Bitmap>(8 * 1024) { override fun sizeOf(key:String,value:android.graphics.Bitmap)=value.byteCount/1024 } }
     val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
         if(uri!=null) try {
@@ -166,7 +167,7 @@ private fun recoverRecordedGpx(file:File):ByteArray {
                 append("</trkseg></trk></gpx>")
             }
             context.contentResolver.openOutputStream(uri)?.use { output ->
-                val file=File(context.filesDir,"trailkit_active_track.gpx")
+                val file=projectTrackFile(context,projectId)
                 if(file.exists() && file.length()>80L) output.write(recoverRecordedGpx(file))
                 else output.write(body.toByteArray(Charsets.UTF_8))
             }
@@ -821,18 +822,18 @@ private fun recoverRecordedGpx(file:File):ByteArray {
                         if(isRecording) {
                             isRecording=false
                             hasSavedRecording=true
-                            try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING)) } catch(_:Exception) {}
+                            try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING).putExtra(TrailNavigationService.EXTRA_PROJECT_ID,projectId)) } catch(_:Exception) {}
                             if(recordedPoints.size>=2) exportGpx.launch("TrailKit-${System.currentTimeMillis()}.gpx")
                             else gpsError="记录点不足，至少需要两个定位点才能导出 GPX"
                         } else {
                             if(!active) gpsError="请先开启导航定位，再开始记录轨迹"
                             else {
                                 recordedPoints.clear();recordingClockTick=0L;isRecording=true;hasSavedRecording=false
-                                try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_START_RECORDING)) } catch(_:Exception) { gpsError="无法启动轨迹记录服务" }
+                                try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_START_RECORDING).putExtra(TrailNavigationService.EXTRA_PROJECT_ID,projectId)) } catch(_:Exception) { gpsError="无法启动轨迹记录服务" }
                             }
                         }
                     },modifier=Modifier.weight(1f),enabled=active || isRecording) { Text(if(isRecording)"停止并导出 GPX（${recordedPoints.size}点）" else "开始记录新轨迹") }
-                    OutlinedButton(onClick={recordedPoints.clear();isRecording=false;hasSavedRecording=false;try{context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING));File(context.filesDir,"trailkit_active_track.gpx").delete()}catch(_:Exception){}},modifier=Modifier.weight(1f),enabled=!isRecording && (recordedPoints.isNotEmpty() || hasSavedRecording)) { Text("清空记录") }
+                    OutlinedButton(onClick={recordedPoints.clear();isRecording=false;hasSavedRecording=false;try{context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING));projectTrackFile(context,projectId).delete()}catch(_:Exception){}},modifier=Modifier.weight(1f),enabled=!isRecording && (recordedPoints.isNotEmpty() || hasSavedRecording)) { Text("清空记录") }
                 }
                 if(!isRecording && hasSavedRecording) OutlinedButton(onClick={exportGpx.launch("TrailKit-上次轨迹.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出上次保存的轨迹 GPX") }
                 if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · ${recordingElapsedText} · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))

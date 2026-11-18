@@ -165,19 +165,25 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val voiceReady=remember{mutableStateOf(false)}
     val voiceInitComplete=remember{mutableStateOf(false)}
     val textToSpeech=remember(context) {
-        lateinit var engine:TextToSpeech
-        engine=TextToSpeech(context) { status ->
-            if(status==TextToSpeech.SUCCESS) {
-                voiceReady.value=engine.setLanguage(Locale.SIMPLIFIED_CHINESE)>=TextToSpeech.LANG_AVAILABLE
+        try {
+            lateinit var engine:TextToSpeech
+            engine=TextToSpeech(context) { status ->
+                if(status==TextToSpeech.SUCCESS) {
+                    voiceReady.value=engine.setLanguage(Locale.SIMPLIFIED_CHINESE)>=TextToSpeech.LANG_AVAILABLE
+                }
+                voiceInitComplete.value=true
+                if(status!=TextToSpeech.SUCCESS) voiceReady.value=false
             }
+            engine
+        } catch(_:Exception) {
             voiceInitComplete.value=true
-            if(status!=TextToSpeech.SUCCESS) voiceReady.value=false
+            voiceReady.value=false
+            null
         }
-        engine
     }
-    DisposableEffect(textToSpeech) { onDispose { try{textToSpeech.stop();textToSpeech.shutdown()}catch(_:Exception){} } }
+    DisposableEffect(textToSpeech) { onDispose { try{textToSpeech?.stop();textToSpeech?.shutdown()}catch(_:Exception){} } }
     fun speakNavigation(message:String) {
-        if(voiceGuidance && voiceReady.value) try{textToSpeech.speak(message,TextToSpeech.QUEUE_FLUSH,null,"trailkit_navigation")}catch(_:Exception){}
+        if(voiceGuidance && voiceReady.value) try{textToSpeech?.speak(message,TextToSpeech.QUEUE_FLUSH,null,"trailkit_navigation")}catch(_:Exception){}
     }
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
     var active by remember(projectId) { mutableStateOf(false) }

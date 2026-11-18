@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import kotlin.math.*
 
@@ -74,6 +76,19 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var reverseRoute by remember(projectId){mutableStateOf(false)}
     val navigationPoints=remember(points,reverseRoute){if(reverseRoute)points.asReversed() else points}
     val waypoints=remember(encodedWaypoints){decodeGpxWaypoints(encodedWaypoints)}
+    val customWaypointPrefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
+    val customWaypoints=remember(projectId) {
+        mutableStateListOf<GpxWaypoint>().apply {
+            try {
+                val saved=JSONArray(customWaypointPrefs.getString("custom_waypoints_$projectId","[]"))
+                for(i in 0 until saved.length()) {
+                    val item=saved.getJSONObject(i)
+                    add(GpxWaypoint(item.getDouble("lat"),item.getDouble("lon"),item.optString("name","自定义标记")))
+                }
+            } catch(_:Exception) {}
+        }
+    }
+    val allWaypoints=waypoints+customWaypoints
     val elevationProfile=remember(encodedElevations){decodeGpxElevations(encodedElevations)}
     val navigationElevations=remember(elevationProfile,reverseRoute){if(reverseRoute)elevationProfile.asReversed() else elevationProfile}
     val elevationStats=remember(elevationProfile){
@@ -142,7 +157,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     append("</trkpt>\n")
                 }
                 append("</trkseg></trk>\n")
-                waypoints.forEach { wp -> append("<wpt lat=\"${wp.lat}\" lon=\"${wp.lon}\"><name>${xml(wp.name)}</name></wpt>\n") }
+                allWaypoints.forEach { wp -> append("<wpt lat=\"${wp.lat}\" lon=\"${wp.lon}\"><name>${xml(wp.name)}</name></wpt>\n") }
                 append("</gpx>")
             }
             context.contentResolver.openOutputStream(uri)?.use{it.write(body.toByteArray(Charsets.UTF_8))}
@@ -188,11 +203,11 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     }
     val cp=current?.let{it.latitude to it.longitude}
     val routeMatch=cp?.let { matchRoute(navigationPoints,it,lastMatchedSegment) }
-    val closestWaypoint=if(cp!=null) waypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
+    val closestWaypoint=if(cp!=null) allWaypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val announcedWaypoints = remember(projectId) { mutableStateListOf<Int>() }
     LaunchedEffect(active, closestWaypoint, current?.accuracy) {
         if(active && cp!=null && closestWaypoint!=null && (current?.accuracy ?: 999f)<=25f) {
-            val index=waypoints.indexOf(closestWaypoint)
+            val index=allWaypoints.indexOf(closestWaypoint)
             val distance=mapDistance(cp,closestWaypoint.lat to closestWaypoint.lon)
             if(index>=0 && distance<=30.0 && index !in announcedWaypoints) {
                 announcedWaypoints.add(index)
@@ -298,7 +313,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val coords=String.format(Locale.US,"%.6f, %.6f",lat,lon)
                         val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("地图坐标",coords))
-                        android.widget.Toast.makeText(context,"已复制地图位置：$coords",android.widget.Toast.LENGTH_LONG).show()
+                        val markerName="地图标记 ${customWaypoints.size+1}"
+                        customWaypoints.add(GpxWaypoint(lat,lon,markerName))
+                        val saved=JSONArray()
+                        customWaypoints.forEach{wp->saved.put(JSONObject().put("lat",wp.lat).put("lon",wp.lon).put("name",wp.name))}
+                        customWaypointPrefs.edit().putString("custom_waypoints_$projectId",saved.toString()).apply()
+                        android.widget.Toast.makeText(context,"已添加标记：$markerName（$coords）",android.widget.Toast.LENGTH_LONG).show()
                     })
                 }) {
                     val canvas=drawContext.canvas.nativeCanvas
@@ -390,13 +410,13 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,130,75);style=Paint.Style.FILL}
                         canvas.drawCircle(start.x,start.y,7f,marker);marker.color=android.graphics.Color.rgb(205,78,58);canvas.drawCircle(end.x,end.y,7f,marker)
                     }
-                    if(waypoints.isNotEmpty()) {
+                    if(allWaypoints.isNotEmpty()) {
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(235,151,47);style=Paint.Style.FILL}
                         val outline=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=2f}
                         val labelFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(66,55,39);textSize=26f;typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)}
                         val labelStroke=Paint(labelFill).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
                         var lastLabelX=-1000f;var lastLabelY=-1000f
-                        waypoints.forEach { wp ->
+                        allWaypoints.forEach { wp ->
                             val x=((worldX(wp.lon,z)-left)*scale).toFloat()
                             val y=((worldY(wp.lat,z)-top)*scale).toFloat()
                             if(x in 0f..size.width && y in 0f..size.height) {
@@ -454,7 +474,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     canvas.drawLine(bx,by-7f,bx,by+5f,overlay);canvas.drawLine(bx+bar,by-7f,bx+bar,by+5f,overlay)
                     canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
                 }
-                Text("绿线：已走   橙线：剩余   蓝点：定位   橙色点：GPX 途经点（${waypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Text("绿线：已走   橙线：剩余   蓝点：定位   橙色点：途经点（${allWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("速度",if(current?.hasSpeed()==true) String.format(Locale.CHINA,"%.1f km/h",gpsSpeed*3.6) else "--")
                     MapStat("海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")
@@ -615,7 +635,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     TextButton(onClick={showWaypointList=!showWaypointList},modifier=Modifier.fillMaxWidth()) {
                         Text(if(showWaypointList)"收起途经点列表（${waypoints.size}）" else "查看全部途经点（${waypoints.size}）")
                     }
-                    if(showWaypointList) waypoints.forEachIndexed { index,wp ->
+                    if(showWaypointList) allWaypoints.forEachIndexed { index,wp ->
                         val coordinateText=String.format(Locale.US,"%.5f, %.5f",wp.lat,wp.lon)
                         OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false},modifier=Modifier.fillMaxWidth()) {
                             Text("${index+1}. ${wp.name}  ·  $coordinateText",fontSize=11.sp)

@@ -130,6 +130,24 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
             }
         } catch(_:Exception) { gpsError="GPX 导出失败，请检查保存位置" }
     }
+    val exportRouteGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
+        if(uri!=null) try {
+            fun xml(value:String)=value.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&apos;")
+            val body=buildString {
+                append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"TrailKit\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+                append("<trk><name>TrailKit 导出路线</name><trkseg>\n")
+                navigationPoints.forEachIndexed { index,p ->
+                    append("<trkpt lat=\"${p.first}\" lon=\"${p.second}\">")
+                    navigationElevations.getOrNull(index)?.let{append("<ele>$it</ele>")}
+                    append("</trkpt>\n")
+                }
+                append("</trkseg></trk>\n")
+                waypoints.forEach { wp -> append("<wpt lat=\"${wp.lat}\" lon=\"${wp.lon}\"><name>${xml(wp.name)}</name></wpt>\n") }
+                append("</gpx>")
+            }
+            context.contentResolver.openOutputStream(uri)?.use{it.write(body.toByteArray(Charsets.UTF_8))}
+        } catch(_:Exception) { gpsError="路线 GPX 导出失败，请检查保存位置" }
+    }
     var zoom by remember(path){mutableFloatStateOf((info?.centerZoom?:14f).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
     var centerLon by remember(path){mutableDoubleStateOf(if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
     var centerLat by remember(path){mutableDoubleStateOf(if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
@@ -592,6 +610,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     )
                     if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(heading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 }
+                if(navigationPoints.size>=2) OutlinedButton(onClick={exportRouteGpx.launch("TrailKit-路线${if(reverseRoute)"-反向" else ""}.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出当前路线 GPX（含海拔与途经点）") }
                 if(waypoints.isNotEmpty()) {
                     TextButton(onClick={showWaypointList=!showWaypointList},modifier=Modifier.fillMaxWidth()) {
                         Text(if(showWaypointList)"收起途经点列表（${waypoints.size}）" else "查看全部途经点（${waypoints.size}）")

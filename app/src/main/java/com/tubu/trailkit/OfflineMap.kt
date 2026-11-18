@@ -265,9 +265,11 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
     val deviation=routeMatch?.distanceMeters
     val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
-    val nextWaypointMatch=remember(allWaypoints,navigationPoints,travelled) {
+    val waypointRoutePositions=remember(allWaypoints,navigationPoints) {
         allWaypoints.mapNotNull { wp -> matchRoute(navigationPoints,wp.lat to wp.lon)?.let{wp to it.progressMeters} }
-            .filter{it.second>=travelled-20.0}.minByOrNull{it.second}
+    }
+    val nextWaypointMatch=remember(waypointRoutePositions,travelled) {
+        waypointRoutePositions.filter{it.second>=travelled-20.0}.minByOrNull{it.second}
     }
     val nextWaypoint=nextWaypointMatch?.first ?: closestWaypoint
     val nextWaypointRouteDistance=nextWaypointMatch?.second?.minus(travelled)?.coerceAtLeast(0.0)

@@ -245,11 +245,15 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val remaining=(total-travelled).coerceAtLeast(0.0)
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
     val gpsSpeed=current?.takeIf{it.hasSpeed()}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
-    val etaSeconds=if(gpsSpeed>=0.5) (remaining/gpsSpeed).toLong() else null
-    val etaText=etaSeconds?.let { seconds ->
-        val hours=seconds/3600;val minutes=(seconds%3600)/60
-        if(hours>0) "${hours}小时${minutes}分" else "${minutes}分钟"
-    } ?: "速度稳定后估算"
+    val remainingAscent=routeMatch?.let { match ->
+        navigationElevations.drop(match.segmentIndex).zipWithNext().sumOf{(a,b)->if(a!=null&&b!=null)(b-a).coerceAtLeast(0.0)else 0.0}
+    } ?: 0.0
+    val hasRemainingElevation=routeMatch!=null && navigationElevations.size==navigationPoints.size && navigationElevations.drop(routeMatch.segmentIndex).count{it!=null}>=2
+    val etaSeconds=if(gpsSpeed>=0.8) (remaining/gpsSpeed).toLong() else (remaining/0.70+(if(hasRemainingElevation)remainingAscent/600.0*3600.0 else 0.0)).toLong()
+    val etaText=run {
+        val hours=etaSeconds/3600;val minutes=(etaSeconds%3600)/60
+        (if(hours>0) "${hours}小时${minutes}分" else "${minutes}分钟")+(if(gpsSpeed>=0.8)" · 当前速度" else if(hasRemainingElevation)" · 含爬升估算" else " · 不含爬升")
+    }
     val currentElevation=routeMatch?.let { match ->
         val a=elevationProfile.getOrNull(match.segmentIndex)
         val b=elevationProfile.getOrNull(match.segmentIndex+1)
@@ -496,7 +500,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 }
                 if(navigationPoints.size>=2) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("预计剩余",etaText)
-                    MapStat("下一航向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
+                    MapStat("剩余爬升",if(hasRemainingElevation)" +${remainingAscent.roundToInt()} m" else "无海拔数据")
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(

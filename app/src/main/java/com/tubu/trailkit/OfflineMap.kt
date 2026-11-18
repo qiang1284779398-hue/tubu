@@ -425,8 +425,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val announcedApproaches = remember(projectId,encoded) { mutableStateListOf<Int>() }
     val announcedTurns = remember(projectId,encoded) { mutableStateListOf<Int>() }
     var lastTurnAnnouncementProgress by remember(projectId,encoded) { mutableDoubleStateOf(-1000.0) }
-    LaunchedEffect(active,routeMatch,voiceGuidance,voiceReady.value) {
-        val match=routeMatch
+    LaunchedEffect(active,progressMatch,voiceGuidance,voiceReady.value) {
+        val match=progressMatch
         if(active && voiceGuidance && voiceReady.value && match!=null && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f) {
             val index=match.segmentIndex
             if(index+2<navigationPoints.size && index !in announcedTurns) {
@@ -488,21 +488,21 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     }
     val batteryLevel=(context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf{it in 0..100}
     val gpsSpeed=current?.takeIf{it.hasSpeed() && it.accuracy<=50f && (gpsFixAgeSeconds?:999L)<=15L}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
-    val remainingAscent=routeMatch?.let { match ->
+    val remainingAscent=progressMatch?.let { match ->
         navigationElevations.drop(match.segmentIndex).zipWithNext().sumOf{(a,b)->if(a!=null&&b!=null)(b-a).coerceAtLeast(0.0)else 0.0}
     } ?: 0.0
-    val hasRemainingElevation=routeMatch!=null && navigationElevations.size==navigationPoints.size && navigationElevations.drop(routeMatch.segmentIndex).count{it!=null}>=2
+    val hasRemainingElevation=progressMatch!=null && navigationElevations.size==navigationPoints.size && navigationElevations.drop(progressMatch.segmentIndex).count{it!=null}>=2
     val etaSeconds=if(gpsSpeed>=0.8) (remaining/gpsSpeed).toLong() else (remaining/0.70+(if(hasRemainingElevation)remainingAscent/600.0*3600.0 else 0.0)).toLong()
     val etaText=run {
         val hours=etaSeconds/3600;val minutes=(etaSeconds%3600)/60
         (if(hours>0) "${hours}小时${minutes}分" else "${minutes}分钟")+(if(gpsSpeed>=0.8)" · 当前速度" else if(hasRemainingElevation)" · 含爬升估算" else " · 不含爬升")
     }
-    val currentElevation=routeMatch?.let { match ->
+    val currentElevation=progressMatch?.let { match ->
         val a=navigationElevations.getOrNull(match.segmentIndex)
         val b=navigationElevations.getOrNull(match.segmentIndex+1)
         if(a!=null&&b!=null) a+(b-a)*match.fraction else current?.takeIf{it.hasAltitude()}?.altitude
     } ?: current?.takeIf{it.hasAltitude()}?.altitude
-    val currentElevationSource=if(routeMatch!=null && navigationElevations.getOrNull(routeMatch.segmentIndex)!=null && navigationElevations.getOrNull(routeMatch.segmentIndex+1)!=null)"GPX" else "GPS"
+    val currentElevationSource=if(progressMatch!=null && navigationElevations.getOrNull(progressMatch.segmentIndex)!=null && navigationElevations.getOrNull(progressMatch.segmentIndex+1)!=null)"GPX" else "GPS"
     LaunchedEffect(routeMatch,progressMatch,active,reverseRoute) {
         if(progressMatch!=null) {
             confirmedProgress=maxOf(confirmedProgress,progressMatch.progressMeters)

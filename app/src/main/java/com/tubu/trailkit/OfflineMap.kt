@@ -106,7 +106,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     DisposableEffect(active) {
         if(active) {
             try { ContextCompat.startForegroundService(context,android.content.Intent(context,TrailNavigationService::class.java)) }
-            catch(e:Exception) { gpsError="无法启动后台导航服务：${e.message?:\"请检查系统限制\"}" }
+            catch(_:Exception) { gpsError="无法启动后台导航服务，请检查系统限制" }
         }
         onDispose { if(active) try { context.stopService(android.content.Intent(context,TrailNavigationService::class.java)) } catch(_:Exception) {} }
     }

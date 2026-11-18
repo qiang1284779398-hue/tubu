@@ -201,8 +201,8 @@ private fun splitOfflineBounds(west:Double,south:Double,east:Double,north:Double
     return result
 }
 
-private const val TRAILKIT_TERRAIN_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-terrain.json"
-private const val TRAILKIT_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-satellite.json"
+internal const val TRAILKIT_TERRAIN_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-terrain.json"
+internal const val TRAILKIT_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-satellite.json"
 
 @Composable
 internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId:String,selectedStyle:String,onSelectStyle:(String)->Unit) {
@@ -241,7 +241,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             processNext={index->
                 if(index>=batches.size) {
                     busy=false;complete=true;progress=1f
-                    message="$label全部下载完成，共 \${batches.size} 个离线小区域。可切换图层，断网查看已下载范围。"
+                    message="${label}全部下载完成，共 \${batches.size} 个离线小区域。可切换图层，断网查看已下载范围。"
                 } else {
                     batchIndex=index+1
                     val b=batches[index]
@@ -262,7 +262,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                                         message="第 \${index+1}/\${batches.size} 个区域接近 48 MB 安全阈值，已暂停；已完成区域保留。请降低最高缩放级别后重试。"
                                     } else if(status.isComplete) {
                                         finished=true;offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
-                                        message="$label下载中：已完成 \${index+1}/\${batches.size} 个小区域…"
+                                        message="${label}下载中：已完成 \${index+1}/\${batches.size} 个小区域…"
                                         processNext(index+1)
                                     } else message="$label下载中：区域 \${index+1}/\${batches.size}，\${status.completedResourceCount}/\${status.requiredResourceCount} 项资源…"
                                 }
@@ -283,7 +283,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                 }
             }
             processNext(0)
-        } catch(e:Exception){busy=false;message="启动离线下载失败：\${e.message?: "未知错误"}"}
+        } catch(e:Exception){busy=false;message="启动离线下载失败：\${e.message ?: "未知错误"}"}
     }
 
     Card(modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {

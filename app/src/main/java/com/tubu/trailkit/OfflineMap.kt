@@ -186,6 +186,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var active by remember(projectId) { mutableStateOf(false) }
     var current by remember(projectId) { mutableStateOf<Location?>(null) }
     var gpsError by remember(projectId) { mutableStateOf("") }
+    var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
     var followGps by remember(projectId) { mutableStateOf(true) }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
     var compassAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_UNRELIABLE) }
@@ -393,6 +394,16 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val nextWaypointRouteDistance=nextWaypointMatch?.second?.minus(travelled)?.coerceAtLeast(0.0)
     val remaining=(total-travelled).coerceAtLeast(0.0)
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
+    LaunchedEffect(active,gpsFixAgeSeconds,voiceGuidance) {
+        val stale=active && current!=null && (gpsFixAgeSeconds?:999L)>15L
+        if(stale && !gpsStaleWas) {
+            gpsStaleWas=true
+            speakNavigation("GPS定位已中断，偏航判断暂停，请检查手机定位",true)
+        } else if(!stale && gpsStaleWas) {
+            gpsStaleWas=false
+            speakNavigation("GPS定位已恢复")
+        }
+    }
     val batteryLevel=(context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf{it in 0..100}
     val gpsSpeed=current?.takeIf{it.hasSpeed() && it.accuracy<=50f && (gpsFixAgeSeconds?:999L)<=15L}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
     val remainingAscent=routeMatch?.let { match ->

@@ -145,7 +145,7 @@ fun TrailKitApp() {
             if (target != null) {
                 val dir = File(context.filesDir, "offline_maps")
                 if (!dir.exists()) dir.mkdirs()
-                val file = File(dir, "map_\${target}.mbtiles")
+                val file = File(dir, "map_${target}.mbtiles")
                 context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { output -> input.copyTo(output) } } ?: error("无法读取地图文件")
                 android.database.sqlite.SQLiteDatabase.openDatabase(file.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { db ->
                     db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='tiles'", null).use { c -> if (!c.moveToFirst()) error("不是有效的 MBTiles 文件") }

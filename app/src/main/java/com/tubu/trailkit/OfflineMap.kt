@@ -340,8 +340,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         } catch(_:Exception) { null }
     }
     val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true) { prepareNavigationStart();active=true;gpsError="" }
-        else gpsError="请授予精确位置权限，徒步轨迹导航需要 GPS 精度"
+        if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true || result[Manifest.permission.ACCESS_COARSE_LOCATION]==true) { prepareNavigationStart();active=true;gpsError="正在获取手机定位…" }
+        else gpsError="请允许 TrailKit 使用位置信息；仅允许大致位置也可以显示地图位置"
     }
     DisposableEffect(active,projectId) {
         if(active) {
@@ -353,46 +353,63 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     DisposableEffect(active) {
         if(active) {
             val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
+            val coarse=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
             val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             var previousAccepted:Location?=null
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
                     val age=System.currentTimeMillis()-location.time
-                    if(age !in 0L..20000L) { gpsError="GPS 数据已过期，正在等待新的定位";return }
-                    if(location.accuracy>75f) { gpsError="GPS 精度不足，请移至开阔处";return }
-                    val previous=previousAccepted
-                    if(previous!=null) {
-                        val elapsed=((location.time-previous.time).coerceAtLeast(0L))/1000.0
-                        val jump=mapDistance(previous.latitude to previous.longitude,location.latitude to location.longitude)
-                        val oldSpeed=if(previous.hasSpeed())previous.speed else 0f
-                        val newSpeed=if(location.hasSpeed())location.speed else 0f
-                        val expected=maxOf(oldSpeed,newSpeed)*elapsed
-                        val allowed=maxOf(120.0,expected+previous.accuracy+location.accuracy+30.0)
-                        if(elapsed in 0.0..8.0 && jump>allowed) { gpsError="GPS 定位出现异常跳变，已忽略本次位置";return }
+                    if(age !in 0L..30000L || location.accuracy>1500f) return
+                    val existing=current
+                    if(existing!=null) {
+                        if(location.time<existing.time) return
+                        val existingAge=System.currentTimeMillis()-existing.time
+                        if(existingAge in 0L..15000L && existing.accuracy<=75f && location.accuracy>existing.accuracy) return
                     }
-                    previousAccepted=Location(location)
+                    if(location.accuracy<=75f) {
+                        val previous=previousAccepted
+                        if(previous!=null) {
+                            val elapsed=((location.time-previous.time).coerceAtLeast(0L))/1000.0
+                            val jump=mapDistance(previous.latitude to previous.longitude,location.latitude to location.longitude)
+                            val oldSpeed=if(previous.hasSpeed())previous.speed else 0f
+                            val newSpeed=if(location.hasSpeed())location.speed else 0f
+                            val expected=maxOf(oldSpeed,newSpeed)*elapsed
+                            val allowed=maxOf(120.0,expected+previous.accuracy+location.accuracy+30.0)
+                            if(elapsed in 0.0..8.0 && jump>allowed) { gpsError="GPS 定位出现异常跳变，已忽略本次高精度位置";return }
+                        }
+                        previousAccepted=Location(location)
+                    }
                     current=Location(location)
-                    gpsError=""
-                    if(isRecording && (recordedPoints.isEmpty() || mapDistance(recordedPoints.last().latitude to recordedPoints.last().longitude,location.latitude to location.longitude)>=3.0)) recordedPoints.add(Location(location))
+                    gpsError=if(location.accuracy<=75f) "" else "当前为网络辅助粗略定位（±\${location.accuracy.roundToInt()} 米）；导航进度和轨迹记录暂不启用"
+                    if(isRecording && location.provider==LocationManager.GPS_PROVIDER && location.accuracy<=25f &&
+                        (recordedPoints.isEmpty() || mapDistance(recordedPoints.last().latitude to recordedPoints.last().longitude,location.latitude to location.longitude)>=3.0)) recordedPoints.add(Location(location))
                     if(followGps) { centerLat=location.latitude;centerLon=location.longitude }
                 }
                 @Deprecated("Deprecated in Java") override fun onStatusChanged(provider:String?,status:Int,extras:Bundle?) {}
                 override fun onProviderEnabled(provider:String) {}
-                override fun onProviderDisabled(provider:String) { gpsError="GPS 已关闭，请在系统设置中开启定位" }
+                override fun onProviderDisabled(provider:String) {
+                    if(provider==LocationManager.GPS_PROVIDER) gpsError="GPS 卫星定位暂不可用，正在尝试网络辅助定位"
+                }
             }
             try {
-                if(fine) {
-                    if(!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) gpsError="请开启手机 GPS 定位"
-                    gpsError="正在等待新的高精度 GPS 定位…"
-                    manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1500L,1f,listener)
-                } else { active=false;gpsError="请授予定位权限" }
-            } catch(e:Exception) { gpsError="定位启动失败：${e.message ?: "请检查定位设置"}";active=false }
+                if(fine || coarse) {
+                    var requested=false
+                    if(coarse && manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                        try { manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,3000L,5f,listener);requested=true } catch(_:SecurityException) {}
+                    }
+                    if(fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                        try { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1500L,1f,listener);requested=true } catch(_:SecurityException) {}
+                    }
+                    gpsError=if(requested) "正在获取 GPS / Wi-Fi / 基站辅助定位…" else "系统定位源暂不可用，请检查手机定位开关和权限"
+                } else { active=false;gpsError="请允许 TrailKit 使用位置信息" }
+            } catch(e:Exception) { gpsError="定位启动失败：\${e.message ?: "请检查定位设置"}";active=false }
             onDispose { try{manager.removeUpdates(listener)}catch(_:Exception){} }
         } else onDispose { }
     }
+    // Show system-assisted coarse fixes on the map; route matching stays strict.
     val cp=current?.takeIf {
         val age=System.currentTimeMillis()-it.time
-        age in 0L..15000L && it.accuracy<=75f
+        age in 0L..30000L && it.accuracy<=1500f
     }?.let{it.latitude to it.longitude}
 
     val utmCoordinate=cp?.let{toUtm(it.first,it.second)}
@@ -404,7 +421,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val reliableTrueHeading=if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) Float.NaN else trueHeading
     val gpsCourse=current?.takeIf{it.hasBearing() && it.hasSpeed() && it.speed>=0.8f}?.bearing
     val arrowHeading=if(!trueHeading.isNaN()) trueHeading else gpsCourse ?: Float.NaN
-    val routeMatch=cp?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
+    val routeMatch=cp?.takeIf { current?.accuracy?.let{accuracy->accuracy<=50f}==true && (gpsFixAgeSeconds?:999L)<=15L }
+        ?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
     val progressMatch=routeMatch?.takeIf {
         active && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f &&
             it.distanceMeters<=threshold.toDouble()+(current?.accuracy?:0f).toDouble()
@@ -824,7 +842,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     ) { Text("复制当前位置坐标") }
                     OutlinedButton(
                         onClick={
-                            val loc=current?.takeIf { (System.currentTimeMillis()-it.time) in 0L..15000L && it.accuracy<=75f }
+                            val loc=current?.takeIf { (System.currentTimeMillis()-it.time) in 0L..30000L && it.accuracy<=1500f }
                             if(loc!=null) {
                                 val amap=wgs84ToGcj02(loc.latitude,loc.longitude)
                                 val uri=android.net.Uri.parse("geo:${amap.first},${amap.second}?q=${amap.first},${amap.second}(TrailKit)")
@@ -907,7 +925,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         } else {
                             Text("海拔剖面：当前 GPX 未提供完整的逐点海拔数据",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                         }
-                    } else Text(if(active)"正在等待 GPS 定位，请移至开阔处……" else "导入 GPX 后即可开始沿轨迹导航。",fontSize=12.sp,color=MaterialTheme.colorScheme.secondary)
+                    } else Text(if(active)"正在等待手机定位；室内可先使用 Wi-Fi / 基站估算位置，户外开阔处再等待高精度 GPS。" else "导入 GPX 后即可开始沿轨迹导航。",fontSize=12.sp,color=MaterialTheme.colorScheme.secondary)
                     Text("偏航提醒距离：${threshold.roundToInt()} 米",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                     Slider(value=threshold,onValueChange={threshold=it},onValueChangeFinished={prefs.edit().putInt("offroute_$projectId",threshold.roundToInt()).apply()},valueRange=20f..300f,steps=27)
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("20 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary);Text("300 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)}
@@ -1113,10 +1131,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     } else {
                         prepareNavigationStart()
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
-                        if(fine)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
+                        if(fine || ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
                     }
                 },modifier=Modifier.fillMaxWidth(),enabled=navigationPoints.size>=2){Text(if(active)"暂停导航定位" else "开始导航 / 开启 GPS")}
-                Text("导航使用手机 GPS 和导入的 GPX；离线地图数据需要事先导入。山区 GPS 可能漂移，请结合指北针、纸质地图和现场判断。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
+                Text("地图位置可使用 GPS、Wi-Fi 和基站辅助估算；只有新鲜且精度达标的 GPS 才参与路线进度、偏航判断和轨迹记录。山区请结合指北针、纸质地图和现场判断。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
                 editingCustomWaypoint?.let { target ->
                     AlertDialog(
                         onDismissRequest={editingCustomWaypoint=null},

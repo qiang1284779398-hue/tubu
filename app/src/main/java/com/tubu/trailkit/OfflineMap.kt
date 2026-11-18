@@ -21,6 +21,7 @@ import android.os.Build
 import android.os.BatteryManager
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.speech.tts.TextToSpeech
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -159,6 +160,22 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         Triple(pairs.sumOf{(a,b)->(b!!-a!!).coerceAtLeast(0.0)},pairs.sumOf{(a,b)->(a!!-b!!).coerceAtLeast(0.0)},navigationElevations.filterNotNull())
     }
     val prefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
+    var voiceGuidance by remember(projectId){mutableStateOf(prefs.getBoolean("voice_$projectId",false))}
+    val voiceReady=remember{mutableStateOf(false)}
+    val textToSpeech=remember(context) {
+        lateinit var engine:TextToSpeech
+        engine=TextToSpeech(context) { status ->
+            if(status==TextToSpeech.SUCCESS) {
+                engine.language=Locale.SIMPLIFIED_CHINESE
+                voiceReady.value=true
+            }
+        }
+        engine
+    }
+    DisposableEffect(textToSpeech) { onDispose { try{textToSpeech.stop();textToSpeech.shutdown()}catch(_:Exception){} } }
+    fun speakNavigation(message:String) {
+        if(voiceGuidance && voiceReady.value) try{textToSpeech.speak(message,TextToSpeech.QUEUE_FLUSH,null,"trailkit_navigation")}catch(_:Exception){}
+    }
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
     var active by remember(projectId) { mutableStateOf(false) }
     var current by remember(projectId) { mutableStateOf<Location?>(null) }

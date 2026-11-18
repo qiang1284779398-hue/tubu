@@ -242,6 +242,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
         catch(_:Exception) { 0f }
     } ?: 0f
     val trueHeading=if(heading.isNaN()) Float.NaN else (heading+magneticDeclination+360f)%360f
+    val reliableTrueHeading=if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) Float.NaN else trueHeading
     val routeMatch=cp?.let { matchRoute(navigationPoints,it,lastMatchedSegment) }
     val closestWaypoint=if(cp!=null) allWaypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val announcedWaypoints = remember(projectId,encoded) { mutableStateListOf<Int>() }
@@ -514,8 +515,8 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                         val p=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
                         canvas.drawCircle(x,y,13f,p);p.color=android.graphics.Color.rgb(30,105,210);canvas.drawCircle(x,y,9f,p)
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
-                        if(!trueHeading.isNaN()) {
-                            val angle=Math.toRadians(trueHeading.toDouble())
+                        if(!reliableTrueHeading.isNaN()) {
+                            val angle=Math.toRadians(reliableTrueHeading.toDouble())
                             val tipX=x+(sin(angle)*31f).toFloat()
                             val tipY=y-(cos(angle)*31f).toFloat()
                             val direction=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(218,91,48);strokeWidth=4f;strokeCap=Paint.Cap.ROUND;style=Paint.Style.STROKE}
@@ -690,7 +691,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("真北方位",when { heading.isNaN()->"无传感器";compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE->"需校准";compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW->"精度较低";else->"${directionLabel(trueHeading)} ${trueHeading.roundToInt()}°" })
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
-                    MapStat("方向提示",routeMatch?.let{turnGuidance(trueHeading,it.bearingDegrees.toFloat())}?:"等待定位")
+                    MapStat("方向提示",routeMatch?.let{turnGuidance(reliableTrueHeading,it.bearingDegrees.toFloat())}?:"等待定位")
                 }
                 if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) {
                     Text("罗盘精度不足：远离手机磁吸配件、磁铁和金属物；按手机提示做 8 字形校准，并以纸质指北针复核。",fontSize=10.sp,color=Color(0xFF9A6A25))
@@ -746,7 +747,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                         else "下一途经点：${nextWaypoint.name} · 直线 ${formatNavDistance(waypointDistance)} · 路线 ${nextWaypointRouteDistance?.let(::formatNavDistance)?:"--"} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
                         fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C)
                     )
-                    if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(trueHeading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                    if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(reliableTrueHeading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 }
                 if(navigationPoints.size>=2) OutlinedButton(onClick={exportRouteGpx.launch("TrailKit-路线${if(reverseRoute)"-反向" else ""}.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出当前路线 GPX（含海拔与途经点）") }
                 if(allWaypoints.isNotEmpty()) {

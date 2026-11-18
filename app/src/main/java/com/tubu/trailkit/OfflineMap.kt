@@ -912,14 +912,21 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     context.startActivity(android.content.Intent.createChooser(send,"分享当前位置"))
                 },modifier=Modifier.fillMaxWidth()) { Text("分享当前位置 / 求助坐标") }
                 if(nextWaypoint!=null) {
-                    val waypointDistance=mapDistance(cp!!,nextWaypoint.lat to nextWaypoint.lon)
-                    val waypointBearing=bearingToPoint(cp,nextWaypoint.lat to nextWaypoint.lon)
-                    Text(
-                        if(waypointDistance<=30.0 && current?.accuracy?.let{it<=25f}==true) "已到达途经点：${nextWaypoint.name}"
-                        else "下一途经点：${nextWaypoint.name} · 直线 ${formatNavDistance(waypointDistance)} · 路线 ${nextWaypointRouteDistance?.let(::formatNavDistance)?:"--"} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
-                        fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C)
-                    )
-                    if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(reliableTrueHeading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                    val waypoint=nextWaypoint
+                    val waypointPoint=waypoint.lat to waypoint.lon
+                    val currentPoint=cp
+                    if(currentPoint!=null) {
+                        val waypointDistance=mapDistance(currentPoint,waypointPoint)
+                        val waypointBearing=bearingToPoint(currentPoint,waypointPoint)
+                        Text(
+                            if(waypointDistance<=30.0 && current?.accuracy?.let{it<=25f}==true) "已到达途经点：${waypoint.name}"
+                            else "下一途经点：${waypoint.name} · 直线 ${formatNavDistance(waypointDistance)} · 路线 ${nextWaypointRouteDistance?.let(::formatNavDistance)?:"--"} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
+                            fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C)
+                        )
+                        if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(reliableTrueHeading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                    } else {
+                        Text("下一途经点：${waypoint.name} · 路线距离 ${nextWaypointRouteDistance?.let(::formatNavDistance)?:"待定位"} · 等待 GPS 定位后显示直线距离与方位",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C))
+                    }
                 }
                 if(navigationPoints.size>=2) OutlinedButton(onClick={exportRouteGpx.launch("TrailKit-路线${if(reverseRoute)"-反向" else ""}.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出当前路线 GPX（含海拔与途经点）") }
                 if(allWaypoints.isNotEmpty()) {

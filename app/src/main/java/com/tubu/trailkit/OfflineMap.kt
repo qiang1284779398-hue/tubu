@@ -874,7 +874,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                             if(!active) gpsError="请先开启导航定位，再开始记录轨迹"
                             else {
                                 recordedPoints.clear();recordingClockTick=0L;isRecording=true;hasSavedRecording=false
-                                try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_START_RECORDING).putExtra(TrailNavigationService.EXTRA_PROJECT_ID,projectId)) } catch(_:Exception) { gpsError="无法启动轨迹记录服务" }
+                                try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_START_RECORDING).putExtra(TrailNavigationService.EXTRA_PROJECT_ID,projectId)) } catch(_:Exception) { isRecording=false;gpsError="无法启动轨迹记录服务" }
                             }
                         }
                     },modifier=Modifier.weight(1f),enabled=active || isRecording) { Text(if(isRecording)"停止并导出 GPX（${recordedPoints.size}点）" else "开始记录新轨迹") }

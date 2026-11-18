@@ -615,6 +615,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) {
                     Text("罗盘精度不足：远离手机磁吸配件、磁铁和金属物；按手机提示做 8 字形校准，并以纸质指北针复核。",fontSize=10.sp,color=Color(0xFF9A6A25))
                 }
+                else if(!heading.isNaN()) Text("已按当前位置磁偏角校正为真北 · 磁偏角 ${if(magneticDeclination>=0)"+" else ""}${String.format(Locale.CHINA,"%.1f",magneticDeclination)}°",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         MapStat("当前位置",String.format(Locale.US,"%.5f, %.5f",current!!.latitude,current!!.longitude))

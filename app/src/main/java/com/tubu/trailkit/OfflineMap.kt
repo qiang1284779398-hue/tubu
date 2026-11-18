@@ -603,47 +603,33 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     Text("地图覆盖范围可能不完整：GPX 路线范围超出 MBTiles bounds。请补充地图区域，不能把空白区域当作无路地形。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF9B3E32))
                 }
                 else if(db!=null && mapCoverage==null) Text("离线地图没有有效 bounds 元数据，无法自动核验是否覆盖整条 GPX 路线。",fontSize=10.sp,color=Color(0xFF9A6A25))
-                Canvas(Modifier.fillMaxWidth().height(310.dp)
-                    .pointerInput(active) {
-                    detectTransformGestures { _,pan,zoomChange,_ ->
-                            if(pan.x!=0f || pan.y!=0f || zoomChange!=1f) followGps=false
-                            val minZ=(info?.minZoom?:3).toFloat();val maxZ=(info?.maxZoom?:18).toFloat()
-                            val next=(zoom+ln(zoomChange)/ln(2.0).toFloat()).coerceIn(minZ,maxZ)
-                            val z=zoom.roundToInt().coerceIn(minZ.toInt(),maxZ.toInt())
-                            val scale=2.0.pow((zoom-z).toDouble())
-                            val wx=worldX(centerLon,z)-pan.x/scale
-                            val wy=worldY(centerLat,z)-pan.y/scale
-                            val world=256.0*(1 shl z)
-                            centerLon=(wx/world*360.0-180.0).coerceIn(-180.0,180.0)
-                            val n=Math.PI-2.0*Math.PI*wy/world
-                            centerLat=(atan(sinh(n))*180.0/Math.PI).coerceIn(-85.0,85.0)
-                            zoom=next
-                    }
-                }.pointerInput(zoom,centerLon,centerLat,measureMode) {
-                    fun coordinateAt(offset:androidx.compose.ui.geometry.Offset):Pair<Double,Double> {
-                        val z=zoom.roundToInt()
-                        val scale=2.0.pow((zoom-z).toDouble())
-                        val world=256.0*(1 shl z)
-                        val left=worldX(centerLon,z)-size.width/(2.0*scale)
-                        val top=worldY(centerLat,z)-size.height/(2.0*scale)
-                        val px=left+offset.x/scale
-                        val py=top+offset.y/scale
-                        val lon=(px/world*360.0-180.0).coerceIn(-180.0,180.0)
-                        val n=Math.PI-2.0*Math.PI*py/world
-                        val lat=Math.toDegrees(atan(sinh(n))).coerceIn(-85.0,85.0)
-                        return lat to lon
-                    }
-                    detectTapGestures(onTap={offset->if(measureMode)measurePoints.add(coordinateAt(offset))},onLongPress={offset->
-                        val (lat,lon)=coordinateAt(offset)
-                        val coords=String.format(Locale.US,"%.6f, %.6f",lat,lon)
-                        val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("地图坐标",coords))
-                        addCustomWaypoint(lat,lon)
-                        android.widget.Toast.makeText(context,"坐标：$coords",android.widget.Toast.LENGTH_SHORT).show()
-                    })
-                }) {
+                if (navigationPoints.size >= 2) {
+                    RouteOfflineDownloadCard(navigationPoints, projectId)
+                } else {
+                    Text("导入 GPX 轨迹后，可按路线范围下载离线地图。", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
+                }
+                Box(Modifier.fillMaxWidth().height(310.dp)) {
+                    MapLibreBaseMap(
+                        centerLat = centerLat,
+                        centerLon = centerLon,
+                        zoom = zoom,
+                        onCameraChanged = { lat, lon, z ->
+                            centerLat = lat
+                            centerLon = lon
+                            zoom = z.coerceIn(2f, 18f)
+                        },
+                        onTap = { lat, lon -> if (measureMode) measurePoints.add(lat to lon) },
+                        onLongPress = { lat, lon ->
+                            val coords = String.format(Locale.US, "%.6f, %.6f", lat, lon)
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("地图坐标", coords))
+                            addCustomWaypoint(lat, lon)
+                            android.widget.Toast.makeText(context, "坐标：$coords", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    Canvas(Modifier.matchParentSize()) {
                     val canvas=drawContext.canvas.nativeCanvas
-                    canvas.drawColor(android.graphics.Color.rgb(239,242,235))
+                    canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
                     val z=if(info!=null)zoom.roundToInt().coerceIn(info.minZoom,info.maxZoom) else 14
                     val scale=2.0.pow((zoom-z).toDouble()).toFloat()
                     val cx=worldX(centerLon,z);val cy=worldY(centerLat,z)
@@ -817,6 +803,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     canvas.drawLine(bx,by,bx+bar,by,overlay)
                     canvas.drawLine(bx,by-7f,bx,by+5f,overlay);canvas.drawLine(bx+bar,by-7f,bx+bar,by+5f,overlay)
                     canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
+                    }
                 }
                 Text("绿线：已走   橙线：剩余   蓝点：当前位置/精度范围   橙色箭头：手机朝向   橙点：GPX途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {

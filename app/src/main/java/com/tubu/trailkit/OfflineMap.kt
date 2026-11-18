@@ -185,6 +185,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
     var active by remember(projectId) { mutableStateOf(false) }
     var current by remember(projectId) { mutableStateOf<Location?>(null) }
+    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
     var gpsError by remember(projectId) { mutableStateOf("") }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
     var followGps by remember(projectId) { mutableStateOf(true) }
@@ -330,7 +331,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         } else onDispose { }
     }
     val cp=current?.let{it.latitude to it.longitude}
-    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
+
     val utmCoordinate=cp?.let{toUtm(it.first,it.second)}
     val magneticDeclination=current?.let { loc ->
         try { GeomagneticField(loc.latitude.toFloat(),loc.longitude.toFloat(),if(loc.hasAltitude())loc.altitude.toFloat() else 0f,System.currentTimeMillis()).declination }

@@ -629,7 +629,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     )
                     Canvas(Modifier.matchParentSize()) {
                     val canvas=drawContext.canvas.nativeCanvas
-                    canvas.drawColor(android.graphics.Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
+                    // Compose Canvas is already transparent; clearing its native layer can
+                    // expose the underlying MapView/window and cause visible control flicker.
                     val z=if(info!=null)zoom.roundToInt().coerceIn(info.minZoom,info.maxZoom) else 14
                     val scale=2.0.pow((zoom-z).toDouble()).toFloat()
                     val cx=worldX(centerLon,z);val cy=worldY(centerLat,z)

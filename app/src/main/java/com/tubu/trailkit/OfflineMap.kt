@@ -277,6 +277,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         val b=navigationElevations.getOrNull(match.segmentIndex+1)
         if(a!=null&&b!=null) a+(b-a)*match.fraction else current?.takeIf{it.hasAltitude()}?.altitude
     } ?: current?.takeIf{it.hasAltitude()}?.altitude
+    val currentElevationSource=if(routeMatch!=null && navigationElevations.getOrNull(routeMatch.segmentIndex)!=null && navigationElevations.getOrNull(routeMatch.segmentIndex+1)!=null)"GPX" else "GPS"
     LaunchedEffect(routeMatch,active,reverseRoute) {
         if(routeMatch!=null) {
             confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters)
@@ -550,7 +551,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 if(measureMode) Text("测距模式：点击地图依次添加测量点；蓝线为测量路线。",fontSize=10.sp,color=Color(0xFF2469BE))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("速度",if(current?.hasSpeed()==true) String.format(Locale.CHINA,"%.1f km/h",gpsSpeed*3.6) else "--")
-                    MapStat("海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")
+                    MapStat("${currentElevationSource} 海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")
                     MapStat("GPS",when { current==null->"等待定位";(gpsFixAgeSeconds?:0L)>15L->"定位已过期";else->"±${current!!.accuracy.roundToInt()} m" })
                 }
                 if(navigationPoints.size>=2) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -664,7 +665,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         MapStat("GPS 精度","±${current!!.accuracy.roundToInt()} m")
-                        MapStat("海拔",if(current!!.hasAltitude())"%.0f m".format(Locale.CHINA,current!!.altitude) else "暂无")
+                        MapStat("GPS 海拔",if(current!!.hasAltitude())"%.0f m".format(Locale.CHINA,current!!.altitude) else "暂无")
                         MapStat("速度",if(current!!.hasSpeed())"%.1f km/h".format(Locale.CHINA,current!!.speed*3.6f) else "暂无")
                     }
                 }

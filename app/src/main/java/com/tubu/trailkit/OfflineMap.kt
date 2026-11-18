@@ -255,10 +255,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val deviation=routeMatch?.distanceMeters
     val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
-    val nextWaypoint=remember(allWaypoints,navigationPoints,travelled) {
+    val nextWaypointMatch=remember(allWaypoints,navigationPoints,travelled) {
         allWaypoints.mapNotNull { wp -> matchRoute(navigationPoints,wp.lat to wp.lon)?.let{wp to it.progressMeters} }
-            .filter{it.second>=travelled-20.0}.minByOrNull{it.second}?.first ?: closestWaypoint
+            .filter{it.second>=travelled-20.0}.minByOrNull{it.second}
     }
+    val nextWaypoint=nextWaypointMatch?.first ?: closestWaypoint
+    val nextWaypointRouteDistance=nextWaypointMatch?.second?.minus(travelled)?.coerceAtLeast(0.0)
     val remaining=(total-travelled).coerceAtLeast(0.0)
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
     val batteryLevel=(context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf{it in 0..100}
@@ -722,7 +724,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     val waypointBearing=bearingToPoint(cp,nextWaypoint.lat to nextWaypoint.lon)
                     Text(
                         if(waypointDistance<=30.0 && current?.accuracy?.let{it<=25f}==true) "已到达途经点：${nextWaypoint.name}"
-                        else "最近途经点：${nextWaypoint.name} · ${formatNavDistance(waypointDistance)} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
+                        else "下一途经点：${nextWaypoint.name} · 直线 ${formatNavDistance(waypointDistance)} · 路线 ${nextWaypointRouteDistance?.let(::formatNavDistance)?:"--"} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
                         fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C)
                     )
                     if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(trueHeading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)

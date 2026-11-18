@@ -2,6 +2,8 @@ package com.tubu.trailkit
 
 import android.Manifest
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.BitmapFactory
@@ -79,6 +81,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var offRouteWas by remember(projectId) { mutableStateOf(false) }
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember { mutableStateOf(false) }
+    var showWaypointList by remember { mutableStateOf(false) }
     val recordedPoints = remember { mutableStateListOf<Location>() }
     var recordingStartedAt by remember { mutableLongStateOf(0L) }
     val tileCache = remember(path) { object : LruCache<String, android.graphics.Bitmap>(8 * 1024) { override fun sizeOf(key:String,value:android.graphics.Bitmap)=value.byteCount/1024 } }
@@ -125,6 +128,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     }
     val cp=current?.let{it.latitude to it.longitude}
     val routeMatch=cp?.let { matchRoute(points,it) }
+    val closestWaypoint=if(cp!=null) waypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val nearest=routeMatch?.segmentIndex?:0
     val deviation=routeMatch?.distanceMeters
     val total=routeMatch?.totalMeters?:remember(points){points.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
@@ -295,6 +299,29 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("罗盘",if(heading.isNaN())"无传感器" else "${directionLabel(heading)} ${heading.roundToInt()}°")
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
+                }
+                if(current!=null) {
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        MapStat("当前位置",String.format(Locale.US,"%.5f, %.5f",current!!.latitude,current!!.longitude))
+                        OutlinedButton(onClick={
+                            val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("GPS 坐标",String.format(Locale.US,"%.6f, %.6f",current!!.latitude,current!!.longitude)))
+                            android.widget.Toast.makeText(context,"坐标已复制",android.widget.Toast.LENGTH_SHORT).show()
+                        }) { Text("复制坐标") }
+                    }
+                }
+                if(closestWaypoint!=null) {
+                    Text("最近途经点：${closestWaypoint.name} · ${formatNavDistance(mapDistance(cp!!,closestWaypoint.lat to closestWaypoint.lon))}",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C))
+                }
+                if(waypoints.isNotEmpty()) {
+                    TextButton(onClick={showWaypointList=!showWaypointList},modifier=Modifier.fillMaxWidth()) {
+                        Text(if(showWaypointList)"收起途经点列表（${waypoints.size}）" else "查看全部途经点（${waypoints.size}）")
+                    }
+                    if(showWaypointList) waypoints.forEachIndexed { index,wp ->
+                        OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false},modifier=Modifier.fillMaxWidth()) {
+                            Text("${index+1}. ${wp.name}  ·  ${String.format(Locale.US,"%.5f, %.5f",wp.lat,wp.lon)}",fontSize=11.sp)
+                        }
+                    }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}

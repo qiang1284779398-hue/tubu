@@ -261,8 +261,8 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         (if(hours>0) "${hours}小时${minutes}分" else "${minutes}分钟")+(if(gpsSpeed>=0.8)" · 当前速度" else if(hasRemainingElevation)" · 含爬升估算" else " · 不含爬升")
     }
     val currentElevation=routeMatch?.let { match ->
-        val a=elevationProfile.getOrNull(match.segmentIndex)
-        val b=elevationProfile.getOrNull(match.segmentIndex+1)
+        val a=navigationElevations.getOrNull(match.segmentIndex)
+        val b=navigationElevations.getOrNull(match.segmentIndex+1)
         if(a!=null&&b!=null) a+(b-a)*match.fraction else current?.takeIf{it.hasAltitude()}?.altitude
     } ?: current?.takeIf{it.hasAltitude()}?.altitude
     LaunchedEffect(routeMatch,active,reverseRoute) {

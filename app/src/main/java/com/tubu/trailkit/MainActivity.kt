@@ -294,7 +294,7 @@ fun TrailKitApp() {
                         }
                     }
                     if(projectPage=="gear") {
-                LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(11.dp),contentPadding=PaddingValues(top=14.dp,bottom=90.dp)) {
+                LazyColumn(Modifier.fillMaxSize().padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(11.dp),contentPadding=PaddingValues(top=14.dp,bottom=90.dp)) {
                     item {
                         Card(shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=forest),elevation=CardDefaults.cardElevation(defaultElevation=5.dp)) {
                             Row(Modifier.fillMaxWidth().padding(20.dp),verticalAlignment=Alignment.CenterVertically) {
@@ -345,19 +345,6 @@ fun TrailKitApp() {
                                 val intent=Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,text)
                                 context.startActivity(Intent.createChooser(intent,"分享徒步装备清单"))
                             },modifier=Modifier.weight(1f)) { Text("分享清单") }
-                        }
-                    }
-                    item {
-                        Column(verticalArrangement=Arrangement.spacedBy(7.dp)) {
-                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick={weatherOpen=true},modifier=Modifier.weight(1f)){Text("目的地天气")}
-                                OutlinedButton(onClick={safetyOpen=true},modifier=Modifier.weight(1f)){Text("安全中心")}
-                            }
-                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick={mapOpen=true},enabled=p.mapPath.isNotBlank() || p.trackData.isNotBlank(),modifier=Modifier.weight(1f)){Text("地图 / 轨迹导航")}
-                                OutlinedButton(onClick={mapTargetProjectId=p.id;mbtilesImporter.launch(arrayOf("*/*"))},modifier=Modifier.weight(1f)){Text(if(p.mapPath.isBlank())"导入地图包" else "更换地图包")}
-                                OutlinedButton(onClick={trackOpen=true},enabled=p.trackData.isNotBlank(),modifier=Modifier.weight(1f)){Text("轨迹预览")}
-                            }
                         }
                     }
                     if(p.gear.isEmpty()) item { Empty("装备清单还是空的","点击右下角 + 添加第一件装备") }

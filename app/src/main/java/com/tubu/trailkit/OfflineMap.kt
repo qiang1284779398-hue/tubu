@@ -276,7 +276,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         if(off) offRouteWas=true
         else if(routeMatch==null || routeMatch.distanceMeters<threshold*0.7) offRouteWas=false
     }
-    val recordingSeconds=if(isRecording) ((System.currentTimeMillis()-recordingStartedAt).coerceAtLeast(0L)/1000L)+recordingClockTick*0L else 0L
+    val recordingSeconds=if(isRecording) recordingClockTick else 0L
     val recordingElapsedText=String.format(Locale.CHINA,"%02d:%02d",recordingSeconds/60,recordingSeconds%60)
     DisposableEffect(context) {
         val manager=context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -741,7 +741,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         } else {
                             if(!active) gpsError="请先开启导航定位，再开始记录轨迹"
                             else {
-                                recordedPoints.clear();recordingStartedAt=System.currentTimeMillis();isRecording=true;hasSavedRecording=false
+                                recordedPoints.clear();recordingStartedAt=System.currentTimeMillis();recordingClockTick=0L;isRecording=true;hasSavedRecording=false
                                 try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_START_RECORDING)) } catch(_:Exception) { gpsError="无法启动轨迹记录服务" }
                             }
                         }

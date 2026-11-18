@@ -80,7 +80,7 @@ fun TrailKitAdvancedDialog(
 
 @Composable
 private fun MetricCard(label:String,value:String) {
-    Card(Modifier.weight(1f),colors=CardDefaults.cardColors(containerColor=Color(0xFFE9EEE7))) {
+    Card(Modifier.width(145.dp),colors=CardDefaults.cardColors(containerColor=Color(0xFFE9EEE7))) {
         Column(Modifier.padding(11.dp)) {
             Text(label,fontSize=11.sp,color=Color(0xFF78827A))
             Text(value,fontWeight=FontWeight.Bold,color=Color(0xFF183C32),fontSize=16.sp)

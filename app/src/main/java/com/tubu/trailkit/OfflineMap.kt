@@ -332,6 +332,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$viewKey",initialRouteZoom).coerceIn(2f,18f))}
     var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.second)}
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
+    var mapProjector by remember(projectId,path) { mutableStateOf<((Double,Double)->android.graphics.PointF)?>(null) }
     LaunchedEffect(projectId,path,zoom,centerLon,centerLat) {
         kotlinx.coroutines.delay(450L)
         viewPrefs.edit().putFloat("zoom_$viewKey",zoom).putString("lon_$viewKey",centerLon.toString()).putString("lat_$viewKey",centerLat.toString()).apply()
@@ -641,6 +642,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             zoom = z.coerceIn(2f, 18f)
                         },
                         onTap = { lat, lon -> if (measureMode) measurePoints.add(lat to lon) },
+                        onProjectionChanged = { projector -> mapProjector = projector },
                         onLongPress = { lat, lon ->
                             val coords = String.format(Locale.US, "%.6f, %.6f", lat, lon)
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -656,6 +658,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     val z=if(info!=null)zoom.roundToInt().coerceIn(info.minZoom,info.maxZoom) else 14
                     val scale=2.0.pow((zoom-z).toDouble()).toFloat()
                     val cx=worldX(centerLon,z);val cy=worldY(centerLat,z)
+                    fun project(lat:Double,lon:Double):android.graphics.PointF = mapProjector?.invoke(lat,lon) ?: android.graphics.PointF(((worldX(lon,z)-left)*scale).toFloat(),((worldY(lat,z)-top)*scale).toFloat())
                     val left=cx-size.width/(2.0*scale);val top=cy-size.height/(2.0*scale)
                     if(db!=null&&info!=null) {
                         val minX=floor(left/256.0).toInt();val maxX=floor((left+size.width/scale)/256.0).toInt()
@@ -718,8 +721,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val measurePaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(36,105,190);strokeWidth=4f;style=Paint.Style.STROKE;strokeCap=Paint.Cap.ROUND}
                         val measurePath=AndroidPath()
                         measurePoints.forEachIndexed { index,p ->
-                            val x=((worldX(p.second,z)-left)*scale).toFloat()
-                            val y=((worldY(p.first,z)-top)*scale).toFloat()
+                            val projected=project(p.first,p.second);val x=projected.x
+                            val y=projected.y
                             if(index==0)measurePath.moveTo(x,y) else measurePath.lineTo(x,y)
                             val dot=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(36,105,190);style=Paint.Style.FILL}
                             canvas.drawCircle(x,y,6f,dot)
@@ -730,9 +733,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         canvas.drawPath(measurePath,measurePaint)
                     }
                     if(navigationPoints.isNotEmpty()) {
-                        fun point(p:Pair<Double,Double>)=android.graphics.PointF(((worldX(p.second,z)-left)*scale).toFloat(),((worldY(p.first,z)-top)*scale).toFloat())
+                        fun point(p:Pair<Double,Double>)=project(p.first,p.second)
                         val rp=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=5f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
-                        val snapped=progressMatch?.let { android.graphics.PointF(((worldX(it.snappedLon,z)-left)*scale).toFloat(),((worldY(it.snappedLat,z)-top)*scale).toFloat()) }
+                        val snapped=progressMatch?.let { project(it.snappedLat,it.snappedLon) }
                         val remainingPath=AndroidPath()
                         val firstRemaining=snapped?:point(navigationPoints[nearest])
                         remainingPath.moveTo(firstRemaining.x,firstRemaining.y)
@@ -760,8 +763,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         var lastLabelX=-1000f;var lastLabelY=-1000f
                         allWaypoints.forEachIndexed { index,wp ->
                             marker.color=if(index<waypoints.size)android.graphics.Color.rgb(235,151,47) else android.graphics.Color.rgb(123,87,164)
-                            val x=((worldX(wp.lon,z)-left)*scale).toFloat()
-                            val y=((worldY(wp.lat,z)-top)*scale).toFloat()
+                            val projected=project(wp.lat,wp.lon);val x=projected.x
+                            val y=projected.y
                             if(x in 0f..size.width && y in 0f..size.height) {
                                 canvas.drawCircle(x,y,6f,marker);canvas.drawCircle(x,y,6f,outline)
                                 if(zoom>=13f && (kotlin.math.abs(x-lastLabelX)>100f || kotlin.math.abs(y-lastLabelY)>65f)) {
@@ -773,7 +776,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         }
                     }
                     cp?.let {
-                        val x=((worldX(it.second,z)-left)*scale).toFloat();val y=((worldY(it.first,z)-top)*scale).toFloat()
+                        val projected=project(it.first,it.second);val x=projected.x;val y=projected.y
                         val accuracyMeters=current?.accuracy?.toDouble()?:0.0
                         val metersPerPixel=(2.0*Math.PI*6378137.0*cos(Math.toRadians(it.first)).coerceAtLeast(0.01))/(256.0*2.0.pow(zoom.toDouble()))
                         val accuracyRadius=(accuracyMeters/metersPerPixel).toFloat().coerceIn(8f,120f)

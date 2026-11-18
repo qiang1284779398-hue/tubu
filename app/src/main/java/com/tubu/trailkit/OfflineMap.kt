@@ -1012,7 +1012,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     val waypoint=nextWaypoint
                     val waypointPoint=waypoint.lat to waypoint.lon
                     val currentPoint=cp
-                    if(currentPoint!=null) {
+                    if(currentPoint!=null && (current?.accuracy?:999f)<=50f && (gpsFixAgeSeconds?:999L)<=15L) {
                         val waypointDistance=mapDistance(currentPoint,waypointPoint)
                         val waypointBearing=bearingToPoint(currentPoint,waypointPoint)
                         Text(
@@ -1022,7 +1022,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         )
                         if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(reliableTrueHeading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                     } else {
-                        Text("下一途经点：${waypoint.name} · 路线距离 ${nextWaypointRouteDistance?.let(::formatNavDistance)?:"待定位"} · 等待 GPS 定位后显示直线距离与方位",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C))
+                        Text(if(currentPoint==null) "下一途经点：${waypoint.name} · 等待定位后显示方向" else "下一途经点：${waypoint.name} · 当前是粗略位置，不显示距离和方向，避免误导",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C))
                     }
                 }
                 if(navigationPoints.size>=2) OutlinedButton(onClick={exportRouteGpx.launch("TrailKit-路线${if(reverseRoute)"-反向" else ""}.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出当前路线 GPX（含海拔与途经点）") }

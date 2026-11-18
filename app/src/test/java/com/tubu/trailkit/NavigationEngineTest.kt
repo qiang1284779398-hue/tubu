@@ -63,4 +63,8 @@ class NavigationEngineTest {
         assertTrue(kotlin.math.abs(utm.easting-166021.0)<100.0)
         assertTrue(kotlin.math.abs(utm.northing)<1.0)
     }
+    @Test fun dmsCoordinatesUseCorrectHemisphereAndPrecision() {
+        assertEquals("31°13′30.00″N",formatDms(31.225,true))
+        assertEquals("121°28′30.00″W",formatDms(-121.475,false))
+    }
 }

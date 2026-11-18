@@ -335,10 +335,15 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val routeMatch=cp?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
     val closestWaypoint=if(cp!=null) allWaypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val announcedWaypoints = remember(projectId,encoded) { mutableStateListOf<Int>() }
+    val announcedApproaches = remember(projectId,encoded) { mutableStateListOf<Int>() }
     LaunchedEffect(active, closestWaypoint, current?.accuracy) {
         if(active && cp!=null && closestWaypoint!=null && (current?.accuracy ?: 999f)<=25f) {
             val index=allWaypoints.indexOf(closestWaypoint)
             val distance=mapDistance(cp,closestWaypoint.lat to closestWaypoint.lon)
+            if(index>=0 && distance<=100.0 && distance>30.0 && index !in announcedApproaches) {
+                announcedApproaches.add(index)
+                speakNavigation("前方约一百米，途经点：${closestWaypoint.name}")
+            }
             if(index>=0 && distance<=30.0 && index !in announcedWaypoints) {
                 announcedWaypoints.add(index)
                 try {
@@ -346,7 +351,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0,180,100,180),-1))
                     else vibrator.vibrate(longArrayOf(0,180,100,180),-1)
                 } catch(_:Exception) {}
-                android.widget.Toast.makeText(context,"已到达途经点：${closestWaypoint.name}",android.widget.Toast.LENGTH_LONG).show()\n                speakNavigation("已到达途经点，${closestWaypoint.name}")
+                android.widget.Toast.makeText(context,"已到达途经点：${closestWaypoint.name}",android.widget.Toast.LENGTH_LONG).show()
+                speakNavigation("已到达途经点，${closestWaypoint.name}")
             }
         }
     }
@@ -890,7 +896,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val nextSegmentKey="segment_${projectId}_${encoded.hashCode()}_${if(nextReverse)"rev" else "fwd"}"
                         context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE).edit()
                             .putBoolean("reverse_$projectId",nextReverse).putFloat(nextProgressKey,0f).putInt(nextSegmentKey,0).apply()
-                        reverseRoute=nextReverse;confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear()
+                        reverseRoute=nextReverse;confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear();announcedApproaches.clear()
                     },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
                     OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
                     OutlinedButton(onClick={if(current!=null){centerLat=current!!.latitude;centerLon=current!!.longitude;followGps=true}else if(navigationPoints.isNotEmpty()){centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second}} ,modifier=Modifier.weight(1f)){Text("回到当前位置")}

@@ -248,23 +248,26 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             val step=max(1,ceil(navigationPoints.size/24.0).toInt())
             val samples=navigationPoints.filterIndexed{index,_->index%step==0 || index==navigationPoints.lastIndex}
             val minZ=info?.minZoom?:0
-            val missing=samples.count { point ->
+            var missing=0
+            var parentFallback=0
+            samples.forEach { point ->
                 val x=floor(worldX(point.second,z)/256.0).toInt()
                 val y=floor(worldY(point.first,z)/256.0).toInt()
                 val tileX=((x%(1 shl z))+(1 shl z))%(1 shl z)
                 var level=z
-                var found=false
-                while(level>=minZ && !found) {
+                var foundLevel=-1
+                while(level>=minZ && foundLevel<0) {
                     val shift=z-level
                     val parentX=tileX shr shift
                     val parentY=y shr shift
                     val tmsY=(1 shl level)-1-parentY
-                    found=db.rawQuery("SELECT 1 FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",arrayOf(level.toString(),parentX.toString(),tmsY.toString())).use{it.moveToFirst()}
+                    val found=db.rawQuery("SELECT 1 FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",arrayOf(level.toString(),parentX.toString(),tmsY.toString())).use{it.moveToFirst()}
+                    if(found)foundLevel=level
                     level--
                 }
-                !found
+                if(foundLevel<0)missing++ else if(foundLevel<z)parentFallback++
             }
-            missing to samples.size
+            Triple(missing,samples.size,parentFallback)
         } catch(_:Exception) { null }
     }
     val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -409,10 +412,14 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         Text("当前没有可读取的 MBTiles 地图。导入地图包后，这里会显示真实地形；现在仍可使用 GPS + GPX 轨迹进行基础跟随导航。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF76521D))
                     }
                 }
-                sampledRouteTileCoverage?.let { (missing,total) ->
-                    if(missing>0) Surface(color=Color(0xFFFFF3DD),shape=RoundedCornerShape(10.dp)) {
-                        Text("当前缩放级别抽样检查：路线附近有 $missing/$total 个瓦片缺失。请更换更完整的离线地图或检查缩放级别。",Modifier.padding(10.dp),fontSize=11.sp,color=Color(0xFF76521D))
-                    } else Text("当前缩放级别路线瓦片抽样完整：$total/$total",fontSize=10.sp,color=Color(0xFF23734D))
+                sampledRouteTileCoverage?.let { (missing,total,parentFallback) ->
+                    when {
+                        missing>0 -> Surface(color=Color(0xFFFFF3DD),shape=RoundedCornerShape(10.dp)) {
+                            Text("当前缩放级别抽样检查：路线附近有 $missing/$total 个瓦片缺失。请更换更完整的离线地图或检查缩放级别。",Modifier.padding(10.dp),fontSize=11.sp,color=Color(0xFF76521D))
+                        }
+                        parentFallback>0 -> Text("路线瓦片覆盖：$total/$total；其中 $parentFallback 个位置使用低级瓦片放大，局部可能较模糊。",fontSize=10.sp,color=Color(0xFF9A6A25))
+                        else -> Text("当前缩放级别路线瓦片抽样完整：$total/$total",fontSize=10.sp,color=Color(0xFF23734D))
+                    }
                 }
                 if(info!=null && info.tileCount==0) Surface(color=Color(0xFFFFE8E4),shape=RoundedCornerShape(10.dp)) {
                     Text("MBTiles 的 tiles 表为空，没有可显示的地图瓦片。请检查地图包是否完整。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF9B3E32))

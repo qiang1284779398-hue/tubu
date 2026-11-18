@@ -658,8 +658,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     val z=if(info!=null)zoom.roundToInt().coerceIn(info.minZoom,info.maxZoom) else 14
                     val scale=2.0.pow((zoom-z).toDouble()).toFloat()
                     val cx=worldX(centerLon,z);val cy=worldY(centerLat,z)
-                    fun project(lat:Double,lon:Double):android.graphics.PointF = mapProjector?.invoke(lat,lon) ?: android.graphics.PointF(((worldX(lon,z)-left)*scale).toFloat(),((worldY(lat,z)-top)*scale).toFloat())
                     val left=cx-size.width/(2.0*scale);val top=cy-size.height/(2.0*scale)
+                    fun project(lat:Double,lon:Double):android.graphics.PointF = mapProjector?.invoke(lat,lon) ?: android.graphics.PointF(((worldX(lon,z)-left)*scale).toFloat(),((worldY(lat,z)-top)*scale).toFloat())
                     if(db!=null&&info!=null) {
                         val minX=floor(left/256.0).toInt();val maxX=floor((left+size.width/scale)/256.0).toInt()
                         val minY=floor(top/256.0).toInt();val maxY=floor((top+size.height/scale)/256.0).toInt()

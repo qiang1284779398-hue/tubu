@@ -44,18 +44,26 @@ class TrailNavigationService : Service(), LocationListener {
         }
         startForeground(notificationId,buildNotification("正在启动 GPS 定位…"))
         val fine=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
-        if(!fine) {
-            updateNotification("缺少精确定位权限，请返回 TrailKit 授权")
+        val coarse=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
+        if(!fine && !coarse) {
+            updateNotification("缺少定位权限，请返回 TrailKit 授权")
             stopSelf()
             return START_NOT_STICKY
         }
         try {
-            if(!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                updateNotification("GPS 已关闭，请开启手机定位")
-            } else {
-                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,2000L,3f,this)
+            var providersRequested=0
+            if(fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,0f,this)
                 manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let(::onLocationChanged)
+                providersRequested++
             }
+            if(manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,2500L,0f,this)
+                manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)?.let(::onLocationChanged)
+                providersRequested++
+            }
+            try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,5000L,0f,this); providersRequested++ } catch(_:Exception) {}
+            if(providersRequested==0) updateNotification("定位源未启用，请打开手机系统定位")
         } catch(_:SecurityException) {
             updateNotification("定位权限不足")
             stopSelf()
@@ -66,14 +74,14 @@ class TrailNavigationService : Service(), LocationListener {
     }
 
     override fun onLocationChanged(location:Location) {
-        val text=(if(trackWriter!=null)"轨迹记录中 · " else "")+String.format(Locale.US,"%.5f, %.5f · 精度 ±%.0f m · %.1f km/h",
-            location.latitude,location.longitude,location.accuracy,if(location.hasSpeed())location.speed*3.6f else 0f)
+        val age=System.currentTimeMillis()-location.time
+        val source=when(location.provider) { LocationManager.GPS_PROVIDER -> "GPS"; LocationManager.NETWORK_PROVIDER -> "网络"; LocationManager.PASSIVE_PROVIDER -> "被动"; else -> location.provider ?: "定位" }
+        val text=(if(trackWriter!=null)"记录中 · " else "")+"$source · ${String.format(Locale.US,"%.5f, %.5f",location.latitude,location.longitude)} · 精度 ±${location.accuracy.toInt()} m · ${if(age<=15000L)"实时" else "延迟 ${age/1000}s"}"
         updateNotification(text)
         try {
             val writer=trackWriter
-            if(writer!=null && location.provider==LocationManager.GPS_PROVIDER) {
-                val age=System.currentTimeMillis()-location.time
-                if(age in 0L..15000L && location.accuracy<=50f) {
+            if(writer!=null) {
+                if(age in 0L..20000L && location.accuracy<=100f) {
                     val previous=lastTrackLocation
                     val distance=previous?.distanceTo(location)?.toDouble() ?: Double.POSITIVE_INFINITY
                     val elapsed=previous?.let { location.time-it.time } ?: Long.MAX_VALUE

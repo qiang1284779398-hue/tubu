@@ -51,12 +51,13 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     return 2*r*asin(sqrt(h.coerceIn(0.0,1.0)))
 }
 
-@Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,onClose:()->Unit) {
+@Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",onClose:()->Unit) {
     val context=androidx.compose.ui.platform.LocalContext.current
     val db=remember(path) { if(path.isBlank()) null else try { SQLiteDatabase.openDatabase(path,null,SQLiteDatabase.OPEN_READONLY) } catch(_:Exception){null} }
     DisposableEffect(db) { onDispose { try{db?.close()}catch(_:Exception){} } }
     val info=remember(db) { try{db?.let(::readMbInfo)}catch(_:Exception){null} }
     val points=remember(encoded){decodeTrackPoints(encoded)}
+    val waypoints=remember(encodedWaypoints){decodeGpxWaypoints(encodedWaypoints)}
     val prefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
     var active by remember { mutableStateOf(false) }
@@ -166,6 +167,25 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,130,75);style=Paint.Style.FILL}
                         canvas.drawCircle(start.x,start.y,7f,marker);marker.color=android.graphics.Color.rgb(205,78,58);canvas.drawCircle(end.x,end.y,7f,marker)
                     }
+                    if(waypoints.isNotEmpty()) {
+                        val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(235,151,47);style=Paint.Style.FILL}
+                        val outline=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=2f}
+                        val labelFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(66,55,39);textSize=26f;typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)}
+                        val labelStroke=Paint(labelFill).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
+                        var lastLabelX=-1000f;var lastLabelY=-1000f
+                        waypoints.forEach { wp ->
+                            val x=((worldX(wp.lon,z)-left)*scale).toFloat()
+                            val y=((worldY(wp.lat,z)-top)*scale).toFloat()
+                            if(x in 0f..size.width && y in 0f..size.height) {
+                                canvas.drawCircle(x,y,6f,marker);canvas.drawCircle(x,y,6f,outline)
+                                if(zoom>=13f && (kotlin.math.abs(x-lastLabelX)>100f || kotlin.math.abs(y-lastLabelY)>65f)) {
+                                    val label=wp.name.take(16)
+                                    canvas.drawText(label,x+10f,y-9f,labelStroke);canvas.drawText(label,x+10f,y-9f,labelFill)
+                                    lastLabelX=x;lastLabelY=y
+                                }
+                            }
+                        }
+                    }
                     cp?.let {
                         val x=((worldX(it.second,z)-left)*scale).toFloat();val y=((worldY(it.first,z)-top)*scale).toFloat()
                         val p=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
@@ -173,7 +193,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
                     }
                 }
-                Text("绿线：已走路段   橙线：剩余路线   蓝点：当前位置   起点绿 / 终点红",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Text("绿线：已走   橙线：剩余   蓝点：定位   橙色点：GPX 途经点（${waypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 if(points.size>=2) {
                     if(cp!=null) {
                         val off=deviation?:0.0

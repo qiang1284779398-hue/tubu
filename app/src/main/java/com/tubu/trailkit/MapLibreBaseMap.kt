@@ -2,6 +2,8 @@ package com.tubu.trailkit
 
 import android.content.Context
 import android.graphics.PointF
+import android.view.MotionEvent
+import android.os.SystemClock
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +34,19 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.*
 
 internal const val TRAILKIT_MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty"
+
+// Prevent the surrounding Compose scroll container from stealing map drag gestures.
+private class GestureFriendlyMapView(context: Context) : MapView(context) {
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
+                parent?.requestDisallowInterceptTouchEvent(true)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                parent?.requestDisallowInterceptTouchEvent(false)
+        }
+        return super.dispatchTouchEvent(event)
+    }
+}
 
 @Composable
 internal fun MapLibreBaseMap(
@@ -64,7 +79,7 @@ internal fun MapLibreBaseMap(
                 chain.proceed(request)
             }.build()
         HttpRequestUtil.setOkHttpClient(http)
-        MapView(context).also { it.onCreate(null) }
+        GestureFriendlyMapView(context).also { it.onCreate(null) }
     }
     var map by remember(mapView) { mutableStateOf<MapLibreMap?>(null) }
     var ready by remember(mapView) { mutableStateOf(false) }
@@ -97,21 +112,24 @@ internal fun MapLibreBaseMap(
             mapView.getMapAsync { nativeMap ->
                 map = nativeMap
                 nativeMap.uiSettings.isCompassEnabled = false
-                // Keep Compose route overlays synchronized while the user is dragging/zooming.
-                // Waiting for camera-idle leaves GPX overlays visually detached during gestures.
-                fun publishCameraAndProjection() {
+                // Let MapLibre handle gestures natively. Publish camera state at a modest
+                // cadence so Compose does not redraw the heavy GPX/MBTiles overlay on every frame.
+                var lastCameraPublishMs = 0L
+                fun publishCamera(force: Boolean = false) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (!force && now - lastCameraPublishMs < 60L) return
+                    lastCameraPublishMs = now
                     val pos = nativeMap.cameraPosition
-                    val target = pos.target
-                    if (target != null) {
-                        cameraCallback(target.latitude, target.longitude, pos.zoom.toFloat())
-                        projectionCallback { lat, lon ->
-                            nativeMap.projection.toScreenLocation(LatLng(lat, lon))
-                        }
-                    }
+                    val target = pos.target ?: return
+                    cameraCallback(target.latitude, target.longitude, pos.zoom.toFloat())
                 }
-                nativeMap.addOnCameraMoveListener { publishCameraAndProjection() }
-                nativeMap.addOnCameraIdleListener { publishCameraAndProjection() }
+                nativeMap.addOnCameraMoveListener { publishCamera() }
+                nativeMap.addOnCameraIdleListener { publishCamera(true) }
                 // The GPX overlay is drawn in an unrotated Web-Mercator screen space.
+                nativeMap.uiSettings.isScrollGesturesEnabled = true
+                nativeMap.uiSettings.isZoomGesturesEnabled = true
+                nativeMap.uiSettings.isDoubleTapGesturesEnabled = true
+                nativeMap.uiSettings.isQuickZoomGesturesEnabled = true
                 nativeMap.uiSettings.isRotateGesturesEnabled = false
                 nativeMap.uiSettings.isTiltGesturesEnabled = false
                 nativeMap.addOnMapClickListener { point ->

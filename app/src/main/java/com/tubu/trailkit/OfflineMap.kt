@@ -169,6 +169,17 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val total=routeMatch?.totalMeters?:remember(points){points.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
     val remaining=(total-travelled).coerceAtLeast(0.0)
+    val gpsSpeed=current?.takeIf{it.hasSpeed()}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
+    val etaSeconds=if(gpsSpeed>=0.5) (remaining/gpsSpeed).toLong() else null
+    val etaText=etaSeconds?.let { seconds ->
+        val hours=seconds/3600;val minutes=(seconds%3600)/60
+        if(hours>0) "${hours}小时${minutes}分" else "${minutes}分钟"
+    } ?: "速度稳定后估算"
+    val currentElevation=routeMatch?.let { match ->
+        val a=elevationProfile.getOrNull(match.segmentIndex)
+        val b=elevationProfile.getOrNull(match.segmentIndex+1)
+        if(a!=null&&b!=null) a+(b-a)*match.fraction else current?.takeIf{it.hasAltitude()}?.altitude
+    } ?: current?.takeIf{it.hasAltitude()}?.altitude
     LaunchedEffect(routeMatch,active) {
         if(routeMatch!=null) { confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters);lastMatchedSegment=routeMatch.segmentIndex }
         val off=active && routeMatch!=null && (current?.accuracy?:999f)<=50f && routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
@@ -332,6 +343,40 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
                 }
                 Text("绿线：已走   橙线：剩余   蓝点：定位   橙色点：GPX 途经点（${waypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    MapStat("速度",if(current?.hasSpeed()==true) String.format(Locale.CHINA,"%.1f km/h",gpsSpeed*3.6) else "--")
+                    MapStat("海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")
+                    MapStat("GPS",current?.accuracy?.let{"±${it.roundToInt()} m"}?:"等待定位")
+                }
+                if(points.size>=2) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    MapStat("预计剩余",etaText)
+                    MapStat("下一航向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick={
+                            val loc=current
+                            if(loc!=null) {
+                                val coords=String.format(Locale.US,"%.6f, %.6f",loc.latitude,loc.longitude)
+                                val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(ClipData.newPlainText("GPS 坐标",coords))
+                                android.widget.Toast.makeText(context,"已复制坐标：$coords",android.widget.Toast.LENGTH_SHORT).show()
+                            } else android.widget.Toast.makeText(context,"尚未获取 GPS 定位",android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier=Modifier.weight(1f)
+                    ) { Text("复制当前位置坐标") }
+                    OutlinedButton(
+                        onClick={
+                            val loc=current
+                            if(loc!=null) {
+                                val uri=android.net.Uri.parse("geo:${loc.latitude},${loc.longitude}?q=${loc.latitude},${loc.longitude}(TrailKit)")
+                                val intent=android.content.Intent(android.content.Intent.ACTION_VIEW,uri)
+                                try{context.startActivity(intent)}catch(_:Exception){android.widget.Toast.makeText(context,"没有可打开坐标的地图应用",android.widget.Toast.LENGTH_SHORT).show()}
+                            } else android.widget.Toast.makeText(context,"尚未获取 GPS 定位",android.widget.Toast.LENGTH_SHORT).show()
+                        },
+                        modifier=Modifier.weight(1f)
+                    ) { Text("用地图查看") }
+                }
                 if(points.size>=2) {
                     if(cp!=null) {
                         val off=deviation?:0.0

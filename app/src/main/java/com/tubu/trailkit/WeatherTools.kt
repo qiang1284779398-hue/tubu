@@ -24,7 +24,7 @@ private suspend fun fetchWeather(place:String):WeatherReport=withContext(Dispatc
 }
 @Composable fun TrailWeatherDialog(place:String,onClose:()->Unit){
  var report by remember{mutableStateOf<WeatherReport?>(null)};var error by remember{mutableStateOf("")};var loading by remember{mutableStateOf(true)};var refresh by remember{mutableIntStateOf(0)}
- LaunchedEffect(place,refresh){loading=true;try{report=fetchWeather(place.ifBlank{error("请先填写目的地")});error=""}catch(e:Exception){error=e.message?:"天气查询失败"}finally{loading=false}}
+ LaunchedEffect(place,refresh){loading=true;try{report=fetchWeather(place.ifBlank{throw IllegalArgumentException("请先填写目的地")});error=""}catch(e:Exception){error=e.message?:"天气查询失败"}finally{loading=false}}
  AlertDialog(onDismissRequest=onClose,title={Text("目的地天气")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
   when{loading->CircularProgressIndicator();report!=null->{
    Text(report!!.place,fontWeight=androidx.compose.ui.text.font.FontWeight.Bold,color=Color(0xFF183C32))

@@ -50,13 +50,14 @@ import org.json.JSONObject
 import java.io.File
 import kotlin.math.*
 
-private data class MbInfo(val name:String,val format:String,val minZoom:Int,val maxZoom:Int,val centerLon:Double,val centerLat:Double,val centerZoom:Float,val bounds:List<Double>)
+private data class MbInfo(val name:String,val format:String,val minZoom:Int,val maxZoom:Int,val centerLon:Double,val centerLat:Double,val centerZoom:Float,val bounds:List<Double>,val tileCount:Int)
 private fun readMbInfo(db:SQLiteDatabase):MbInfo {
     val values=mutableMapOf<String,String>()
     db.rawQuery("SELECT name,value FROM metadata",null).use { c -> while(c.moveToNext()) values[c.getString(0)]=c.getString(1) }
     val center=values["center"]?.split(",")?.mapNotNull{it.toDoubleOrNull()}
     val bounds=values["bounds"]?.split(",")?.mapNotNull{it.trim().toDoubleOrNull()}?:emptyList()
-    return MbInfo(values["name"]?:"离线地图",values["format"]?:"jpg",values["minzoom"]?.toIntOrNull()?:0,values["maxzoom"]?.toIntOrNull()?:16,center?.getOrNull(0)?:0.0,center?.getOrNull(1)?:0.0,center?.getOrNull(2)?.toFloat()?:10f,bounds)
+    val tileCount=db.rawQuery("SELECT COUNT(*) FROM tiles",null).use{if(it.moveToFirst())it.getInt(0) else 0}
+    return MbInfo(values["name"]?:"离线地图",values["format"]?:"jpg",values["minzoom"]?.toIntOrNull()?:0,values["maxzoom"]?.toIntOrNull()?:16,center?.getOrNull(0)?:0.0,center?.getOrNull(1)?:0.0,center?.getOrNull(2)?.toFloat()?:10f,bounds,tileCount)
 }
 private fun worldX(lon:Double,z:Int):Double=(lon+180.0)/360.0*(256.0*(1 shl z))
 private fun worldY(lat:Double,z:Int):Double {
@@ -351,6 +352,12 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                     Surface(color=Color(0xFFFFF3DD),shape=RoundedCornerShape(10.dp)) {
                         Text("当前没有可读取的 MBTiles 地图。导入地图包后，这里会显示真实地形；现在仍可使用 GPS + GPX 轨迹进行基础跟随导航。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF76521D))
                     }
+                }
+                if(info!=null && info.tileCount==0) Surface(color=Color(0xFFFFE8E4),shape=RoundedCornerShape(10.dp)) {
+                    Text("MBTiles 的 tiles 表为空，没有可显示的地图瓦片。请检查地图包是否完整。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF9B3E32))
+                }
+                if(info!=null && info.format.lowercase(Locale.ROOT) in listOf("pbf","mvt")) Surface(color=Color(0xFFFFF3DD),shape=RoundedCornerShape(10.dp)) {
+                    Text("当前是矢量瓦片格式（${info.format.uppercase()}），此版本仅支持 PNG/JPEG/WebP 栅格 MBTiles。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF76521D))
                 }
                 if(mapCoverage==false) Surface(color=Color(0xFFFFE8E4),shape=RoundedCornerShape(10.dp)) {
                     Text("地图覆盖范围可能不完整：GPX 路线范围超出 MBTiles bounds。请补充地图区域，不能把空白区域当作无路地形。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF9B3E32))

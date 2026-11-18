@@ -13,7 +13,8 @@ fun readGpxTrack(context:Context,uri:Uri):GpxTrackResult {
  val waypoints=JSONArray()
  context.contentResolver.openInputStream(uri)?.use{input->
   val parser=Xml.newPullParser();parser.setInput(input,"UTF-8");var event=parser.eventType
-  var waypoint:JSONObject?=null\n  var activeTrackPointIndex:Int?=null
+  var waypoint:JSONObject?=null
+  var activeTrackPointIndex:Int?=null
   while(event!=XmlPullParser.END_DOCUMENT){
    if(event==XmlPullParser.START_TAG)when(parser.name.lowercase(Locale.ROOT)){
     "trkpt","rtept"->{val lat=parser.getAttributeValue(null,"lat")?.toDoubleOrNull();val lon=parser.getAttributeValue(null,"lon")?.toDoubleOrNull();if(lat!=null&&lon!=null&&lat in -90.0..90.0&&lon in -180.0..180.0){points.add(lat to lon);elevations.add(null);activeTrackPointIndex=points.lastIndex}}
@@ -21,7 +22,8 @@ fun readGpxTrack(context:Context,uri:Uri):GpxTrackResult {
     "name"->{if(waypoint!=null){val name=parser.nextText().trim();if(name.isNotBlank())waypoint!!.put("name",name)}}
     "ele"->{val elevation=parser.nextText().toDoubleOrNull();val index=activeTrackPointIndex;if(elevation!=null&&index!=null)elevations[index]=elevation}
    }
-   if(event==XmlPullParser.END_TAG && (parser.name.equals("trkpt",true)||parser.name.equals("rtept",true)))activeTrackPointIndex=null\n   if(event==XmlPullParser.END_TAG && parser.name.equals("wpt",true)){waypoint?.let{waypoints.put(it)};waypoint=null}
+   if(event==XmlPullParser.END_TAG && (parser.name.equals("trkpt",true)||parser.name.equals("rtept",true)))activeTrackPointIndex=null
+   if(event==XmlPullParser.END_TAG && parser.name.equals("wpt",true)){waypoint?.let{waypoints.put(it)};waypoint=null}
    event=parser.next()
   }
  }?:error("无法读取 GPX 文件")
@@ -32,7 +34,8 @@ fun readGpxTrack(context:Context,uri:Uri):GpxTrackResult {
   return 2*r*asin(sqrt(h.coerceIn(0.0,1.0)))
  }
  val meters=points.zipWithNext().sumOf{segment(it.first,it.second)}
- val ascent=elevations.zipWithNext().sumOf{(a,b)->if(a!=null&&b!=null)(b-a).coerceAtLeast(0.0)else 0.0}\n val elevationJson=JSONArray();elevations.forEach{elevationJson.put(elevation?:JSONObject.NULL)}
+ val ascent=elevations.zipWithNext().sumOf{(a,b)->if(a!=null&&b!=null)(b-a).coerceAtLeast(0.0)else 0.0}
+ val elevationJson=JSONArray();elevations.forEach{elevationJson.put(elevation?:JSONObject.NULL)}
  val json=JSONArray();points.forEach{json.put(JSONArray().put(it.first).put(it.second))}
  val summary="GPX轨迹："+points.size+" 个轨迹点 · "+String.format(Locale.CHINA,"%.2f",meters/1000.0)+" km · 累计爬升约 "+ascent.roundToInt()+" m · "+waypoints.length()+" 个途经点"
  return GpxTrackResult(summary,json.toString(),waypoints.toString(),elevationJson.toString())
@@ -44,4 +47,7 @@ data class GpxWaypoint(val lat:Double,val lon:Double,val name:String)
 fun decodeGpxWaypoints(encoded:String):List<GpxWaypoint> = try {
  val a=JSONArray(encoded);List(a.length()){i->val p=a.getJSONObject(i);GpxWaypoint(p.getDouble("lat"),p.getDouble("lon"),p.optString("name","途经点"))}
 }catch(_:Exception){emptyList()}
-\nfun decodeGpxElevations(encoded:String):List<Double?> = try {\n val a=JSONArray(encoded);List(a.length()){i->if(a.isNull(i))null else a.getDouble(i)}\n}catch(_:Exception){emptyList()}\n
+
+fun decodeGpxElevations(encoded:String):List<Double?> = try {
+ val a=JSONArray(encoded);List(a.length()){i->if(a.isNull(i))null else a.getDouble(i)}
+}catch(_:Exception){emptyList()}

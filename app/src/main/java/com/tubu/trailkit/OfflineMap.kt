@@ -186,6 +186,12 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     }
     val elevationProfile=remember(encodedElevations){decodeGpxElevations(encodedElevations)}
     val navigationElevations=remember(elevationProfile,reverseRoute){if(reverseRoute)elevationProfile.asReversed() else elevationProfile}
+    // Precompute route distances once; Canvas redraws must not recalculate every GPX segment.
+    val elevationCumulative=remember(navigationPoints) {
+        DoubleArray(navigationPoints.size).also { cumulative ->
+            for(i in 1 until navigationPoints.size) cumulative[i]=cumulative[i-1]+mapDistance(navigationPoints[i-1],navigationPoints[i])
+        }
+    }
     val elevationStats=remember(navigationElevations){
         val pairs=navigationElevations.zipWithNext().filter{it.first!=null&&it.second!=null}
         Triple(pairs.sumOf{(a,b)->(b!!-a!!).coerceAtLeast(0.0)},pairs.sumOf{(a,b)->(a!!-b!!).coerceAtLeast(0.0)},navigationElevations.filterNotNull())
@@ -218,9 +224,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var gpsStatusTick by remember(projectId) { mutableLongStateOf(0L) }
 
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick)
-    LaunchedEffect(active) {
-        while(active) { delay(1000L); gpsStatusTick++ }
-    }
     var gpsError by remember(projectId) { mutableStateOf("") }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
     var followGps by remember(projectId) { mutableStateOf(true) }
@@ -540,10 +543,14 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     }
     val batteryLevel=(context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf{it in 0..100}
     val gpsSpeed=current?.takeIf{it.hasSpeed() && it.accuracy<=50f && (gpsFixAgeSeconds?:999L)<=15L}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
-    val remainingAscent=progressMatch?.let { match ->
-        navigationElevations.drop(match.segmentIndex).zipWithNext().sumOf{(a,b)->if(a!=null&&b!=null)(b-a).coerceAtLeast(0.0)else 0.0}
-    } ?: 0.0
-    val hasRemainingElevation=progressMatch!=null && navigationElevations.size==navigationPoints.size && navigationElevations.drop(progressMatch.segmentIndex).count{it!=null}>=2
+    val remainingAscent=remember(progressMatch?.segmentIndex,navigationElevations) {
+        progressMatch?.let { match ->
+            navigationElevations.drop(match.segmentIndex).zipWithNext().sumOf{(a,b)->if(a!=null&&b!=null)(b-a).coerceAtLeast(0.0)else 0.0}
+        } ?: 0.0
+    }
+    val hasRemainingElevation=remember(progressMatch?.segmentIndex,navigationElevations,navigationPoints.size) {
+        progressMatch!=null && navigationElevations.size==navigationPoints.size && navigationElevations.drop(progressMatch.segmentIndex).count{it!=null}>=2
+    }
     val etaSeconds=if(gpsSpeed>=0.8) (remaining/gpsSpeed).toLong() else (remaining/0.70+(if(hasRemainingElevation)remainingAscent/600.0*3600.0 else 0.0)).toLong()
     val etaText=run {
         val hours=etaSeconds/3600;val minutes=(etaSeconds%3600)/60
@@ -582,20 +589,32 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         @Suppress("DEPRECATION")
         val fallbackSensor=if(rotationSensor==null) manager.getDefaultSensor(Sensor.TYPE_ORIENTATION) else null
         val sensor=rotationSensor ?: fallbackSensor
+        var lastPublishAt=0L
+        var lastPublished=Float.NaN
         val listener=object:SensorEventListener {
             override fun onSensorChanged(event:SensorEvent) {
-                if(event.sensor.type==Sensor.TYPE_ROTATION_VECTOR) {
+                val raw=if(event.sensor.type==Sensor.TYPE_ROTATION_VECTOR) {
                     val matrix=FloatArray(9);val orientation=FloatArray(3)
                     SensorManager.getRotationMatrixFromVector(matrix,event.values)
                     SensorManager.getOrientation(matrix,orientation)
-                    heading=((Math.toDegrees(orientation[0].toDouble()).toFloat()+360f)%360f)
-                } else {
-                    heading=((event.values[0]+360f)%360f)
+                    Math.toDegrees(orientation[0].toDouble()).toFloat()
+                } else event.values[0]
+                val normalized=(raw+360f)%360f
+                val now=android.os.SystemClock.elapsedRealtime()
+                val difference=if(lastPublished.isNaN()) 360f else kotlin.math.abs((normalized-lastPublished+540f)%360f-180f)
+                // Sensor callbacks can be frequent. Avoid recomposing the whole navigation sheet
+                // for tiny compass noise; publish meaningful heading changes at most 4 times/sec.
+                if(now-lastPublishAt>=250L && (lastPublished.isNaN() || difference>=2f)) {
+                    lastPublishAt=now
+                    lastPublished=normalized
+                    heading=normalized
                 }
             }
-            override fun onAccuracyChanged(sensor:Sensor?,accuracy:Int) { compassAccuracy=accuracy }
+            override fun onAccuracyChanged(sensor:Sensor?,accuracy:Int) {
+                if(compassAccuracy!=accuracy) compassAccuracy=accuracy
+            }
         }
-        if(sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_UI)
+        if(sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
         onDispose { manager.unregisterListener(listener) }
     }
     Dialog(onDismissRequest={active=false;onClose()}) {
@@ -637,7 +656,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 } else {
                     Text("导入 GPX 轨迹后，可按路线范围下载离线地图。", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                 }
-                Box(Modifier.fillMaxWidth().height(420.dp)) {
+                Box(Modifier.fillMaxWidth().height(360.dp)) {
                     MapLibreBaseMap(
                         centerLat = centerLat,
                         centerLon = centerLon,
@@ -917,9 +936,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                                 canvas.drawRoundRect(RectF(0f,0f,size.width,size.height),12f,12f,bg)
                                 val padX=12f;val padY=12f
                                 val span=(maxEle-minEle).coerceAtLeast(1.0)
-                                val cumulative=DoubleArray(navigationPoints.size)
-                                for(i in 1 until navigationPoints.size)cumulative[i]=cumulative[i-1]+mapDistance(navigationPoints[i-1],navigationPoints[i])
-                                val distanceTotal=cumulative.last().coerceAtLeast(1.0)
+                                val cumulative=elevationCumulative
+                                val distanceTotal=cumulative.lastOrNull()?.coerceAtLeast(1.0) ?: 1.0
                                 val grid=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(211,220,210);strokeWidth=1f}
                                 for(i in 0..3){val y=padY+(size.height-2*padY)*i/3f;canvas.drawLine(padX,y,size.width-padX,y,grid)}
                                 val line=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(35,112,77);style=Paint.Style.STROKE;strokeWidth=4f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}

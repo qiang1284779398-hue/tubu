@@ -38,6 +38,7 @@ internal fun MapLibreBaseMap(
     centerLat: Double,
     centerLon: Double,
     zoom: Float,
+    styleUrl: String = TRAILKIT_MAP_STYLE,
     onCameraChanged: (Double, Double, Float) -> Unit,
     onTap: (Double, Double) -> Unit,
     onLongPress: (Double, Double) -> Unit,
@@ -67,6 +68,7 @@ internal fun MapLibreBaseMap(
     }
     var map by remember(mapView) { mutableStateOf<MapLibreMap?>(null) }
     var ready by remember(mapView) { mutableStateOf(false) }
+    var appliedStyleUrl by remember(mapView) { mutableStateOf("") }
 
     DisposableEffect(mapView, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -120,12 +122,13 @@ internal fun MapLibreBaseMap(
                     longCallback(point.latitude, point.longitude)
                     true
                 }
-                nativeMap.setStyle(TRAILKIT_MAP_STYLE) {
+                nativeMap.setStyle(styleUrl) {
                     nativeMap.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(centerLat, centerLon))
                         .zoom(zoom.toDouble().coerceIn(2.0, 18.0))
                         .build()
                     ready = true
+                    appliedStyleUrl = styleUrl
                     projectionCallback { lat, lon -> nativeMap.projection.toScreenLocation(LatLng(lat, lon)) }
                 }
             }
@@ -135,6 +138,14 @@ internal fun MapLibreBaseMap(
         update = {
             val nativeMap = map
             if (ready && nativeMap != null) {
+                if (appliedStyleUrl != styleUrl) {
+                    val camera = nativeMap.cameraPosition
+                    nativeMap.setStyle(styleUrl) {
+                        nativeMap.cameraPosition = camera
+                        appliedStyleUrl = styleUrl
+                        projectionCallback { lat, lon -> nativeMap.projection.toScreenLocation(LatLng(lat, lon)) }
+                    }
+                }
                 val p = nativeMap.cameraPosition
                 val target = p.target
                 if (target == null || abs(target.latitude - centerLat) > 0.00015 ||

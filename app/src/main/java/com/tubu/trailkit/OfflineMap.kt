@@ -522,11 +522,13 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 }
                 if(closestWaypoint!=null) {
                     val waypointDistance=mapDistance(cp!!,closestWaypoint.lat to closestWaypoint.lon)
+                    val waypointBearing=bearingToPoint(cp,closestWaypoint.lat to closestWaypoint.lon)
                     Text(
                         if(waypointDistance<=30.0 && current?.accuracy?.let{it<=25f}==true) "已到达途经点：${closestWaypoint.name}"
-                        else "最近途经点：${closestWaypoint.name} · ${formatNavDistance(waypointDistance)}",
+                        else "最近途经点：${closestWaypoint.name} · ${formatNavDistance(waypointDistance)} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
                         fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C)
                     )
+                    if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(heading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 }
                 if(waypoints.isNotEmpty()) {
                     TextButton(onClick={showWaypointList=!showWaypointList},modifier=Modifier.fillMaxWidth()) {

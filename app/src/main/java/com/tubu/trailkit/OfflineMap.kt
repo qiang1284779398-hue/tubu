@@ -833,7 +833,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                             }
                         }
                     },modifier=Modifier.weight(1f),enabled=active || isRecording) { Text(if(isRecording)"停止并导出 GPX（${recordedPoints.size}点）" else "开始记录新轨迹") }
-                    OutlinedButton(onClick={recordedPoints.clear();isRecording=false;hasSavedRecording=false;try{context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING).putExtra(TrailNavigationService.EXTRA_PROJECT_ID,projectId));projectTrackFile(context,projectId).delete()}catch(_:Exception){}},modifier=Modifier.weight(1f),enabled=!isRecording && (recordedPoints.isNotEmpty() || hasSavedRecording)) { Text("清空记录") }
+                    OutlinedButton(onClick={recordedPoints.clear();hasSavedRecording=false;projectTrackFile(context,projectId).delete()},modifier=Modifier.weight(1f),enabled=!isRecording && (recordedPoints.isNotEmpty() || hasSavedRecording)) { Text("清空记录") }
                 }
                 if(!isRecording && hasSavedRecording) OutlinedButton(onClick={exportGpx.launch("TrailKit-上次轨迹.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出上次保存的轨迹 GPX") }
                 if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · ${recordingElapsedText} · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))

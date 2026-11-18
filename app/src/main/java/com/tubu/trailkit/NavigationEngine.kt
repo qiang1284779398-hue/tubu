@@ -31,6 +31,42 @@ private fun bearingDegrees(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
 
 fun bearingToPoint(from:Pair<Double,Double>,to:Pair<Double,Double>):Double = bearingDegrees(from,to)
 
+data class UtmCoordinate(val zone:Int,val hemisphere:Char,val easting:Double,val northing:Double)
+fun toUtm(latitude:Double,longitude:Double):UtmCoordinate? {
+    if(latitude !in -80.0..84.0 || longitude !in -180.0..180.0) return null
+    val a=6378137.0
+    val eccSquared=0.00669437999014
+    val k0=0.9996
+    var zone=floor((longitude+180.0)/6.0).toInt()+1
+    if(latitude>=56.0 && latitude<64.0 && longitude>=3.0 && longitude<12.0) zone=32
+    if(latitude>=72.0 && latitude<84.0) {
+        zone=when {
+            longitude<9.0 -> 31
+            longitude<21.0 -> 33
+            longitude<33.0 -> 35
+            longitude<42.0 -> 37
+            else -> zone
+        }
+    }
+    zone=zone.coerceIn(1,60)
+    val eccPrimeSquared=eccSquared/(1.0-eccSquared)
+    val latRad=Math.toRadians(latitude)
+    val lonRad=Math.toRadians(longitude)
+    val lonOrigin=Math.toRadians((zone-1)*6-180+3.0)
+    val n=a/sqrt(1.0-eccSquared*sin(latRad).pow(2))
+    val t=tan(latRad).pow(2)
+    val cc=eccPrimeSquared*cos(latRad).pow(2)
+    val aa=cos(latRad)*(lonRad-lonOrigin)
+    val m=a*((1-eccSquared/4-3*eccSquared.pow(2)/64-5*eccSquared.pow(3)/256)*latRad
+        -(3*eccSquared/8+3*eccSquared.pow(2)/32+45*eccSquared.pow(3)/1024)*sin(2*latRad)
+        +(15*eccSquared.pow(2)/256+45*eccSquared.pow(3)/1024)*sin(4*latRad)
+        -(35*eccSquared.pow(3)/3072)*sin(6*latRad))
+    val easting=k0*n*(aa+(1-t+cc)*aa.pow(3)/6+(5-18*t+t.pow(2)+72*cc-58*eccPrimeSquared)*aa.pow(5)/120)+500000.0
+    var northing=k0*(m+n*tan(latRad)*(aa.pow(2)/2+(5-t+9*cc+4*cc.pow(2))*aa.pow(4)/24+(61-58*t+t.pow(2)+600*cc-330*eccPrimeSquared)*aa.pow(6)/720))
+    if(latitude<0) northing+=10000000.0
+    return UtmCoordinate(zone,if(latitude>=0)'N' else 'S',easting,northing)
+}
+
 /** Projects a GPS fix onto every GPX segment in a local metric plane. */
 fun matchRoute(points:List<Pair<Double,Double>>,location:Pair<Double,Double>,lastSegmentIndex:Int?=null):RouteMatch? {
     if(points.size<2)return null

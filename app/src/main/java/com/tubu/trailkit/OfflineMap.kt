@@ -403,7 +403,10 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             zoom>=12f -> 0.01
                             zoom>=10f -> 0.05
                             zoom>=8f -> 0.1
-                            else -> 0.25
+                            zoom>=6f -> 0.25
+                            zoom>=4f -> 1.0
+                            zoom>=2f -> 5.0
+                            else -> 10.0
                         }
                         fun inverseY(pixel:Double):Double {
                             val n=Math.PI-2.0*Math.PI*pixel/(256.0*(1 shl z))

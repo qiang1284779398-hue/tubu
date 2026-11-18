@@ -53,6 +53,7 @@ internal fun MapLibreBaseMap(
     centerLat: Double,
     centerLon: Double,
     zoom: Float,
+    mapBearing: Float = 0f,
     styleUrl: String = TRAILKIT_MAP_STYLE,
     onCameraChanged: (Double, Double, Float) -> Unit,
     onTap: (Double, Double) -> Unit,
@@ -144,6 +145,7 @@ internal fun MapLibreBaseMap(
                     nativeMap.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(centerLat, centerLon))
                         .zoom(zoom.toDouble().coerceIn(2.0, 18.0))
+                        .bearing(mapBearing.toDouble())
                         .build()
                     ready = true
                     appliedStyleUrl = styleUrl
@@ -168,10 +170,11 @@ internal fun MapLibreBaseMap(
                 val target = p.target
                 if (target == null || abs(target.latitude - centerLat) > 0.00015 ||
                     abs(target.longitude - centerLon) > 0.00015 ||
-                    abs(p.zoom - zoom.toDouble()) > 0.08) {
+                    abs(p.zoom - zoom.toDouble()) > 0.08 || abs(p.bearing - mapBearing.toDouble()) > 0.5) {
                     nativeMap.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(centerLat, centerLon))
                         .zoom(zoom.toDouble().coerceIn(2.0, 18.0))
+                        .bearing(mapBearing.toDouble())
                         .build()
                 }
             }

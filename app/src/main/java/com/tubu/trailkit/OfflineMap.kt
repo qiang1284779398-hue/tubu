@@ -181,6 +181,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
     val remaining=(total-travelled).coerceAtLeast(0.0)
+    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}
     val gpsSpeed=current?.takeIf{it.hasSpeed()}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
     val etaSeconds=if(gpsSpeed>=0.5) (remaining/gpsSpeed).toLong() else null
     val etaText=etaSeconds?.let { seconds ->
@@ -428,7 +429,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("速度",if(current?.hasSpeed()==true) String.format(Locale.CHINA,"%.1f km/h",gpsSpeed*3.6) else "--")
                     MapStat("海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")
-                    MapStat("GPS",current?.accuracy?.let{"±${it.roundToInt()} m"}?:"等待定位")
+                    MapStat("GPS",when { current==null->"等待定位";(gpsFixAgeSeconds?:0L)>15L->"定位已过期";else->"±${current!!.accuracy.roundToInt()} m" })
                 }
                 if(navigationPoints.size>=2) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("预计剩余",etaText)
@@ -536,6 +537,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("20 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary);Text("300 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)}
                 } else Text("当前项目没有有效 GPX 轨迹，请先导入 GPX 文件。",fontSize=12.sp,color=MaterialTheme.colorScheme.error)
                 if(gpsError.isNotBlank())Text(gpsError,fontSize=12.sp,color=MaterialTheme.colorScheme.error)
+                if((gpsFixAgeSeconds?:0L)>15L) Text("GPS 最近一次定位已超过 15 秒，请检查定位权限、开阔度及手机省电限制。",fontSize=11.sp,color=Color(0xFF9A6A25))
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         MapStat("GPS 精度","±${current!!.accuracy.roundToInt()} m")

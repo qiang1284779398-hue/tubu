@@ -37,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
@@ -399,7 +400,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 val vibrator=context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                 if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createOneShot(260L,VibrationEffect.DEFAULT_AMPLITUDE))
                 else vibrator.vibrate(260L)
-                lastVibrationAt=System.currentTimeMillis()\n                speakNavigation("警告，已偏离 GPX 徒步路线，请核对地图和当前位置")
+                lastVibrationAt=System.currentTimeMillis()
+                speakNavigation("警告，已偏离 GPX 徒步路线，请核对地图和当前位置")
             } catch(_:Exception) {}
         }
         if(off) offRouteWas=true

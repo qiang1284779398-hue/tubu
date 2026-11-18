@@ -67,12 +67,26 @@ fun toUtm(latitude:Double,longitude:Double):UtmCoordinate? {
     return UtmCoordinate(zone,if(latitude>=0)'N' else 'S',easting,northing)
 }
 
-/** Projects a GPS fix onto every GPX segment in a local metric plane. */
-fun matchRoute(points:List<Pair<Double,Double>>,location:Pair<Double,Double>,lastSegmentIndex:Int?=null):RouteMatch? {
-    if(points.size<2)return null
+data class PreparedRoute internal constructor(
+    val points:List<Pair<Double,Double>>,
+    val prefixMeters:DoubleArray,
+    val totalMeters:Double
+)
+fun prepareRoute(points:List<Pair<Double,Double>>):PreparedRoute {
     val prefix=DoubleArray(points.size)
     for(i in 1 until points.size)prefix[i]=prefix[i-1]+haversineMeters(points[i-1],points[i])
-    val total=prefix.last()
+    return PreparedRoute(points,prefix,prefix.lastOrNull()?:0.0)
+}
+
+/** Projects a GPS fix onto a precomputed GPX route without rebuilding its distance index. */
+fun matchRoute(points:List<Pair<Double,Double>>,location:Pair<Double,Double>,lastSegmentIndex:Int?=null):RouteMatch? =
+    matchRoute(prepareRoute(points),location,lastSegmentIndex)
+
+fun matchRoute(route:PreparedRoute,location:Pair<Double,Double>,lastSegmentIndex:Int?=null):RouteMatch? {
+    val points=route.points
+    if(points.size<2)return null
+    val prefix=route.prefixMeters
+    val total=route.totalMeters
     val lat0=Math.toRadians(location.first)
     val cosLat=cos(lat0).coerceAtLeast(0.01)
     var bestDistance=Double.POSITIVE_INFINITY

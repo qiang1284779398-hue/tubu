@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.ContextCompat
 import java.util.Locale
+import java.io.File
 import kotlin.math.*
 
 private data class MbInfo(val name:String,val format:String,val minZoom:Int,val maxZoom:Int,val centerLon:Double,val centerLat:Double,val centerZoom:Float)
@@ -93,7 +94,11 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 recordedPoints.forEach { p -> append("<trkpt lat=\"${p.latitude}\" lon=\"${p.longitude}\"><ele>${p.altitude}</ele><time>${java.time.Instant.ofEpochMilli(p.time)}</time></trkpt>\n") }
                 append("</trkseg></trk></gpx>")
             }
-            context.contentResolver.openOutputStream(uri)?.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                val file=File(context.filesDir,"trailkit_active_track.gpx")
+                if(file.exists() && file.length()>80L) file.inputStream().use { it.copyTo(output) }
+                else output.write(body.toByteArray(Charsets.UTF_8))
+            }
         } catch(_:Exception) { gpsError="GPX 导出失败，请检查保存位置" }
     }
     var zoom by remember(path){mutableFloatStateOf((info?.centerZoom?:14f).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
@@ -369,14 +374,18 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     OutlinedButton(onClick={
                         if(isRecording) {
                             isRecording=false
+                            try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING)) } catch(_:Exception) {}
                             if(recordedPoints.size>=2) exportGpx.launch("TrailKit-${System.currentTimeMillis()}.gpx")
                             else gpsError="记录点不足，至少需要两个定位点才能导出 GPX"
                         } else {
                             if(!active) gpsError="请先开启导航定位，再开始记录轨迹"
-                            else { recordedPoints.clear();recordingStartedAt=System.currentTimeMillis();isRecording=true }
+                            else {
+                                recordedPoints.clear();recordingStartedAt=System.currentTimeMillis();isRecording=true
+                                try { context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_START_RECORDING)) } catch(_:Exception) { gpsError="无法启动轨迹记录服务" }
+                            }
                         }
                     },modifier=Modifier.weight(1f),enabled=active || isRecording) { Text(if(isRecording)"停止并导出 GPX（${recordedPoints.size}点）" else "开始记录新轨迹") }
-                    OutlinedButton(onClick={recordedPoints.clear();isRecording=false},modifier=Modifier.weight(1f),enabled=!isRecording && recordedPoints.isNotEmpty()) { Text("清空记录") }
+                    OutlinedButton(onClick={recordedPoints.clear();isRecording=false;try{context.startService(android.content.Intent(context,TrailNavigationService::class.java).setAction(TrailNavigationService.ACTION_STOP_RECORDING));File(context.filesDir,"trailkit_active_track.gpx").delete()}catch(_:Exception){}},modifier=Modifier.weight(1f),enabled=!isRecording && recordedPoints.isNotEmpty()) { Text("清空记录") }
                 }
                 if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · ${recordingElapsedText} · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))
                 Button(onClick={

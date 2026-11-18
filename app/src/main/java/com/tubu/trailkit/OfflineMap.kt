@@ -117,6 +117,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val points=remember(encoded){decodeTrackPoints(encoded)}
     var reverseRoute by remember(projectId){mutableStateOf(context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE).getBoolean("reverse_$projectId",false))}
     val navigationPoints=remember(points,reverseRoute){if(reverseRoute)points.asReversed() else points}
+    val preparedRoute=remember(navigationPoints){prepareRoute(navigationPoints)}
     val mapCoverage=remember(info,navigationPoints) {
         val bounds=info?.bounds
         if(bounds?.size==4 && navigationPoints.isNotEmpty()) {
@@ -309,7 +310,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     } ?: 0f
     val trueHeading=if(heading.isNaN()) Float.NaN else (heading+magneticDeclination+360f)%360f
     val reliableTrueHeading=if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) Float.NaN else trueHeading
-    val routeMatch=cp?.let { matchRoute(navigationPoints,it,lastMatchedSegment) }
+    val routeMatch=cp?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
     val closestWaypoint=if(cp!=null) allWaypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val announcedWaypoints = remember(projectId,encoded) { mutableStateListOf<Int>() }
     LaunchedEffect(active, closestWaypoint, current?.accuracy) {
@@ -332,7 +333,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
     val waypointRoutePositions=remember(allWaypoints,navigationPoints) {
-        allWaypoints.mapNotNull { wp -> matchRoute(navigationPoints,wp.lat to wp.lon)?.let{wp to it.progressMeters} }
+        allWaypoints.mapNotNull { wp -> matchRoute(preparedRoute,wp.lat to wp.lon)?.let{wp to it.progressMeters} }
     }
     val nextWaypointMatch=remember(waypointRoutePositions,travelled) {
         waypointRoutePositions.filter{it.second>=travelled-20.0}.minByOrNull{it.second}

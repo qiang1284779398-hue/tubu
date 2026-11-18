@@ -172,8 +172,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             voiceInitComplete.value=true
             if(status!=TextToSpeech.SUCCESS) voiceReady.value=false
         }
-            }
-        }
         engine
     }
     DisposableEffect(textToSpeech) { onDispose { try{textToSpeech.stop();textToSpeech.shutdown()}catch(_:Exception){} } }

@@ -402,7 +402,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                     gpsError=if(requested) "正在获取 GPS / Wi-Fi / 基站辅助定位…" else "系统定位源暂不可用，请检查手机定位开关和权限"
                 } else { active=false;gpsError="请允许 TrailKit 使用位置信息" }
-            } catch(e:Exception) { gpsError="定位启动失败：${e.message ?: "请检查定位设置"}";active=false }
+            } catch(e:Exception) { gpsError=e.message?.let{"定位启动失败：$it"}?:"定位启动失败，请检查定位设置";active=false }
             onDispose { try{manager.removeUpdates(listener)}catch(_:Exception){} }
         } else onDispose { }
     }

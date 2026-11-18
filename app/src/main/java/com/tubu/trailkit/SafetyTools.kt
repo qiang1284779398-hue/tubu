@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
   if(granted){
    try{
     val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    val provider=if(manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
+    val provider=if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
     manager.requestSingleUpdate(provider,object:LocationListener{
      override fun onLocationChanged(location:Location){coordinates=String.format(java.util.Locale.US,"%.6f, %.6f",location.latitude,location.longitude);locationStatus="定位已获取 · 精度约 "+location.accuracy.toInt()+" 米"}
      @Deprecated("Deprecated in Java") override fun onStatusChanged(provider:String?,status:Int,extras:android.os.Bundle?){}

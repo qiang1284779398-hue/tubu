@@ -814,6 +814,52 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         if(snapped!=null)passedPath.lineTo(snapped.x,snapped.y)
                         rp.color=android.graphics.Color.rgb(30,125,78)
                         if(nearest>0 || snapped!=null)canvas.drawPath(passedPath,rp)
+                        // Direction chevrons are positioned by route distance, not point count.
+                        // navigationPoints already follows the selected navigation direction, so
+                        // reversing a route automatically reverses every arrow as well.
+                        val routeCumulative=DoubleArray(navigationPoints.size)
+                        for(i in 1 until navigationPoints.size) {
+                            routeCumulative[i]=routeCumulative[i-1]+mapDistance(navigationPoints[i-1],navigationPoints[i])
+                        }
+                        val routeLength=routeCumulative.lastOrNull()?:0.0
+                        if(routeLength>30.0 && navigationPoints.size>=2) {
+                            val metersPerPixel=156543.03392*cos(Math.toRadians(centerLat)).coerceAtLeast(0.01)/2.0.pow(zoom.toDouble())
+                            val arrowSpacing=minOf((metersPerPixel*115.0).coerceIn(160.0,3000.0),(routeLength/2.0).coerceAtLeast(1.0))
+                            val arrowFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(24,58,48);style=Paint.Style.FILL}
+                            val arrowOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=4.5f;strokeJoin=Paint.Join.ROUND;strokeCap=Paint.Cap.ROUND}
+                            val arrowShape=AndroidPath().apply {
+                                moveTo(0f,-11f)
+                                lineTo(-7f,7f)
+                                lineTo(0f,3f)
+                                lineTo(7f,7f)
+                                close()
+                            }
+                            var segmentIndex=0
+                            var targetDistance=arrowSpacing/2.0
+                            while(targetDistance<routeLength && segmentIndex<navigationPoints.lastIndex) {
+                                while(segmentIndex<navigationPoints.lastIndex-1 && routeCumulative[segmentIndex+1]<targetDistance) segmentIndex++
+                                val segmentDistance=routeCumulative[segmentIndex+1]-routeCumulative[segmentIndex]
+                                if(segmentDistance>0.1) {
+                                    val fraction=((targetDistance-routeCumulative[segmentIndex])/segmentDistance).coerceIn(0.0,1.0)
+                                    val a=point(navigationPoints[segmentIndex])
+                                    val b=point(navigationPoints[segmentIndex+1])
+                                    val x=a.x+(b.x-a.x)*fraction.toFloat()
+                                    val y=a.y+(b.y-a.y)*fraction.toFloat()
+                                    val dx=b.x-a.x
+                                    val dy=b.y-a.y
+                                    if(hypot(dx.toDouble(),dy.toDouble())>1.0 && x in -20f..(size.width+20f) && y in -20f..(size.height+20f)) {
+                                        val rotation=Math.toDegrees(atan2(dy.toDouble(),dx.toDouble())).toFloat()+90f
+                                        canvas.save()
+                                        canvas.rotate(rotation,x,y)
+                                        canvas.translate(x,y)
+                                        canvas.drawPath(arrowShape,arrowOutline)
+                                        canvas.drawPath(arrowShape,arrowFill)
+                                        canvas.restore()
+                                    }
+                                }
+                                targetDistance+=arrowSpacing
+                            }
+                        }
                         val start=point(navigationPoints.first());val end=point(navigationPoints.last())
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,130,75);style=Paint.Style.FILL}
                         canvas.drawCircle(start.x,start.y,7f,marker);marker.color=android.graphics.Color.rgb(205,78,58);canvas.drawCircle(end.x,end.y,7f,marker)

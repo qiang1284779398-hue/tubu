@@ -45,6 +45,15 @@ class NavigationEngineTest {
         assertTrue(match!!.progressMeters in 500.0..620.0)
         assertTrue(match.remainingMeters in 1660.0..1680.0)
     }
+    @Test fun preparedRouteMatchesSameProgressWithoutRebuildingIndex() {
+        val route=listOf(31.0 to 121.0,31.001 to 121.002,31.003 to 121.004)
+        val fix=31.0015 to 121.003
+        val direct=matchRoute(route,fix)
+        val prepared=matchRoute(prepareRoute(route),fix)
+        assertNotNull(direct);assertNotNull(prepared)
+        assertEquals(direct!!.progressMeters,prepared!!.progressMeters,0.001)
+        assertEquals(direct.distanceMeters,prepared.distanceMeters,0.001)
+    }
     @Test fun utmConversionMatchesKnownWgs84Coordinate() {
         val utm=toUtm(48.8583,2.2945)
         assertNotNull(utm)

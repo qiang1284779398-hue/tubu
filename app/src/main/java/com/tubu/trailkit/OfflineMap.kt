@@ -179,8 +179,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     }
     LaunchedEffect(textToSpeech) { if(textToSpeech==null) {voiceInitComplete.value=true;voiceReady.value=false} }
     DisposableEffect(textToSpeech) { onDispose { try{textToSpeech?.stop();textToSpeech?.shutdown()}catch(_:Exception){} } }
-    fun speakNavigation(message:String) {
-        if(voiceGuidance && voiceReady.value) try{textToSpeech?.speak(message,TextToSpeech.QUEUE_FLUSH,null,"trailkit_navigation")}catch(_:Exception){}
+    fun speakNavigation(message:String,interrupt:Boolean=false) {
+        if(voiceGuidance && voiceReady.value) try{textToSpeech?.speak(message,if(interrupt)TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,null,"trailkit_navigation")}catch(_:Exception){}
     }
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
     var active by remember(projectId) { mutableStateOf(false) }
@@ -423,7 +423,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createOneShot(260L,VibrationEffect.DEFAULT_AMPLITUDE))
                 else vibrator.vibrate(260L)
                 lastVibrationAt=System.currentTimeMillis()
-                speakNavigation("警告，已偏离 GPX 徒步路线，请核对地图和当前位置")
+                speakNavigation("警告，已偏离 GPX 徒步路线，请核对地图和当前位置",true)
             } catch(_:Exception) {}
         }
         if(off) offRouteWas=true

@@ -97,22 +97,6 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
             minLon>=west && maxLon<=east && minLat>=south && maxLat<=north
         } else null
     }
-    val sampledRouteTileCoverage=remember(db,navigationPoints,zoom) {
-        if(db==null || navigationPoints.isEmpty()) null
-        else try {
-            val z=zoom.roundToInt().coerceIn(info?.minZoom?:0,info?.maxZoom?:18)
-            val step=max(1,ceil(navigationPoints.size/24.0).toInt())
-            val samples=navigationPoints.filterIndexed{index,_->index%step==0 || index==navigationPoints.lastIndex}
-            val missing=samples.count { point ->
-                val x=floor(worldX(point.second,z)/256.0).toInt()
-                val y=floor(worldY(point.first,z)/256.0).toInt()
-                val tileX=((x%(1 shl z))+(1 shl z))%(1 shl z)
-                val tileY=(1 shl z)-1-y
-                db.rawQuery("SELECT 1 FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",arrayOf(z.toString(),tileX.toString(),tileY.toString())).use{!it.moveToFirst()}
-            }
-            missing to samples.size
-        } catch(_:Exception) { null }
-    }
     val waypoints=remember(encodedWaypoints){decodeGpxWaypoints(encodedWaypoints)}
     val customWaypointPrefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
     val customWaypoints=remember(projectId) {
@@ -225,7 +209,23 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
     LaunchedEffect(projectId,path,zoom,centerLon,centerLat) {
         kotlinx.coroutines.delay(450L)
-        viewPrefs.edit().putFloat("zoom_$projectId",zoom).putString("lon_$projectId",centerLon.toString()).putString("lat_$projectId",centerLat.toString()).apply()
+        viewPrefs.edit().putFloat("zoom_$viewKey",zoom).putString("lon_$viewKey",centerLon.toString()).putString("lat_$viewKey",centerLat.toString()).apply()
+    }
+    val sampledRouteTileCoverage=remember(db,navigationPoints,zoom) {
+        if(db==null || navigationPoints.isEmpty()) null
+        else try {
+            val z=zoom.roundToInt().coerceIn(info?.minZoom?:0,info?.maxZoom?:18)
+            val step=max(1,ceil(navigationPoints.size/24.0).toInt())
+            val samples=navigationPoints.filterIndexed{index,_->index%step==0 || index==navigationPoints.lastIndex}
+            val missing=samples.count { point ->
+                val x=floor(worldX(point.second,z)/256.0).toInt()
+                val y=floor(worldY(point.first,z)/256.0).toInt()
+                val tileX=((x%(1 shl z))+(1 shl z))%(1 shl z)
+                val tileY=(1 shl z)-1-y
+                db.rawQuery("SELECT 1 FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",arrayOf(z.toString(),tileX.toString(),tileY.toString())).use{!it.moveToFirst()}
+            }
+            missing to samples.size
+        } catch(_:Exception) { null }
     }
     val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true) { active=true;gpsError="" }

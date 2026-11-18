@@ -153,7 +153,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 try {
                     val vibrator=context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                     if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0,180,100,180),-1))
-                    else @Suppress("DEPRECATION") vibrator.vibrate(longArrayOf(0,180,100,180),-1)
+                    else vibrator.vibrate(longArrayOf(0,180,100,180),-1)
                 } catch(_:Exception) {}
                 android.widget.Toast.makeText(context,"已到达途经点：${closestWaypoint.name}",android.widget.Toast.LENGTH_LONG).show()
             }

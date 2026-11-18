@@ -217,7 +217,11 @@ internal fun RouteOfflineDownloadCard(points: List<Pair<Double, Double>>, projec
                             progress = if (status.requiredResourceCount > 0) {
                                 (status.completedResourceCount.toFloat() / status.requiredResourceCount.toFloat()).coerceIn(0f, 1f)
                             } else 0f
-                            if (status.isComplete) {
+                            if (status.completedResourceSize > 50L * 1024L * 1024L) {
+                                offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                                busy = false
+                                message = "已达到服务方单次 50 MB 上限，当前下载部分已保留；请缩小范围或降低缩放级别。"
+                            } else if (status.isComplete) {
                                 offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
                                 busy = false
                                 complete = true

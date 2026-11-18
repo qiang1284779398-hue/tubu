@@ -64,13 +64,18 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     return 2*r*asin(sqrt(h.coerceIn(0.0,1.0)))
 }
 
-@Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",onClose:()->Unit) {
+@Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",encodedElevations:String="[]",onClose:()->Unit) {
     val context=androidx.compose.ui.platform.LocalContext.current
     val db=remember(path) { if(path.isBlank()) null else try { SQLiteDatabase.openDatabase(path,null,SQLiteDatabase.OPEN_READONLY) } catch(_:Exception){null} }
     DisposableEffect(db) { onDispose { try{db?.close()}catch(_:Exception){} } }
     val info=remember(db) { try{db?.let(::readMbInfo)}catch(_:Exception){null} }
     val points=remember(encoded){decodeTrackPoints(encoded)}
     val waypoints=remember(encodedWaypoints){decodeGpxWaypoints(encodedWaypoints)}
+    val elevationProfile=remember(encodedElevations){decodeGpxElevations(encodedElevations)}
+    val elevationStats=remember(elevationProfile){
+        val pairs=elevationProfile.zipWithNext().filter{it.first!=null&&it.second!=null}
+        Triple(pairs.sumOf{(a,b)->(b!!-a!!).coerceAtLeast(0.0)},pairs.sumOf{(a,b)->(a!!-b!!).coerceAtLeast(0.0)},elevationProfile.filterNotNull())
+    }
     val prefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
     var active by remember { mutableStateOf(false) }
@@ -347,6 +352,44 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             MapStat("总长",formatNavDistance(total))
                         }
                         LinearProgressIndicator(progress={if(total>0)(travelled/total).toFloat().coerceIn(0f,1f)else 0f},modifier=Modifier.fillMaxWidth())
+                        if(elevationStats.third.size>=2 && elevationProfile.size==points.size) {
+                            val valid=elevationStats.third
+                            val minEle=valid.minOrNull()?:0.0
+                            val maxEle=valid.maxOrNull()?:0.0
+                            Text("海拔剖面",fontWeight=FontWeight.Bold,fontSize=14.sp)
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
+                                Text("爬升 +${elevationStats.first.roundToInt()} m",fontSize=11.sp,color=Color(0xFF23734D))
+                                Text("下降 −${elevationStats.second.roundToInt()} m",fontSize=11.sp,color=Color(0xFFB45B32))
+                                Text("最高 ${maxEle.roundToInt()} m",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                            }
+                            Canvas(Modifier.fillMaxWidth().height(112.dp)) {
+                                val canvas=drawContext.canvas.nativeCanvas
+                                val bg=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(239,243,236)}
+                                canvas.drawRoundRect(RectF(0f,0f,size.width,size.height),12f,12f,bg)
+                                val padX=12f;val padY=12f
+                                val span=(maxEle-minEle).coerceAtLeast(1.0)
+                                val cumulative=DoubleArray(points.size)
+                                for(i in 1 until points.size)cumulative[i]=cumulative[i-1]+mapDistance(points[i-1],points[i])
+                                val distanceTotal=cumulative.last().coerceAtLeast(1.0)
+                                val grid=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(211,220,210);strokeWidth=1f}
+                                for(i in 0..3){val y=padY+(size.height-2*padY)*i/3f;canvas.drawLine(padX,y,size.width-padX,y,grid)}
+                                val line=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(35,112,77);style=Paint.Style.STROKE;strokeWidth=4f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
+                                val path=AndroidPath();var started=false
+                                elevationProfile.forEachIndexed { i,value ->
+                                    if(value==null) started=false else {
+                                        val x=padX+(cumulative[i]/distanceTotal).toFloat()*(size.width-2*padX)
+                                        val y=(size.height-padY)-((value-minEle)/span).toFloat()*(size.height-2*padY)
+                                        if(!started){path.moveTo(x,y);started=true}else path.lineTo(x,y)
+                                    }
+                                }
+                                canvas.drawPath(path,line)
+                                val label=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(76,91,79);textSize=22f}
+                                canvas.drawText("${maxEle.roundToInt()} m",padX+4f,25f,label)
+                                canvas.drawText("${minEle.roundToInt()} m",padX+4f,size.height-5f,label)
+                            }
+                        } else {
+                            Text("海拔剖面：当前 GPX 未提供完整的逐点海拔数据",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                        }
                     } else Text(if(active)"正在等待 GPS 定位，请移至开阔处……" else "导入 GPX 后即可开始沿轨迹导航。",fontSize=12.sp,color=MaterialTheme.colorScheme.secondary)
                     Text("偏航提醒距离：${threshold.roundToInt()} 米",fontSize=12.sp,fontWeight=FontWeight.SemiBold)
                     Slider(value=threshold,onValueChange={threshold=it},onValueChangeFinished={prefs.edit().putInt("offroute_$projectId",threshold.roundToInt()).apply()},valueRange=20f..300f,steps=27)

@@ -93,6 +93,13 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var showWaypointList by remember { mutableStateOf(false) }
     val recordedPoints = remember { mutableStateListOf<Location>() }
     var recordingStartedAt by remember { mutableLongStateOf(0L) }
+    var recordingClockTick by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(isRecording) {
+        while(isRecording) {
+            kotlinx.coroutines.delay(1000L)
+            recordingClockTick++
+        }
+    }
     var hasSavedRecording by remember { mutableStateOf(File(context.filesDir,"trailkit_active_track.gpx").exists()) }
     val tileCache = remember(path) { object : LruCache<String, android.graphics.Bitmap>(8 * 1024) { override fun sizeOf(key:String,value:android.graphics.Bitmap)=value.byteCount/1024 } }
     val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
@@ -196,7 +203,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         if(off) offRouteWas=true
         else if(routeMatch==null || routeMatch.distanceMeters<threshold*0.7) offRouteWas=false
     }
-    val recordingSeconds=((System.currentTimeMillis()-recordingStartedAt).coerceAtLeast(0L)/1000L)
+    val recordingSeconds=if(isRecording) ((System.currentTimeMillis()-recordingStartedAt).coerceAtLeast(0L)/1000L) else 0L + recordingClockTick*0L
     val recordingElapsedText=String.format(Locale.CHINA,"%02d:%02d",recordingSeconds/60,recordingSeconds%60)
     DisposableEffect(context) {
         val manager=context.getSystemService(Context.SENSOR_SERVICE) as SensorManager

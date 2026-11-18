@@ -236,18 +236,18 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             manager.setOfflineMapboxTileCountLimit(3000L)
             busy=true;complete=false;progress=0f;batchIndex=0;batchTotal=batches.size
             downloaded=0L;required=0L;bytes=0L
-            message="正在准备$label：路线范围拆分为 \${batches.size} 个小区域…"
+            message="正在准备$label：路线范围拆分为 ${batches.size} 个小区域…"
             lateinit var processNext:(Int)->Unit
             processNext={index->
                 if(index>=batches.size) {
                     busy=false;complete=true;progress=1f
-                    message="${label}全部下载完成，共 \${batches.size} 个离线小区域。可切换图层，断网查看已下载范围。"
+                    message="${label}全部下载完成，共 ${batches.size} 个离线小区域。可切换图层，断网查看已下载范围。"
                 } else {
                     batchIndex=index+1
                     val b=batches[index]
                     val bounds=LatLngBounds.Builder().include(LatLng(b.north,b.east)).include(LatLng(b.south,b.west)).build()
                     val definition=OfflineTilePyramidRegionDefinition(styleUrl,bounds,minZoom.toDouble(),maxZoom.toDouble(),1.0f,true)
-                    val metadata=JSONObject().put("name","TrailKit-\${label}-\${projectId}-\${index+1}").put("projectId",projectId).put("layer",label).put("batch",index+1).put("provider",if(label=="卫星图")"EOxCloudless Sentinel-2 2024" else "EOX Terrain").toString().toByteArray(Charsets.UTF_8)
+                    val metadata=JSONObject().put("name","TrailKit-${label}-${projectId}-${index+1}").put("projectId",projectId).put("layer",label).put("batch",index+1).put("provider",if(label=="卫星图")"EOxCloudless Sentinel-2 2024" else "EOX Terrain").toString().toByteArray(Charsets.UTF_8)
                     manager.createOfflineRegion(definition,metadata,object:OfflineManager.CreateOfflineRegionCallback {
                         override fun onCreate(offlineRegion:OfflineRegion) {
                             var finished=false
@@ -259,16 +259,16 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                                     progress=((index+local)/batches.size.toFloat()).coerceIn(0f,1f)
                                     if(status.completedResourceSize>=48L*1024L*1024L && !status.isComplete) {
                                         finished=true;offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE);busy=false
-                                        message="第 \${index+1}/\${batches.size} 个区域接近 48 MB 安全阈值，已暂停；已完成区域保留。请降低最高缩放级别后重试。"
+                                        message="第 ${index+1}/${batches.size} 个区域接近 48 MB 安全阈值，已暂停；已完成区域保留。请降低最高缩放级别后重试。"
                                     } else if(status.isComplete) {
                                         finished=true;offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
-                                        message="${label}下载中：已完成 \${index+1}/\${batches.size} 个小区域…"
+                                        message="${label}下载中：已完成 ${index+1}/${batches.size} 个小区域…"
                                         processNext(index+1)
-                                    } else message="$label下载中：区域 \${index+1}/\${batches.size}，\${status.completedResourceCount}/\${status.requiredResourceCount} 项资源…"
+                                    } else message="${label}下载中：区域 ${index+1}/${batches.size}，${status.completedResourceCount}/${status.requiredResourceCount} 项资源…"
                                 }
                                 override fun onError(error:OfflineRegionError) {
                                     if(finished)return
-                                    finished=true;busy=false;message="第 \${index+1} 个区域下载失败：\${error.message}。已完成区域保留。"
+                                    finished=true;busy=false;message="第 ${index+1} 个区域下载失败：${error.message}。已完成区域保留。"
                                 }
                                 override fun mapboxTileCountLimitExceeded(limit:Long) {
                                     if(finished)return
@@ -278,12 +278,12 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                             })
                             offlineRegion.setDownloadState(OfflineRegion.STATE_ACTIVE)
                         }
-                        override fun onError(error:String){busy=false;message="无法创建第 \${index+1} 个离线区域：$error"}
+                        override fun onError(error:String){busy=false;message="无法创建第 ${index+1} 个离线区域：$error"}
                     })
                 }
             }
             processNext(0)
-        } catch(e:Exception){busy=false;message="启动离线下载失败：\${e.message ?: "未知错误"}"}
+        } catch(e:Exception){busy=false;message="启动离线下载失败："+(e.message ?: "未知错误")}
     }
 
     Card(modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
@@ -301,7 +301,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             }
             if(busy||complete) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
-                Text("\${(progress*100).toInt()}% · 区域 \${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · \${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)
+                Text("${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · ${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)
             }
             Text("卫星影像：Sentinel-2 Cloudless 2024，非实时；个人非商业使用，需保留数据署名。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }

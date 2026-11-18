@@ -145,6 +145,8 @@ fun directionLabel(degrees:Float):String {
     return names[(kotlin.math.floor(((degrees%360f+360f)%360f+22.5f)/45f).toInt())%8]
 }
 
+fun signedTurnAngle(fromBearing:Double,toBearing:Double):Double = ((toBearing-fromBearing+540.0)%360.0)-180.0
+
 fun turnGuidance(currentHeading:Float,targetBearing:Float):String {
     if(currentHeading.isNaN() || targetBearing.isNaN()) return "等待罗盘"
     val delta=((targetBearing-currentHeading+540f)%360f)-180f

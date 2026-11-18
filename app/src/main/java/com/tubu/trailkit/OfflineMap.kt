@@ -227,6 +227,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var gpsError by remember(projectId) { mutableStateOf("") }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
     var followGps by remember(projectId) { mutableStateOf(true) }
+    var mapOrientation by remember(projectId) { mutableStateOf(prefs.getString("orientation_$projectId","north") ?: "north") }
+    var mapBearing by remember(projectId) { mutableFloatStateOf(0f) }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
     var compassAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_UNRELIABLE) }
     val progressKey="progress_${projectId}_${encoded.hashCode()}_${if(reverseRoute)"rev" else "fwd"}"
@@ -464,6 +466,23 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         active && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f &&
             it.distanceMeters<=threshold.toDouble()+(current?.accuracy?:0f).toDouble()
     }
+    val desiredMapBearing = when(mapOrientation) {
+        "heading" -> if(!arrowHeading.isNaN()) arrowHeading else 0f
+        "track" -> routeMatch?.bearingDegrees?.toFloat() ?: if(!arrowHeading.isNaN()) arrowHeading else 0f
+        else -> 0f
+    }
+    LaunchedEffect(mapOrientation, desiredMapBearing) {
+        var remaining = ((desiredMapBearing - mapBearing + 540f) % 360f) - 180f
+        val steps = 8
+        repeat(steps) {
+            remaining = ((desiredMapBearing - mapBearing + 540f) % 360f) - 180f
+            if(kotlin.math.abs(remaining) > 0.7f) {
+                mapBearing = (mapBearing + remaining / (steps - it).toFloat() + 360f) % 360f
+                kotlinx.coroutines.delay(35L)
+            }
+        }
+        mapBearing = (desiredMapBearing + 360f) % 360f
+    }
     val nextTurnInfo=remember(progressMatch,navigationPoints,preparedRoute) {
         progressMatch?.let { match ->
             val i=match.segmentIndex
@@ -656,11 +675,18 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 } else {
                     Text("导入 GPX 轨迹后，可按路线范围下载离线地图。", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                 }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected=mapOrientation=="north",onClick={mapOrientation="north";prefs.edit().putString("orientation_$projectId","north").apply()},label={Text("北向上")})
+                    FilterChip(selected=mapOrientation=="heading",onClick={mapOrientation="heading";prefs.edit().putString("orientation_$projectId","heading").apply()},label={Text("航向朝上")})
+                    FilterChip(selected=mapOrientation=="track",onClick={mapOrientation="track";prefs.edit().putString("orientation_$projectId","track").apply()},label={Text("轨迹朝上")})
+                }
+                Text(when(mapOrientation) { "north" -> "北向上：地图始终保持北方朝上" ; "heading" -> if(arrowHeading.isNaN()) "航向朝上：等待可靠电子罗盘或 GPS 行进方向" else "航向朝上：根据手机朝向旋转地图" ; else -> if(routeMatch==null) "轨迹朝上：等待高精度 GPS 匹配路线，暂用罗盘方向" else "轨迹朝上：根据前方路线方向旋转地图" },fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
                 Box(Modifier.fillMaxWidth().height(360.dp)) {
                     MapLibreBaseMap(
                         centerLat = centerLat,
                         centerLon = centerLon,
                         zoom = zoom,
+                        mapBearing = mapBearing,
                         styleUrl = activeMapStyle,
                         onCameraChanged = { lat, lon, z ->
                             centerLat = lat

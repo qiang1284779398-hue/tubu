@@ -848,9 +848,14 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     MapStat("GPS 更新",gpsFixAgeSeconds?.let{if(it<60L)"${it} 秒前" else "${it/60} 分钟前"}?:"无定位")
                 }
                 if((batteryLevel?:100)<=20) Text("电量不足 20%：建议开启省电模式、降低屏幕亮度，并准备备用电源。",fontSize=11.sp,color=Color(0xFF9A6A25))
-                nextTurnInfo?.let { (direction,distance) ->
+                if(nextTurnInfo!=null) {
+                    val (direction,distance)=nextTurnInfo
                     Text("前方约 ${distance.roundToInt()} 米 · $direction",fontWeight=FontWeight.Bold,fontSize=13.sp,color=Color(0xFF8B5A22))
-                } ?: if(routeMatch!=null) Text("前方 500 米内无明显转弯",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                } else if(routeMatch!=null) {
+                    Text("前方 500 米内无明显转弯",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                } else {
+                    Unit
+                }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("真北方位",when { heading.isNaN()->"无传感器";compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE->"需校准";compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW->"精度较低";else->"${directionLabel(trueHeading)} ${trueHeading.roundToInt()}°" })
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")

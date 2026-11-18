@@ -730,8 +730,10 @@ private fun recoverRecordedGpx(file:File):ByteArray {
                 if(current!=null) OutlinedButton(onClick={
                     val loc=current!!
                     val coordinates=String.format(Locale.US,"%.6f, %.6f",loc.latitude,loc.longitude)
+                    val dms="${formatDms(loc.latitude,true)}, ${formatDms(loc.longitude,false)}"
+                    val utm=toUtm(loc.latitude,loc.longitude)?.let{"${it.zone}${it.hemisphere} E ${it.easting.roundToInt()} N ${it.northing.roundToInt()}"}?:"超出 UTM 覆盖范围"
                     val mapUrl="https://www.openstreetmap.org/?mlat=${loc.latitude}&mlon=${loc.longitude}#map=16/${loc.latitude}/${loc.longitude}"
-                    val message="我的 TrailKit 徒步位置：$coordinates\nOpenStreetMap：$mapUrl\nGPS 精度：±${loc.accuracy.roundToInt()} 米\n请根据现场情况协助确认位置。"
+                    val message="我的 TrailKit 徒步位置：$coordinates\nDMS：$dms\nUTM：$utm\nOpenStreetMap：$mapUrl\nGPS 精度：±${loc.accuracy.roundToInt()} 米\n请根据现场情况协助确认位置。"
                     val send=android.content.Intent(android.content.Intent.ACTION_SEND).apply{type="text/plain";putExtra(android.content.Intent.EXTRA_SUBJECT,"徒步位置求助");putExtra(android.content.Intent.EXTRA_TEXT,message)}
                     context.startActivity(android.content.Intent.createChooser(send,"分享当前位置"))
                 },modifier=Modifier.fillMaxWidth()) { Text("分享当前位置 / 求助坐标") }

@@ -318,8 +318,9 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         Text(if(showWaypointList)"收起途经点列表（${waypoints.size}）" else "查看全部途经点（${waypoints.size}）")
                     }
                     if(showWaypointList) waypoints.forEachIndexed { index,wp ->
+                        val coordinateText=String.format(Locale.US,"%.5f, %.5f",wp.lat,wp.lon)
                         OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false},modifier=Modifier.fillMaxWidth()) {
-                            Text("${index+1}. ${wp.name}  ·  ${String.format(Locale.US,"%.5f, %.5f",wp.lat,wp.lon)}",fontSize=11.sp)
+                            Text("${index+1}. ${wp.name}  ·  $coordinateText",fontSize=11.sp)
                         }
                     }
                 }

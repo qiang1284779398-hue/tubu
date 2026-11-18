@@ -116,6 +116,23 @@ fun TrailKitApp() {
     var libraryOpen by remember { mutableStateOf(false) }
     var libraryTargetProjectId by remember { mutableStateOf<String?>(null) }
     var advancedToolsOpen by remember { mutableStateOf(false) }
+    var gpxTargetProjectId by remember { mutableStateOf<String?>(null) }
+    val gpxImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) try {
+            val summary = analyzeGpx(context, uri)
+            val target = gpxTargetProjectId
+            if (target != null) {
+                val updated = projects.map { item ->
+                    if (item.id == target) item.copy(route = listOf(item.route, summary).filter { it.isNotBlank() }.joinToString("\n")) else item
+                }
+                persist(context, updated)
+                projects = updated
+                Toast.makeText(context, "GPX 轨迹分析完成，已保存到行程信息", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            Toast.makeText(context, "GPX 导入失败：" + (e.message ?: "文件格式不正确"), Toast.LENGTH_LONG).show()
+        }
+    }
     val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) try {
             val json=context.getSharedPreferences("trailkit",0).getString("projects","[]") ?: "[]"
@@ -286,7 +303,7 @@ fun TrailKitApp() {
         TrailKitAdvancedDialog(
             project=project,
             onClose={advancedToolsOpen=false},
-            onImportGpx={ Toast.makeText(context,"GPX 导入功能正在接入",Toast.LENGTH_SHORT).show() },
+            onImportGpx={ gpxTargetProjectId=project.id; gpxImporter.launch(arrayOf("application/gpx+xml","application/xml","text/xml","*/*")) },
             onAddSuggested={ additions ->
                 val fresh=additions.filterNot { a -> project.gear.any { it.name.equals(a.name,true) } }
                 if(fresh.isNotEmpty()) save(projects.map { if(it.id==project.id) it.copy(gear=it.gear+fresh) else it })

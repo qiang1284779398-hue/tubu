@@ -510,6 +510,19 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                                     }
                                 }
                                 canvas.drawPath(path,line)
+                                routeMatch?.let { match ->
+                                    val a=navigationElevations.getOrNull(match.segmentIndex)
+                                    val b=navigationElevations.getOrNull(match.segmentIndex+1)
+                                    if(a!=null&&b!=null) {
+                                        val distanceAt=cumulative[match.segmentIndex]+(cumulative[match.segmentIndex+1]-cumulative[match.segmentIndex])*match.fraction
+                                        val x=padX+(distanceAt/distanceTotal).toFloat()*(size.width-2*padX)
+                                        val elevation=a+(b-a)*match.fraction
+                                        val y=(size.height-padY)-((elevation-minEle)/span).toFloat()*(size.height-2*padY)
+                                        val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(218,91,48);style=Paint.Style.FILL}
+                                        val halo=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
+                                        canvas.drawCircle(x,y,8f,halo);canvas.drawCircle(x,y,5f,marker)
+                                    }
+                                }
                                 val label=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(76,91,79);textSize=22f}
                                 canvas.drawText("${maxEle.roundToInt()} m",padX+4f,25f,label)
                                 canvas.drawText("${minEle.roundToInt()} m",padX+4f,size.height-5f,label)

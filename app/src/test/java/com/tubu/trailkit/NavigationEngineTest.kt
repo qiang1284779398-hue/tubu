@@ -32,6 +32,11 @@ class NavigationEngineTest {
         assertEquals("向右修正 90°",turnGuidance(0f,90f))
         assertEquals("向左修正 90°",turnGuidance(180f,90f))
     }
+    @Test fun signedTurnAngleHandlesLeftRightAndNorthWraparound() {
+        assertEquals(90.0,signedTurnAngle(0.0,90.0),0.001)
+        assertEquals(-90.0,signedTurnAngle(0.0,270.0),0.001)
+        assertEquals(20.0,signedTurnAngle(350.0,10.0),0.001)
+    }
     @Test fun waypointBearingUsesTrueNorthClockwiseDegrees() {
         assertTrue(kotlin.math.abs(bearingToPoint(0.0 to 0.0,0.0 to 1.0)-90.0)<0.01)
         val north=bearingToPoint(0.0 to 0.0,1.0 to 0.0)

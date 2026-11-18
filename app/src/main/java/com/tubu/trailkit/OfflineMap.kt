@@ -717,6 +717,13 @@ private fun recoverRecordedGpx(file:File):ByteArray {
                 }
                 if(current!=null) OutlinedButton(onClick={
                     val loc=current!!
+                    val dms="${formatDms(loc.latitude,true)}, ${formatDms(loc.longitude,false)}"
+                    val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("DMS 坐标",dms))
+                    android.widget.Toast.makeText(context,"已复制度分秒坐标",android.widget.Toast.LENGTH_SHORT).show()
+                },modifier=Modifier.fillMaxWidth()) { Text("复制度分秒坐标（DMS）") }
+                if(current!=null) OutlinedButton(onClick={
+                    val loc=current!!
                     addCustomWaypoint(loc.latitude,loc.longitude)
                 },modifier=Modifier.fillMaxWidth()) { Text("将当前位置保存为标记点") }
                 if(current!=null) OutlinedButton(onClick={

@@ -372,7 +372,7 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                 sampledRouteTileCoverage?.let { (missing,total) ->
                     if(missing>0) Surface(color=Color(0xFFFFF3DD),shape=RoundedCornerShape(10.dp)) {
                         Text("当前缩放级别抽样检查：路线附近有 $missing/$total 个瓦片缺失。请更换更完整的离线地图或检查缩放级别。",Modifier.padding(10.dp),fontSize=11.sp,color=Color(0xFF76521D))
-                    }
+                    } else Text("当前缩放级别路线瓦片抽样完整：$total/$total",fontSize=10.sp,color=Color(0xFF23734D))
                 }
                 if(info!=null && info.tileCount==0) Surface(color=Color(0xFFFFE8E4),shape=RoundedCornerShape(10.dp)) {
                     Text("MBTiles 的 tiles 表为空，没有可显示的地图瓦片。请检查地图包是否完整。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF9B3E32))

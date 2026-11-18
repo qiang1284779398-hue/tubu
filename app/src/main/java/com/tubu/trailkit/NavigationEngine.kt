@@ -30,7 +30,7 @@ private fun bearingDegrees(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
 }
 
 /** Projects a GPS fix onto every GPX segment in a local metric plane. */
-fun matchRoute(points:List<Pair<Double,Double>>,location:Pair<Double,Double>):RouteMatch? {
+fun matchRoute(points:List<Pair<Double,Double>>,location:Pair<Double,Double>,lastSegmentIndex:Int?=null):RouteMatch? {
     if(points.size<2)return null
     val prefix=DoubleArray(points.size)
     for(i in 1 until points.size)prefix[i]=prefix[i-1]+haversineMeters(points[i-1],points[i])
@@ -43,22 +43,35 @@ fun matchRoute(points:List<Pair<Double,Double>>,location:Pair<Double,Double>):Ro
     var bestLat=points.first().first
     var bestLon=points.first().second
     var bestBearing=0.0
-    for(i in 0 until points.lastIndex) {
-        val a=points[i];val b=points[i+1]
-        val ax=Math.toRadians(a.second-location.second)*6371000.0*cosLat
-        val ay=Math.toRadians(a.first-location.first)*6371000.0
-        val bx=Math.toRadians(b.second-location.second)*6371000.0*cosLat
-        val by=Math.toRadians(b.first-location.first)*6371000.0
-        val dx=bx-ax;val dy=by-ay
-        val denom=dx*dx+dy*dy
-        val t=if(denom<0.0001)0.0 else (-(ax*dx+ay*dy)/denom).coerceIn(0.0,1.0)
-        val px=ax+t*dx;val py=ay+t*dy
-        val distance=hypot(px,py)
-        if(distance<bestDistance) {
-            bestDistance=distance;bestIndex=i;bestFraction=t
-            bestLat=a.first+(b.first-a.first)*t
-            bestLon=a.second+(b.second-a.second)*t
-            bestBearing=bearingDegrees(a,b)
+    fun scan(range:IntRange) {
+        for(i in range) {
+            val a=points[i];val b=points[i+1]
+            val ax=Math.toRadians(a.second-location.second)*6371000.0*cosLat
+            val ay=Math.toRadians(a.first-location.first)*6371000.0
+            val bx=Math.toRadians(b.second-location.second)*6371000.0*cosLat
+            val by=Math.toRadians(b.first-location.first)*6371000.0
+            val dx=bx-ax;val dy=by-ay
+            val denom=dx*dx+dy*dy
+            val t=if(denom<0.0001)0.0 else (-(ax*dx+ay*dy)/denom).coerceIn(0.0,1.0)
+            val px=ax+t*dx;val py=ay+t*dy
+            val distance=hypot(px,py)
+            if(distance<bestDistance) {
+                bestDistance=distance;bestIndex=i;bestFraction=t
+                bestLat=a.first+(b.first-a.first)*t
+                bestLon=a.second+(b.second-a.second)*t
+                bestBearing=bearingDegrees(a,b)
+            }
+        }
+    }
+    if(lastSegmentIndex==null) scan(0 until points.lastIndex)
+    else {
+        val from=(lastSegmentIndex-5).coerceAtLeast(0)
+        val to=(lastSegmentIndex+200).coerceAtMost(points.lastIndex-1)
+        scan(from..to)
+        if(bestDistance>500.0) {
+            bestDistance=Double.POSITIVE_INFINITY
+            bestIndex=0;bestFraction=0.0
+            scan(0 until points.lastIndex)
         }
     }
     val segmentLength=prefix[bestIndex+1]-prefix[bestIndex]

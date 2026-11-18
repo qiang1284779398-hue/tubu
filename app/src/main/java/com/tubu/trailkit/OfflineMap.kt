@@ -281,7 +281,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
             lastMatchedSegment=routeMatch.segmentIndex
             prefs.edit().putFloat(progressKey,confirmedProgress.toFloat()).putInt(segmentKey,lastMatchedSegment).apply()
         }
-        val off=active && routeMatch!=null && (current?.accuracy?:999f)<=50f && routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
+        val off=active && routeMatch!=null && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f && routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
         if(off && !offRouteWas && System.currentTimeMillis()-lastVibrationAt>15000L) {
             try {
                 val vibrator=context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
@@ -583,13 +583,14 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val gpsAccuracy=current?.accuracy?:999f
                         Text(
                             when {
+                                (gpsFixAgeSeconds?:999L)>15L -> "GPS 定位已过期，暂不判断是否偏航"
                                 gpsAccuracy>50f -> "定位精度不足（±${gpsAccuracy.roundToInt()} m），暂不判断是否偏航"
                                 off>threshold+gpsAccuracy -> "偏航警告：偏离轨迹 ${off.roundToInt()} 米（阈值 ${threshold.roundToInt()} 米）"
                                 off>threshold -> "注意：接近偏航阈值，建议核对地图"
                                 else -> "路线正常：距轨迹 ${off.roundToInt()} 米"
                             },
                             fontWeight=FontWeight.Bold,
-                            color=if(gpsAccuracy>50f)Color(0xFF9A6A25) else if(off>threshold+gpsAccuracy)MaterialTheme.colorScheme.error else Color(0xFF23734D)
+                            color=if((gpsFixAgeSeconds?:999L)>15L || gpsAccuracy>50f)Color(0xFF9A6A25) else if(off>threshold+gpsAccuracy)MaterialTheme.colorScheme.error else Color(0xFF23734D)
                         )
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                             MapStat("已走",formatNavDistance(travelled))

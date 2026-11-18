@@ -115,6 +115,7 @@ fun TrailKitApp() {
     var itineraryProjectId by remember { mutableStateOf<String?>(null) }
     var libraryOpen by remember { mutableStateOf(false) }
     var libraryTargetProjectId by remember { mutableStateOf<String?>(null) }
+    var advancedToolsOpen by remember { mutableStateOf(false) }
     val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) try {
             val json=context.getSharedPreferences("trailkit",0).getString("projects","[]") ?: "[]"
@@ -237,6 +238,7 @@ fun TrailKitApp() {
                     item {
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick={libraryTargetProjectId=p.id;libraryOpen=true},modifier=Modifier.weight(1f)) { Text("从装备库复用") }
+                            OutlinedButton(onClick={advancedToolsOpen=true},modifier=Modifier.weight(1f)) { Text("智能分析") }
                             OutlinedButton(onClick={
                                 val text=buildString {
                                     append("徒步清单：").append(p.name).append("\\n")
@@ -278,6 +280,18 @@ fun TrailKitApp() {
                 }
             }
         }
+    }
+
+    if (advancedToolsOpen && project != null) {
+        TrailKitAdvancedDialog(
+            project=project,
+            onClose={advancedToolsOpen=false},
+            onAddSuggested={ additions ->
+                val fresh=additions.filterNot { a -> project.gear.any { it.name.equals(a.name,true) } }
+                if(fresh.isNotEmpty()) save(projects.map { if(it.id==project.id) it.copy(gear=it.gear+fresh) else it })
+                Toast.makeText(context,if(fresh.isEmpty()) "没有新增建议装备" else "已加入 "+fresh.size+" 件建议装备，请补录实际重量",Toast.LENGTH_LONG).show()
+            }
+        )
     }
 
     if(projectDialog) ProjectDialog({projectDialog=false}) { name,place,date ->

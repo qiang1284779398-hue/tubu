@@ -306,10 +306,32 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         } catch(_:Exception) { gpsError="路线 GPX 导出失败，请检查保存位置" }
     }
     val viewPrefs=remember(projectId,path){context.getSharedPreferences("trailkit_map_view",Context.MODE_PRIVATE)}
-    val viewKey="${projectId}_${path.hashCode()}"
-    var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$viewKey",(info?.centerZoom?:14f)).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
-    var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
-    var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
+    // Use a versioned camera key so stale zoom/center values from the previous
+    // map renderer cannot open the new MapLibre navigation view at a world-scale zoom.
+    val viewKey="${projectId}_${path.hashCode()}_routefit2"
+    val routeBounds=remember(navigationPoints) {
+        if(navigationPoints.isNotEmpty()) listOf(
+            navigationPoints.minOf{it.first}, navigationPoints.maxOf{it.first},
+            navigationPoints.minOf{it.second}, navigationPoints.maxOf{it.second}
+        ) else emptyList()
+    }
+    val initialRouteCenter=remember(routeBounds,info) {
+        if(routeBounds.size==4) (routeBounds[0]+routeBounds[1])/2.0 to (routeBounds[2]+routeBounds[3])/2.0
+        else (info?.centerLat?:0.0) to (info?.centerLon?:0.0)
+    }
+    val initialRouteZoom=remember(routeBounds,context,info) {
+        if(routeBounds.size==4) {
+            val dx=(worldX(routeBounds[3],0)-worldX(routeBounds[2],0)).coerceAtLeast(1.0)
+            val dy=(worldY(routeBounds[0],0)-worldY(routeBounds[1],0)).coerceAtLeast(1.0)
+            val width=context.resources.displayMetrics.widthPixels*0.78
+            val height=310.0*context.resources.displayMetrics.density*0.72
+            val fitScale=min((width-48.0)/dx,(height-48.0)/dy).coerceAtLeast(0.25)
+            (ln(fitScale)/ln(2.0)).toFloat().coerceIn(2f,18f)
+        } else (info?.centerZoom?:12f).coerceIn(2f,18f)
+    }
+    var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$viewKey",initialRouteZoom).coerceIn(2f,18f))}
+    var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.second)}
+    var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
     LaunchedEffect(projectId,path,zoom,centerLon,centerLat) {
         kotlinx.coroutines.delay(450L)
         viewPrefs.edit().putFloat("zoom_$viewKey",zoom).putString("lon_$viewKey",centerLon.toString()).putString("lat_$viewKey",centerLat.toString()).apply()

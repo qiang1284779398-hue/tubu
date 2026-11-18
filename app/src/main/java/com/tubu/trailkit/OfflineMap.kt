@@ -203,7 +203,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         if(off) offRouteWas=true
         else if(routeMatch==null || routeMatch.distanceMeters<threshold*0.7) offRouteWas=false
     }
-    val recordingSeconds=if(isRecording) ((System.currentTimeMillis()-recordingStartedAt).coerceAtLeast(0L)/1000L) else 0L + recordingClockTick*0L
+    val recordingSeconds=if(isRecording) ((System.currentTimeMillis()-recordingStartedAt).coerceAtLeast(0L)/1000L)+recordingClockTick*0L else 0L
     val recordingElapsedText=String.format(Locale.CHINA,"%02d:%02d",recordingSeconds/60,recordingSeconds%60)
     DisposableEffect(context) {
         val manager=context.getSystemService(Context.SENSOR_SERVICE) as SensorManager

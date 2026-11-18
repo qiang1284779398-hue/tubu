@@ -1,6 +1,7 @@
 package com.tubu.trailkit
 
 import android.content.Context
+import android.graphics.PointF
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,13 +40,15 @@ internal fun MapLibreBaseMap(
     zoom: Float,
     onCameraChanged: (Double, Double, Float) -> Unit,
     onTap: (Double, Double) -> Unit,
-    onLongPress: (Double, Double) -> Unit
+    onLongPress: (Double, Double) -> Unit,
+    onProjectionChanged: (((Double, Double) -> PointF)?) -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraCallback by rememberUpdatedState(onCameraChanged)
     val tapCallback by rememberUpdatedState(onTap)
     val longCallback by rememberUpdatedState(onLongPress)
+    val projectionCallback by rememberUpdatedState(onProjectionChanged)
     val mapView = remember(context) {
         MapLibre.getInstance(context.applicationContext)
         val dispatcher = Dispatcher().apply { maxRequests = 4; maxRequestsPerHost = 4 }
@@ -83,6 +86,7 @@ internal fun MapLibreBaseMap(
             try { mapView.onPause(); mapView.onStop(); mapView.onDestroy() } catch (_: Exception) {}
             map = null
             ready = false
+            projectionCallback(null)
         }
     }
 
@@ -93,16 +97,18 @@ internal fun MapLibreBaseMap(
                 nativeMap.uiSettings.isCompassEnabled = false
                 // Keep Compose route overlays synchronized while the user is dragging/zooming.
                 // Waiting for camera-idle leaves GPX overlays visually detached during gestures.
-                nativeMap.addOnCameraMoveListener {
+                fun publishCameraAndProjection() {
                     val pos = nativeMap.cameraPosition
                     val target = pos.target
-                    if (target != null) cameraCallback(target.latitude, target.longitude, pos.zoom.toFloat())
+                    if (target != null) {
+                        cameraCallback(target.latitude, target.longitude, pos.zoom.toFloat())
+                        projectionCallback { lat, lon ->
+                            nativeMap.projection.toScreenLocation(LatLng(lat, lon))
+                        }
+                    }
                 }
-                nativeMap.addOnCameraIdleListener {
-                    val pos = nativeMap.cameraPosition
-                    val target = pos.target
-                    if (target != null) cameraCallback(target.latitude, target.longitude, pos.zoom.toFloat())
-                }
+                nativeMap.addOnCameraMoveListener { publishCameraAndProjection() }
+                nativeMap.addOnCameraIdleListener { publishCameraAndProjection() }
                 // The GPX overlay is drawn in an unrotated Web-Mercator screen space.
                 nativeMap.uiSettings.isRotateGesturesEnabled = false
                 nativeMap.uiSettings.isTiltGesturesEnabled = false
@@ -120,6 +126,7 @@ internal fun MapLibreBaseMap(
                         .zoom(zoom.toDouble().coerceIn(2.0, 18.0))
                         .build()
                     ready = true
+                    projectionCallback { lat, lon -> nativeMap.projection.toScreenLocation(LatLng(lat, lon)) }
                 }
             }
             mapView

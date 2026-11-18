@@ -81,7 +81,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var isRecording by remember { mutableStateOf(false) }
     val recordedPoints = remember { mutableStateListOf<Location>() }
     var recordingStartedAt by remember { mutableLongStateOf(0L) }
-    val tileCache = remember(path) { LruCache<String, android.graphics.Bitmap>(8 * 1024) }
+    val tileCache = remember(path) { object : LruCache<String, android.graphics.Bitmap>(8 * 1024) { override fun sizeOf(key:String,value:android.graphics.Bitmap)=value.byteCount/1024 } }
     val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
         if(uri!=null) try {
             val body=buildString {

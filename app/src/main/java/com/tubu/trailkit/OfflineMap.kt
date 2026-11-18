@@ -346,7 +346,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             val i=match.segmentIndex
             if(i+2<navigationPoints.size && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f) {
                 val nextBearing=bearingToPoint(navigationPoints[i+1],navigationPoints[i+2])
-                val delta=((nextBearing-match.bearingDegrees+540.0)%360.0)-180.0
+                val delta=signedTurnAngle(match.bearingDegrees,nextBearing)
                 val distance=preparedRoute.prefixMeters[i+1]-match.progressMeters
                 if(kotlin.math.abs(delta)>=35.0 && distance in 0.0..500.0) Triple(if(delta>0)"右转" else "左转",distance,kotlin.math.abs(delta)) else null
             } else null

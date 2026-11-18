@@ -143,6 +143,22 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val cp=current?.let{it.latitude to it.longitude}
     val routeMatch=cp?.let { matchRoute(points,it,lastMatchedSegment) }
     val closestWaypoint=if(cp!=null) waypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
+    val announcedWaypoints = remember(projectId) { mutableStateListOf<Int>() }
+    LaunchedEffect(active, closestWaypoint, current?.accuracy) {
+        if(active && cp!=null && closestWaypoint!=null && (current?.accuracy ?: 999f)<=25f) {
+            val index=waypoints.indexOf(closestWaypoint)
+            val distance=mapDistance(cp,closestWaypoint.lat to closestWaypoint.lon)
+            if(index>=0 && distance<=30.0 && index !in announcedWaypoints) {
+                announcedWaypoints.add(index)
+                try {
+                    val vibrator=context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                    if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0,180,100,180),-1))
+                    else @Suppress("DEPRECATION") vibrator.vibrate(longArrayOf(0,180,100,180),-1)
+                } catch(_:Exception) {}
+                android.widget.Toast.makeText(context,"已到达途经点：${closestWaypoint.name}",android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
     val nearest=routeMatch?.segmentIndex?:0
     val deviation=routeMatch?.distanceMeters
     val total=routeMatch?.totalMeters?:remember(points){points.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
@@ -314,7 +330,17 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 if(points.size>=2) {
                     if(cp!=null) {
                         val off=deviation?:0.0
-                        Text(if(off>threshold)"偏航警告：偏离轨迹 ${off.roundToInt()} 米（阈值 ${threshold.roundToInt()} 米）" else "路线正常：距轨迹 ${off.roundToInt()} 米",fontWeight=FontWeight.Bold,color=if(off>threshold)MaterialTheme.colorScheme.error else Color(0xFF23734D))
+                        val gpsAccuracy=current?.accuracy?:999f
+                        Text(
+                            when {
+                                gpsAccuracy>50f -> "定位精度不足（±${gpsAccuracy.roundToInt()} m），暂不判断是否偏航"
+                                off>threshold+gpsAccuracy -> "偏航警告：偏离轨迹 ${off.roundToInt()} 米（阈值 ${threshold.roundToInt()} 米）"
+                                off>threshold -> "注意：接近偏航阈值，建议核对地图"
+                                else -> "路线正常：距轨迹 ${off.roundToInt()} 米"
+                            },
+                            fontWeight=FontWeight.Bold,
+                            color=if(gpsAccuracy>50f)Color(0xFF9A6A25) else if(off>threshold+gpsAccuracy)MaterialTheme.colorScheme.error else Color(0xFF23734D)
+                        )
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                             MapStat("已走",formatNavDistance(travelled))
                             MapStat("剩余",formatNavDistance(remaining))
@@ -350,7 +376,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                 }
                 if(closestWaypoint!=null) {
-                    Text("最近途经点：${closestWaypoint.name} · ${formatNavDistance(mapDistance(cp!!,closestWaypoint.lat to closestWaypoint.lon))}",fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C))
+                    val waypointDistance=mapDistance(cp!!,closestWaypoint.lat to closestWaypoint.lon)
+                    Text(
+                        if(waypointDistance<=30.0 && current?.accuracy?.let{it<=25f}==true) "已到达途经点：${closestWaypoint.name}"
+                        else "最近途经点：${closestWaypoint.name} · ${formatNavDistance(waypointDistance)}",
+                        fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C)
+                    )
                 }
                 if(waypoints.isNotEmpty()) {
                     TextButton(onClick={showWaypointList=!showWaypointList},modifier=Modifier.fillMaxWidth()) {

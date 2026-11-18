@@ -91,6 +91,7 @@ fun TrailKitApp() {
     var chosenPhoto by remember { mutableStateOf("") }
     var manageProjectId by remember { mutableStateOf<String?>(null) }
     var editProjectField by remember { mutableStateOf<String?>(null) }
+    var editingProjectId by remember { mutableStateOf<String?>(null) }
     var editProjectValue by remember { mutableStateOf("") }
     var deleteProjectId by remember { mutableStateOf<String?>(null) }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if(uri!=null) chosenPhoto=uri.toString() }
@@ -181,9 +182,9 @@ fun TrailKitApp() {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("长按项目可管理项目资料", color = muted, fontSize = 12.sp)
-                    TextButton(onClick = { editProjectField = "name"; editProjectValue = managedProject.name; manageProjectId = null }) { Text("重命名项目") }
-                    TextButton(onClick = { editProjectField = "place"; editProjectValue = managedProject.place; manageProjectId = null }) { Text("修改终点 / 目的地") }
-                    TextButton(onClick = { editProjectField = "date"; editProjectValue = managedProject.date; manageProjectId = null }) { Text("修改时间") }
+                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "name"; editProjectValue = managedProject.name; manageProjectId = null }) { Text("重命名项目") }
+                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "place"; editProjectValue = managedProject.place; manageProjectId = null }) { Text("修改终点 / 目的地") }
+                    TextButton(onClick = { editingProjectId = managedProject.id; editProjectField = "date"; editProjectValue = managedProject.date; manageProjectId = null }) { Text("修改时间") }
                     TextButton(onClick = { deleteProjectId = managedProject.id; manageProjectId = null }) { Text("删除项目", color = androidx.compose.ui.graphics.Color(0xFFB34D43)) }
                 }
             },
@@ -205,9 +206,7 @@ fun TrailKitApp() {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val targetId = selected ?: projects.firstOrNull { it.id == selected }?.id
-                    val projectId = projects.firstOrNull { it.id == targetId }?.id
-                    val id = projectId
+                    val id = editingProjectId
                     if (id != null && (field != "name" || editProjectValue.isNotBlank())) {
                         save(projects.map { p ->
                             if (p.id != id) p else when(field) {
@@ -218,9 +217,10 @@ fun TrailKitApp() {
                         })
                     }
                     editProjectField = null
+                    editingProjectId = null
                 }) { Text("保存") }
             },
-            dismissButton = { TextButton(onClick = { editProjectField = null }) { Text("取消") } }
+            dismissButton = { TextButton(onClick = { editProjectField = null; editingProjectId = null }) { Text("取消") } }
         )
     }
     if (deleteProjectId != null) {

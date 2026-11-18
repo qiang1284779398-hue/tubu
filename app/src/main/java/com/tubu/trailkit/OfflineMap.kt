@@ -909,7 +909,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         prefs.edit().putBoolean("voice_$projectId",it).apply()
                         if(it && voiceReady.value) speakNavigation("语音导航已开启")
                     })
-                    Text("语音播报途经点到达和偏航提醒",fontSize=12.sp)
+                    Text("语音播报途经点到达和偏航提醒",fontSize=12.sp,modifier=Modifier.weight(1f))
+                    if(voiceGuidance && voiceReady.value) TextButton(onClick={speakNavigation("TrailKit 语音导航测试正常")}){Text("测试语音")}
                     if(voiceGuidance && !voiceReady.value) Text(if(voiceInitComplete.value)"语音不可用" else "语音启动中",fontSize=10.sp,color=Color(0xFF9A6A25))
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {

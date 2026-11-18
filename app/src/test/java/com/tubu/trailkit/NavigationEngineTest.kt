@@ -33,7 +33,8 @@ class NavigationEngineTest {
     }
     @Test fun waypointBearingUsesTrueNorthClockwiseDegrees() {
         assertTrue(kotlin.math.abs(bearingToPoint(0.0 to 0.0,0.0 to 1.0)-90.0)<0.01)
-        val north=bearingToPoint(0.0 to 0.0,1.0 to 0.0)\n        assertTrue(north<0.01 || north>359.99)
+        val north=bearingToPoint(0.0 to 0.0,1.0 to 0.0)
+        assertTrue(north<0.01 || north>359.99)
     }
     @Test fun reversedRouteCanBeMatchedFromOppositeStart() {
         val route=listOf(0.0 to 0.0,0.0 to 0.01,0.0 to 0.02)

@@ -152,10 +152,15 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                     if(points.isNotEmpty()) {
                         fun point(p:Pair<Double,Double>)=android.graphics.PointF(((worldX(p.second,z)-left)*scale).toFloat(),((worldY(p.first,z)-top)*scale).toFloat())
-                        val route=AndroidPath()
-                        points.forEachIndexed{i,p->val q=point(p);if(i==0)route.moveTo(q.x,q.y)else route.lineTo(q.x,q.y)}
-                        val rp=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,105,75);style=Paint.Style.STROKE;strokeWidth=5f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
-                        canvas.drawPath(route,rp)
+                        val rp=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=5f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
+                        val remainingPath=AndroidPath()
+                        points.forEachIndexed{i,p->val q=point(p);if(i==nearest)remainingPath.moveTo(q.x,q.y) else if(i>nearest)remainingPath.lineTo(q.x,q.y)}
+                        rp.color=android.graphics.Color.rgb(218,145,54)
+                        if(nearest<points.lastIndex)canvas.drawPath(remainingPath,rp)
+                        val passedPath=AndroidPath()
+                        points.take(nearest+1).forEachIndexed{i,p->val q=point(p);if(i==0)passedPath.moveTo(q.x,q.y)else passedPath.lineTo(q.x,q.y)}
+                        rp.color=android.graphics.Color.rgb(30,125,78)
+                        if(nearest>0)canvas.drawPath(passedPath,rp)
                         val start=point(points.first());val end=point(points.last())
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,130,75);style=Paint.Style.FILL}
                         canvas.drawCircle(start.x,start.y,7f,marker);marker.color=android.graphics.Color.rgb(205,78,58);canvas.drawCircle(end.x,end.y,7f,marker)
@@ -167,7 +172,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
                     }
                 }
-                Text("绿线：GPX 计划路线   蓝点：当前位置   起点绿 / 终点红",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Text("绿线：已走路段   橙线：剩余路线   蓝点：当前位置   起点绿 / 终点红",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 if(points.size>=2) {
                     if(cp!=null) {
                         val off=deviation?:0.0

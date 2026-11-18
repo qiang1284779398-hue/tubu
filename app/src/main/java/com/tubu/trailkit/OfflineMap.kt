@@ -381,6 +381,20 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val p=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
                         canvas.drawCircle(x,y,13f,p);p.color=android.graphics.Color.rgb(30,105,210);canvas.drawCircle(x,y,9f,p)
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
+                        if(!heading.isNaN()) {
+                            val angle=Math.toRadians(heading.toDouble())
+                            val tipX=x+(sin(angle)*31f).toFloat()
+                            val tipY=y-(cos(angle)*31f).toFloat()
+                            val direction=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(218,91,48);strokeWidth=4f;strokeCap=Paint.Cap.ROUND;style=Paint.Style.STROKE}
+                            canvas.drawLine(x,y,tipX,tipY,direction)
+                            val arrow=AndroidPath().apply {
+                                moveTo(tipX,tipY)
+                                lineTo(tipX-8f*cos(angle.toFloat())-6f*sin(angle.toFloat()),tipY-8f*sin(angle.toFloat())+6f*cos(angle.toFloat()))
+                                moveTo(tipX,tipY)
+                                lineTo(tipX-8f*cos(angle.toFloat())+6f*sin(angle.toFloat()),tipY-8f*sin(angle.toFloat())-6f*cos(angle.toFloat()))
+                            }
+                            canvas.drawPath(arrow,direction)
+                        }
                     }
                     // North-up compass marker and a ground-distance scale bar.
                     val overlay=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(35,54,46);style=Paint.Style.FILL;textSize=22f;typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)}

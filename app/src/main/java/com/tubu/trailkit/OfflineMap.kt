@@ -17,6 +17,7 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.hardware.GeomagneticField
 import android.os.Build
+import android.os.BatteryManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.location.Location
@@ -260,6 +261,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     }
     val remaining=(total-travelled).coerceAtLeast(0.0)
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
+    val batteryLevel=(context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf{it in 0..100}
     val gpsSpeed=current?.takeIf{it.hasSpeed() && (gpsFixAgeSeconds?:999L)<=15L}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
     val remainingAscent=routeMatch?.let { match ->
         navigationElevations.drop(match.segmentIndex).zipWithNext().sumOf{(a,b)->if(a!=null&&b!=null)(b-a).coerceAtLeast(0.0)else 0.0}
@@ -666,6 +668,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         MapStat("速度",if(current!!.hasSpeed())"%.1f km/h".format(Locale.CHINA,current!!.speed*3.6f) else "暂无")
                     }
                 }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    MapStat("手机电量",batteryLevel?.let{"$it%"}?:"未知")
+                    MapStat("记录时长",if(isRecording)recordingElapsedText else "未记录")
+                    MapStat("GPS 更新",gpsFixAgeSeconds?.let{if(it<60L)"${it} 秒前" else "${it/60} 分钟前"}?:"无定位")
+                }
+                if((batteryLevel?:100)<=20) Text("电量不足 20%：建议开启省电模式、降低屏幕亮度，并准备备用电源。",fontSize=11.sp,color=Color(0xFF9A6A25))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("真北方位",when { heading.isNaN()->"无传感器";compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE->"需校准";compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW->"精度较低";else->"${directionLabel(trueHeading)} ${trueHeading.roundToInt()}°" })
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")

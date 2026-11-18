@@ -347,8 +347,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 val nextBearing=bearingToPoint(navigationPoints[index+1],navigationPoints[index+2])
                 val delta=((nextBearing-match.bearingDegrees+540.0)%360.0)-180.0
                 val distanceToTurn=(preparedRoute.prefixMeters[index+1]-match.progressMeters).coerceAtLeast(0.0)
-                if(kotlin.math.abs(delta)>=35.0 && distanceToTurn<=100.0) {
+                if(kotlin.math.abs(delta)>=35.0 && distanceToTurn<=100.0 && match.progressMeters-lastTurnAnnouncementProgress>=60.0) {
                     announcedTurns.add(index)
+                    lastTurnAnnouncementProgress=match.progressMeters
                     val direction=if(delta>0)"右转" else "左转"
                     speakNavigation("前方约${distanceToTurn.roundToInt()}米，$direction")
                 }

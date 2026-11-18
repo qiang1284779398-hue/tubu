@@ -115,6 +115,7 @@ fun TrailKitApp() {
     val context= LocalContext.current
     var projects by remember { mutableStateOf(load(context)) }
     var selected by remember { mutableStateOf<String?>(null) }
+    var projectPage by remember(selected) { mutableStateOf("gear") }
     var projectDialog by remember { mutableStateOf(false) }
     var gearDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Gear?>(null) }
@@ -235,7 +236,7 @@ fun TrailKitApp() {
     ) {
         Scaffold(containerColor=sand, topBar={
             TopAppBar(
-                title={ Column { Text(project?.name ?: "徒步装备管家",fontWeight=FontWeight.Bold); Text(if(project==null) "把每一次出发，准备得漂亮一点" else "装备清单 · "+project.place,fontSize=11.sp,color=muted) } },
+                title={ Column { Text(project?.name ?: "徒步装备管家",fontWeight=FontWeight.Bold); Text(if(project==null) "把每一次出发，准备得漂亮一点" else (if(projectPage=="gear") "装备清单" else "户外导航")+" · "+project.place,fontSize=11.sp,color=muted) } },
                 navigationIcon={ if(project!=null) IconButton(onClick={selected=null}) { Icon(Icons.Default.ArrowBack,"返回") } },
                 actions={
                     if(project!=null) {
@@ -283,6 +284,16 @@ fun TrailKitApp() {
                 }
             } else {
                 val p=project
+                Column(Modifier.fillMaxSize().padding(padding)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp).clip(RoundedCornerShape(18.dp)).background(androidx.compose.ui.graphics.Color(0xFFE4E9E1)).padding(4.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                        listOf("gear" to "装备清单","nav" to "户外导航").forEach { (key,label) ->
+                            val active=projectPage==key
+                            Box(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(if(active) forest else androidx.compose.ui.graphics.Color.Transparent).clickable { projectPage=key }.padding(vertical=12.dp),contentAlignment=Alignment.Center) {
+                                Text(label,fontSize=14.sp,fontWeight=FontWeight.Bold,color=if(active) androidx.compose.ui.graphics.Color.White else muted)
+                            }
+                        }
+                    }
+                    if(projectPage=="gear") {
                 LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(11.dp),contentPadding=PaddingValues(top=14.dp,bottom=90.dp)) {
                     item {
                         Card(shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=forest),elevation=CardDefaults.cardElevation(defaultElevation=5.dp)) {
@@ -375,11 +386,65 @@ fun TrailKitApp() {
                         }
                     }
                 }
-            }
-        }
-    }
-
-    if (weatherOpen && project != null) TrailWeatherDialog(project.place) { weatherOpen=false }
+                    } else {
+                        LazyColumn(Modifier.fillMaxSize().padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(12.dp),contentPadding=PaddingValues(top=8.dp,bottom=28.dp)) {
+                            item {
+                                Card(shape=RoundedCornerShape(24.dp),colors=CardDefaults.cardColors(containerColor=forest)) {
+                                    Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                                        Text("FIELD NAVIGATION",fontSize=10.sp,fontWeight=FontWeight.Bold,color=androidx.compose.ui.graphics.Color(0xFFB9C9B5))
+                                        Spacer(Modifier.height(8.dp))
+                                        Text(p.name,fontSize=22.sp,fontWeight=FontWeight.ExtraBold,color=androidx.compose.ui.graphics.Color.White)
+                                        Text(listOf(p.place,p.date).filter{it.isNotBlank()}.joinToString("  ·  ").ifBlank{"户外路线与环境信息"},fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFFD8E2D7))
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(if(p.trackData.isNotBlank()) "已导入徒步轨迹" else "尚未导入 GPX 轨迹",fontSize=12.sp,color=androidx.compose.ui.graphics.Color.White)
+                                        Text(if(p.mapPath.isNotBlank()) "离线地图已就绪" else "可导入 MBTiles 离线地图",fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFFD8E2D7))
+                                    }
+                                }
+                            }
+                            item {
+                                Text("导航与地图",fontWeight=FontWeight.Bold,color=forest,fontSize=16.sp)
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                    Card(Modifier.weight(1f).clickable { mapOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White)) {
+                                        Column(Modifier.fillMaxWidth().padding(16.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(28.dp))
+                                            Spacer(Modifier.height(8.dp));Text("地图 / 轨迹导航",fontWeight=FontWeight.Bold,fontSize=13.sp,color=forest)
+                                            Text(if(p.trackData.isNotBlank()) "进入路线导航" else "打开离线地图",fontSize=10.sp,color=muted)
+                                        }
+                                    }
+                                    Card(Modifier.weight(1f).clickable { if(p.trackData.isNotBlank()) trackOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White)) {
+                                        Column(Modifier.fillMaxWidth().padding(16.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                                            Icon(Icons.Default.Image,null,tint=forest,modifier=Modifier.size(28.dp))
+                                            Spacer(Modifier.height(8.dp));Text("轨迹预览",fontWeight=FontWeight.Bold,fontSize=13.sp,color=forest)
+                                            Text(if(p.trackData.isNotBlank()) "查看路线概况" else "尚无轨迹",fontSize=10.sp,color=muted)
+                                        }
+                                    }
+                                }
+                            }
+                            item {
+                                OutlinedButton(onClick={mapTargetProjectId=p.id;mbtilesImporter.launch(arrayOf("*/*"))},modifier=Modifier.fillMaxWidth()) { Text(if(p.mapPath.isBlank()) "＋ 导入离线地图包" else "更换离线地图包") }
+                                OutlinedButton(onClick={advancedToolsOpen=true},modifier=Modifier.fillMaxWidth()) { Text("导入 GPX 轨迹 / 智能路线工具") }
+                            }
+                            item {
+                                Text("天气与安全",fontWeight=FontWeight.Bold,color=forest,fontSize=16.sp)
+                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                                    OutlinedButton(onClick={weatherOpen=true},modifier=Modifier.weight(1f)) { Text("目的地天气") }
+                                    OutlinedButton(onClick={safetyOpen=true},modifier=Modifier.weight(1f)) { Text("安全中心") }
+                                }
+                            }
+                            item {
+                                Card(shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White)) {
+                                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                                        Text("行程资料",fontWeight=FontWeight.Bold,color=forest)
+                                        Spacer(Modifier.height(5.dp))
+                                        Text("路线、住宿营地、补给点和紧急联系人",fontSize=11.sp,color=muted)
+                                        Spacer(Modifier.height(10.dp))
+                                        OutlinedButton(onClick={itineraryProjectId=p.id},modifier=Modifier.fillMaxWidth()) { Text("编辑行程与安全信息") }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }f (weatherOpen && project != null) TrailWeatherDialog(project.place) { weatherOpen=false }
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
     if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen) { mapOpen=false }

@@ -425,6 +425,9 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             if(index==0)measurePath.moveTo(x,y) else measurePath.lineTo(x,y)
                             val dot=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(36,105,190);style=Paint.Style.FILL}
                             canvas.drawCircle(x,y,6f,dot)
+                            val number=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(35,69,118);textSize=22f;typeface=android.graphics.Typeface.create("sans-serif-medium",android.graphics.Typeface.NORMAL)}
+                            val halo=Paint(number).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
+                            canvas.drawText("${index+1}",x+9f,y-8f,halo);canvas.drawText("${index+1}",x+9f,y-8f,number)
                         }
                         canvas.drawPath(measurePath,measurePaint)
                     }

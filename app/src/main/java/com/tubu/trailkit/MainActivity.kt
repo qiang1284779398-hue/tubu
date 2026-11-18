@@ -482,7 +482,7 @@ fun TrailKitApp() {
 @Composable private fun GearDialog(initial:Gear?,photo0:String,pick:()->Unit,takePhoto:()->Unit,close:()->Unit,save:(Gear)->Unit) {
     var name by remember{mutableStateOf(initial?.name?:"")};var cat by remember{mutableStateOf(initial?.category?:categories[0])}
     var price by remember{mutableStateOf(initial?.price?.toString()?:"")};var qty by remember{mutableStateOf(initial?.quantity?.toString()?: "1")}
-    var note by remember{mutableStateOf(initial?.note?:"")};var weight by remember{mutableStateOf(initial?.weightGrams?.toString()?:"")};var photo by remember(photo0){mutableStateOf(photo0)}
+    var note by remember{mutableStateOf(initial?.note?:"")};var weight by remember{mutableStateOf(initial?.weightGrams?.toString()?:"")};var warranty by remember{mutableStateOf(initial?.warrantyUntil?:"")};var maintenance by remember{mutableStateOf(initial?.maintenanceLog?:"")};var photo by remember(photo0){mutableStateOf(photo0)}
     AlertDialog(onDismissRequest=close,title={Text(if(initial==null)"添加装备" else "编辑装备")},text={
         Column(Modifier.heightIn(max=520.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
             Box(Modifier.fillMaxWidth().height(145.dp).clip(RoundedCornerShape(14.dp)).background(androidx.compose.ui.graphics.Color(0xFFE9EEE8)),contentAlignment=Alignment.Center) {
@@ -507,8 +507,10 @@ fun TrailKitApp() {
             }
             OutlinedTextField(weight,{weight=it.filter{c->c.isDigit()||c=='.'}},label={Text("单件重量（克）")},modifier=Modifier.fillMaxWidth(),singleLine=true)
             OutlinedTextField(note,{note=it},label={Text("备注")},modifier=Modifier.fillMaxWidth(),maxLines=2)
+            OutlinedTextField(warranty,{warranty=it},label={Text("保修截止日期（如 2027-06-30）")},modifier=Modifier.fillMaxWidth(),singleLine=true)
+            OutlinedTextField(maintenance,{maintenance=it},label={Text("维修 / 保养记录")},modifier=Modifier.fillMaxWidth(),minLines=2,maxLines=3)
         }
-    },confirmButton={TextButton(onClick={if(name.isNotBlank())save(Gear(initial?.id?:System.nanoTime().toString(),name.trim(),cat,price.toDoubleOrNull()?:0.0,(qty.toIntOrNull()?:1).coerceAtLeast(1),note.trim(),photo,weight.toDoubleOrNull()?:0.0,initial?.packed?:false))}){Text("保存")}},dismissButton={TextButton(onClick=close){Text("取消")}})
+    },confirmButton={TextButton(onClick={if(name.isNotBlank())save(Gear(initial?.id?:System.nanoTime().toString(),name.trim(),cat,price.toDoubleOrNull()?:0.0,(qty.toIntOrNull()?:1).coerceAtLeast(1),note.trim(),photo,weight.toDoubleOrNull()?:0.0,initial?.packed?:false,warranty.trim(),maintenance.trim()))}){Text("保存")}},dismissButton={TextButton(onClick=close){Text("取消")}})
 }
 
 private fun makePoster(context:Context,project:Project) {

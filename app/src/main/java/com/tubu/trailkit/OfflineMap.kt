@@ -15,6 +15,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.hardware.GeomagneticField
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -213,6 +214,11 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         } else onDispose { }
     }
     val cp=current?.let{it.latitude to it.longitude}
+    val magneticDeclination=current?.let { loc ->
+        try { GeomagneticField(loc.latitude.toFloat(),loc.longitude.toFloat(),if(loc.hasAltitude())loc.altitude.toFloat() else 0f,System.currentTimeMillis()).declination }
+        catch(_:Exception) { 0f }
+    } ?: 0f
+    val trueHeading=if(heading.isNaN()) Float.NaN else (heading+magneticDeclination+360f)%360f
     val routeMatch=cp?.let { matchRoute(navigationPoints,it,lastMatchedSegment) }
     val closestWaypoint=if(cp!=null) allWaypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val announcedWaypoints = remember(projectId) { mutableStateListOf<Int>() }
@@ -602,9 +608,9 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    MapStat("罗盘",when { heading.isNaN()->"无传感器";compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE->"需校准";compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW->"精度较低";else->"${directionLabel(heading)} ${heading.roundToInt()}°" })
+                    MapStat("真北方位",when { heading.isNaN()->"无传感器";compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE->"需校准";compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW->"精度较低";else->"${directionLabel(trueHeading)} ${trueHeading.roundToInt()}°" })
                     MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
-                    MapStat("方向提示",routeMatch?.let{turnGuidance(heading,it.bearingDegrees.toFloat())}?:"等待定位")
+                    MapStat("方向提示",routeMatch?.let{turnGuidance(trueHeading,it.bearingDegrees.toFloat())}?:"等待定位")
                 }
                 if(compassAccuracy==SensorManager.SENSOR_STATUS_UNRELIABLE || compassAccuracy==SensorManager.SENSOR_STATUS_ACCURACY_LOW) {
                     Text("罗盘精度不足：远离手机磁吸配件、磁铁和金属物；按手机提示做 8 字形校准，并以纸质指北针复核。",fontSize=10.sp,color=Color(0xFF9A6A25))
@@ -639,7 +645,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         else "最近途经点：${closestWaypoint.name} · ${formatNavDistance(waypointDistance)} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
                         fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C)
                     )
-                    if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(heading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                    if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(trueHeading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 }
                 if(navigationPoints.size>=2) OutlinedButton(onClick={exportRouteGpx.launch("TrailKit-路线${if(reverseRoute)"-反向" else ""}.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出当前路线 GPX（含海拔与途经点）") }
                 if(allWaypoints.isNotEmpty()) {

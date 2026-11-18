@@ -78,6 +78,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var followGps by remember { mutableStateOf(true) }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
     var confirmedProgress by remember(projectId) { mutableDoubleStateOf(0.0) }
+    var lastMatchedSegment by remember(projectId) { mutableIntStateOf(0) }
     var offRouteWas by remember(projectId) { mutableStateOf(false) }
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember { mutableStateOf(false) }
@@ -134,7 +135,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         } else onDispose { }
     }
     val cp=current?.let{it.latitude to it.longitude}
-    val routeMatch=cp?.let { matchRoute(points,it) }
+    val routeMatch=cp?.let { matchRoute(points,it,lastMatchedSegment) }
     val closestWaypoint=if(cp!=null) waypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val nearest=routeMatch?.segmentIndex?:0
     val deviation=routeMatch?.distanceMeters
@@ -142,7 +143,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
     val remaining=(total-travelled).coerceAtLeast(0.0)
     LaunchedEffect(routeMatch,active) {
-        if(routeMatch!=null) confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters)
+        if(routeMatch!=null) { confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters);lastMatchedSegment=routeMatch.segmentIndex }
         val off=active && routeMatch!=null && (current?.accuracy?:999f)<=50f && routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
         if(off && !offRouteWas && System.currentTimeMillis()-lastVibrationAt>15000L) {
             try {
@@ -338,7 +339,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}
                     OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost((info?.maxZoom?:18).toFloat())},modifier=Modifier.weight(1f)){Text("+ 放大")}
-                    OutlinedButton(onClick={confirmedProgress=0.0;offRouteWas=false},modifier=Modifier.weight(1f)){Text("重置进度")}
+                    OutlinedButton(onClick={confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false},modifier=Modifier.weight(1f)){Text("重置进度")}
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={

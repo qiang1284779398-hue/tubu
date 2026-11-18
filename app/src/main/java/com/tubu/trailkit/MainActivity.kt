@@ -200,7 +200,7 @@ fun TrailKitApp() {
                                     Text("装备总价值",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=12.sp)
                                     Text(yuan(p.gear.sumOf{it.price*it.quantity}),color=androidx.compose.ui.graphics.Color.White,fontSize=26.sp,fontWeight=FontWeight.ExtraBold)
                                     Spacer(Modifier.height(5.dp))
-                                    Text("背包重量  ${String.format(Locale.CHINA,"%.2f",p.gear.filter{!it.packed}.sumOf{it.weightGrams*it.quantity}/1000.0)} kg",color=androidx.compose.ui.graphics.Color.White,fontSize=13.sp)
+                                    Text("背包重量  ${String.format(Locale.CHINA,"%.2f",p.gear.sumOf{it.weightGrams*it.quantity}/1000.0)} kg",color=androidx.compose.ui.graphics.Color.White,fontSize=13.sp)
                                 }
                                 Column(horizontalAlignment=Alignment.End) {
                                     Text("${p.gear.size}",color=androidx.compose.ui.graphics.Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold)
@@ -226,6 +226,22 @@ fun TrailKitApp() {
                             if(grams>0) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                 Text(c,fontSize=11.sp,color=muted); Text("${String.format(Locale.CHINA,"%.0f",grams)} g",fontSize=11.sp,color=forest)
                             }
+                        }
+                    }
+                    item {
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick={libraryTargetProjectId=p.id;libraryOpen=true},modifier=Modifier.weight(1f)) { Text("从装备库复用") }
+                            OutlinedButton(onClick={
+                                val text=buildString {
+                                    append("徒步清单：").append(p.name).append("\\n")
+                                    append("目的地：").append(p.place).append("\\n")
+                                    append("装备总价值：").append(yuan(p.gear.sumOf{it.price*it.quantity})).append("\\n")
+                                    append("装备总重量：").append(String.format(Locale.CHINA,"%.2f kg",p.gear.sumOf{it.weightGrams*it.quantity}/1000.0)).append("\\n")
+                                    p.gear.forEach { append(if(it.packed)"[已打包] " else "[未打包] ").append(it.name).append(" ×").append(it.quantity).append(" · ").append(it.weightGrams.toInt()).append("g\\n") }
+                                }
+                                val intent=Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,text)
+                                context.startActivity(Intent.createChooser(intent,"分享徒步装备清单"))
+                            },modifier=Modifier.weight(1f)) { Text("分享清单") }
                         }
                     }
                     if(p.gear.isEmpty()) item { Empty("装备清单还是空的","点击右下角 + 添加第一件装备") }
@@ -328,6 +344,42 @@ fun TrailKitApp() {
         )
     }
 
+
+
+    if (libraryOpen && libraryTargetProjectId != null) {
+        val target=projects.firstOrNull{it.id==libraryTargetProjectId}
+        val library=projects.flatMap{it.gear}.distinctBy{it.name+"|"+it.category}
+        AlertDialog(
+            onDismissRequest={libraryOpen=false;libraryTargetProjectId=null},
+            title={Text("个人装备库")},
+            text={
+                if(library.isEmpty()) Text("还没有可复用的装备。先在任意徒步项目中添加装备。")
+                else Column(Modifier.heightIn(max=480.dp)) {
+                    Text("选择一件装备，复制到当前项目。",fontSize=12.sp,color=muted)
+                    LazyColumn {
+                        items(library,key={it.id}) { g ->
+                            Row(Modifier.fillMaxWidth().clickable {
+                                val t=target
+                                if(t!=null) {
+                                    val copy=g.copy(id=System.nanoTime().toString(),packed=false)
+                                    save(projects.map{if(it.id==t.id)it.copy(gear=it.gear+copy) else it})
+                                }
+                                libraryOpen=false;libraryTargetProjectId=null
+                            }.padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(g.name,fontWeight=FontWeight.SemiBold)
+                                    Text("${g.category} · ${g.weightGrams.toInt()} g · ${yuan(g.price)}",fontSize=11.sp,color=muted)
+                                }
+                                Icon(Icons.Default.Add,null,tint=forest)
+                            }
+                            HorizontalDivider(color=sand)
+                        }
+                    }
+                }
+            },
+            confirmButton={TextButton(onClick={libraryOpen=false;libraryTargetProjectId=null}){Text("关闭")}}
+        )
+    }
 
     val itineraryProject = projects.firstOrNull { it.id == itineraryProjectId }
     if (itineraryProject != null) {

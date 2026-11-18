@@ -63,7 +63,7 @@ private fun worldY(lat:Double,z:Int):Double {
                     val left=cx-size.width/2.0;val top=cy-size.height/2.0
                     val minX=floor(left/256.0).toInt();val maxX=floor((left+size.width)/256.0).toInt()
                     val minY=floor(top/256.0).toInt();val maxY=floor((top+size.height)/256.0).toInt()
-                    val canvas=nativeCanvas
+                    val canvas=drawContext.canvas.nativeCanvas
                     val paint=Paint(Paint.FILTER_BITMAP_FLAG)
                     for(tx in minX..maxX) for(ty in minY..maxY) {
                         if(ty !in 0 until (1 shl z)) continue

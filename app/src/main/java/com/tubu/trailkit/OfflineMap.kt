@@ -323,8 +323,21 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             centerLat=(atan(sinh(n))*180.0/Math.PI).coerceIn(-85.0,85.0)
                             zoom=next
                     }
-                }.pointerInput(zoom,centerLon,centerLat) {
-                    detectTapGestures(onLongPress={offset->
+                }.pointerInput(zoom,centerLon,centerLat,measureMode) {
+                    fun coordinateAt(offset:androidx.compose.ui.geometry.Offset):Pair<Double,Double> {
+                        val z=zoom.roundToInt()
+                        val scale=2.0.pow((zoom-z).toDouble())
+                        val world=256.0*(1 shl z)
+                        val left=worldX(centerLon,z)-size.width/(2.0*scale)
+                        val top=worldY(centerLat,z)-size.height/(2.0*scale)
+                        val px=left+offset.x/scale
+                        val py=top+offset.y/scale
+                        val lon=(px/world*360.0-180.0).coerceIn(-180.0,180.0)
+                        val n=Math.PI-2.0*Math.PI*py/world
+                        val lat=Math.toDegrees(atan(sinh(n))).coerceIn(-85.0,85.0)
+                        return lat to lon
+                    }
+                    detectTapGestures(onTap={offset->if(measureMode)measurePoints.add(coordinateAt(offset))},onLongPress={offset->
                         val (lat,lon)=coordinateAt(offset)
                         val coords=String.format(Locale.US,"%.6f, %.6f",lat,lon)
                         val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

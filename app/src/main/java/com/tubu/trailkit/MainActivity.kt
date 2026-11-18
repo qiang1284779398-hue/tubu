@@ -414,7 +414,7 @@ fun TrailKitApp() {
                                 Card(
                                     Modifier.fillMaxWidth().clickable {
                                         gpxTargetProjectId=p.id
-                                        gpxImporter.launch(arrayOf("application/gpx+xml","application/xml","text/xml","*/*"))
+                                        gpxImporter.launch(arrayOf("application/gpx+xml"))
                                     },
                                     shape=RoundedCornerShape(20.dp),
                                     colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White),

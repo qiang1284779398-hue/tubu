@@ -50,12 +50,13 @@ import org.json.JSONObject
 import java.io.File
 import kotlin.math.*
 
-private data class MbInfo(val name:String,val format:String,val minZoom:Int,val maxZoom:Int,val centerLon:Double,val centerLat:Double,val centerZoom:Float)
+private data class MbInfo(val name:String,val format:String,val minZoom:Int,val maxZoom:Int,val centerLon:Double,val centerLat:Double,val centerZoom:Float,val bounds:List<Double>)
 private fun readMbInfo(db:SQLiteDatabase):MbInfo {
     val values=mutableMapOf<String,String>()
     db.rawQuery("SELECT name,value FROM metadata",null).use { c -> while(c.moveToNext()) values[c.getString(0)]=c.getString(1) }
     val center=values["center"]?.split(",")?.mapNotNull{it.toDoubleOrNull()}
-    return MbInfo(values["name"]?:"离线地图",values["format"]?:"jpg",values["minzoom"]?.toIntOrNull()?:0,values["maxzoom"]?.toIntOrNull()?:16,center?.getOrNull(0)?:0.0,center?.getOrNull(1)?:0.0,center?.getOrNull(2)?.toFloat()?:10f)
+    val bounds=values["bounds"]?.split(",")?.mapNotNull{it.trim().toDoubleOrNull()}?:emptyList()
+    return MbInfo(values["name"]?:"离线地图",values["format"]?:"jpg",values["minzoom"]?.toIntOrNull()?:0,values["maxzoom"]?.toIntOrNull()?:16,center?.getOrNull(0)?:0.0,center?.getOrNull(1)?:0.0,center?.getOrNull(2)?.toFloat()?:10f,bounds)
 }
 private fun worldX(lon:Double,z:Int):Double=(lon+180.0)/360.0*(256.0*(1 shl z))
 private fun worldY(lat:Double,z:Int):Double {
@@ -86,6 +87,15 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
     val points=remember(encoded){decodeTrackPoints(encoded)}
     var reverseRoute by remember(projectId){mutableStateOf(context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE).getBoolean("reverse_$projectId",false))}
     val navigationPoints=remember(points,reverseRoute){if(reverseRoute)points.asReversed() else points}
+    val mapCoverage=remember(info,navigationPoints) {
+        val bounds=info?.bounds
+        if(bounds?.size==4 && navigationPoints.isNotEmpty()) {
+            val west=bounds[0];val south=bounds[1];val east=bounds[2];val north=bounds[3]
+            val minLat=navigationPoints.minOf{it.first};val maxLat=navigationPoints.maxOf{it.first}
+            val minLon=navigationPoints.minOf{it.second};val maxLon=navigationPoints.maxOf{it.second}
+            minLon>=west && maxLon<=east && minLat>=south && maxLat<=north
+        } else null
+    }
     val waypoints=remember(encodedWaypoints){decodeGpxWaypoints(encodedWaypoints)}
     val customWaypointPrefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
     val customWaypoints=remember(projectId) {
@@ -342,6 +352,10 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                         Text("当前没有可读取的 MBTiles 地图。导入地图包后，这里会显示真实地形；现在仍可使用 GPS + GPX 轨迹进行基础跟随导航。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF76521D))
                     }
                 }
+                if(mapCoverage==false) Surface(color=Color(0xFFFFE8E4),shape=RoundedCornerShape(10.dp)) {
+                    Text("地图覆盖范围可能不完整：GPX 路线范围超出 MBTiles bounds。请补充地图区域，不能把空白区域当作无路地形。",Modifier.padding(10.dp),fontSize=12.sp,color=Color(0xFF9B3E32))
+                }
+                else if(db!=null && mapCoverage==null) Text("离线地图没有有效 bounds 元数据，无法自动核验是否覆盖整条 GPX 路线。",fontSize=10.sp,color=Color(0xFF9A6A25))
                 Canvas(Modifier.fillMaxWidth().height(310.dp)
                     .pointerInput(active) {
                     detectTransformGestures { _,pan,zoomChange,_ ->

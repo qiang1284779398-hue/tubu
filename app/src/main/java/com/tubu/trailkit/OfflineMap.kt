@@ -845,7 +845,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         canvas.drawCircle(x,y,13f,p);p.color=markerColor;canvas.drawCircle(x,y,9f,p)
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
                         if(arrowCanDraw) {
-                            val angle=Math.toRadians(arrowHeading.toDouble())
+                            // The heading is an absolute true-north bearing. Convert it to
+                            // screen-space by subtracting the camera bearing, otherwise the
+                            // location arrow appears to change direction when the map rotates.
+                            val screenArrowHeading = (arrowHeading - mapBearing + 360f) % 360f
+                            val angle=Math.toRadians(screenArrowHeading.toDouble())
                             val ux=sin(angle).toFloat()
                             val uy=(-cos(angle)).toFloat()
                             val tipX=x+ux*56f

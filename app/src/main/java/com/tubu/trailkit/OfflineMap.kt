@@ -185,6 +185,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
     var active by remember(projectId) { mutableStateOf(false) }
     var current by remember(projectId) { mutableStateOf<Location?>(null) }
+    var gpsStatusTick by remember(projectId) { mutableLongStateOf(0L) }
+
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
     var gpsError by remember(projectId) { mutableStateOf("") }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
@@ -206,7 +208,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val measureDistance=remember(measurePoints.toList()){measurePoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val recordedPoints = remember(projectId) { mutableStateListOf<Location>() }
     var recordingClockTick by remember(projectId) { mutableLongStateOf(0L) }
-    var gpsStatusTick by remember(projectId) { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
         while(active) {
             kotlinx.coroutines.delay(5000L)

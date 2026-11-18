@@ -254,6 +254,10 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val deviation=routeMatch?.distanceMeters
     val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
+    val nextWaypoint=remember(allWaypoints,navigationPoints,travelled) {
+        allWaypoints.mapNotNull { wp -> matchRoute(navigationPoints,wp.lat to wp.lon)?.let{wp to it.progressMeters} }
+            .filter{it.second>=travelled-20.0}.minByOrNull{it.second}?.first ?: closestWaypoint
+    }
     val remaining=(total-travelled).coerceAtLeast(0.0)
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
     val gpsSpeed=current?.takeIf{it.hasSpeed() && (gpsFixAgeSeconds?:999L)<=15L}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
@@ -700,12 +704,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     val send=android.content.Intent(android.content.Intent.ACTION_SEND).apply{type="text/plain";putExtra(android.content.Intent.EXTRA_SUBJECT,"徒步位置求助");putExtra(android.content.Intent.EXTRA_TEXT,message)}
                     context.startActivity(android.content.Intent.createChooser(send,"分享当前位置"))
                 },modifier=Modifier.fillMaxWidth()) { Text("分享当前位置 / 求助坐标") }
-                if(closestWaypoint!=null) {
-                    val waypointDistance=mapDistance(cp!!,closestWaypoint.lat to closestWaypoint.lon)
-                    val waypointBearing=bearingToPoint(cp,closestWaypoint.lat to closestWaypoint.lon)
+                if(nextWaypoint!=null) {
+                    val waypointDistance=mapDistance(cp!!,nextWaypoint.lat to nextWaypoint.lon)
+                    val waypointBearing=bearingToPoint(cp,nextWaypoint.lat to nextWaypoint.lon)
                     Text(
-                        if(waypointDistance<=30.0 && current?.accuracy?.let{it<=25f}==true) "已到达途经点：${closestWaypoint.name}"
-                        else "最近途经点：${closestWaypoint.name} · ${formatNavDistance(waypointDistance)} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
+                        if(waypointDistance<=30.0 && current?.accuracy?.let{it<=25f}==true) "已到达途经点：${nextWaypoint.name}"
+                        else "最近途经点：${nextWaypoint.name} · ${formatNavDistance(waypointDistance)} · 方位 ${directionLabel(waypointBearing.toFloat())} ${waypointBearing.roundToInt()}°",
                         fontSize=12.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF8C602C)
                     )
                     if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(trueHeading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)

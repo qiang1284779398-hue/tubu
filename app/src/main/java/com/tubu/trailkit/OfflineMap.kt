@@ -144,6 +144,8 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         if(off) offRouteWas=true
         else if(routeMatch==null || routeMatch.distanceMeters<threshold*0.7) offRouteWas=false
     }
+    val recordingSeconds=((System.currentTimeMillis()-recordingStartedAt).coerceAtLeast(0L)/1000L)
+    val recordingElapsedText=String.format(Locale.CHINA,"%02d:%02d",recordingSeconds/60,recordingSeconds%60)
     DisposableEffect(context) {
         val manager=context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val sensor=manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
@@ -316,7 +318,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     },modifier=Modifier.weight(1f),enabled=active || isRecording) { Text(if(isRecording)"停止并导出 GPX（${recordedPoints.size}点）" else "开始记录新轨迹") }
                     OutlinedButton(onClick={recordedPoints.clear();isRecording=false},modifier=Modifier.weight(1f),enabled=!isRecording && recordedPoints.isNotEmpty()) { Text("清空记录") }
                 }
-                if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · ${((System.currentTimeMillis()-recordingStartedAt)/1000).let{String.format(Locale.CHINA,\"%02d:%02d\",it/60,it%60)}} · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))
+                if(isRecording) Text("正在记录 GPS 轨迹 · 已记录 ${recordedPoints.size} 点 · ${recordingElapsedText} · 请保持 TrailKit 在前台",fontSize=12.sp,fontWeight=FontWeight.Bold,color=Color(0xFFB45B32))
                 Button(onClick={
                     if(active)active=false else {
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED

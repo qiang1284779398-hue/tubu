@@ -233,13 +233,13 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             confirmedProgress=0.0
             lastMatchedSegment=0
             offRouteWas=false
-            current=null
-            gpsStaleWas=false
             prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()
             navigationSessionInitialized=true
         }
+        current=null
+        gpsStaleWas=false
         followGps=true
-        gpsError=""
+        gpsError="正在等待新的 GPS 定位…"
     }
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember(projectId) { mutableStateOf(false) }
@@ -354,12 +354,13 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         if(active) {
             val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
             val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            var previousAccepted:Location?=null
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
                     val age=System.currentTimeMillis()-location.time
                     if(age !in 0L..20000L) { gpsError="GPS 数据已过期，正在等待新的定位";return }
                     if(location.accuracy>75f) { gpsError="GPS 精度不足，请移至开阔处";return }
-                    val previous=current
+                    val previous=previousAccepted
                     if(previous!=null) {
                         val elapsed=((location.time-previous.time).coerceAtLeast(0L))/1000.0
                         val jump=mapDistance(previous.latitude to previous.longitude,location.latitude to location.longitude)
@@ -369,6 +370,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val allowed=maxOf(120.0,expected+previous.accuracy+location.accuracy+30.0)
                         if(elapsed in 0.0..8.0 && jump>allowed) { gpsError="GPS 定位出现异常跳变，已忽略本次位置";return }
                     }
+                    previousAccepted=Location(location)
                     current=Location(location)
                     gpsError=""
                     if(isRecording && (recordedPoints.isEmpty() || mapDistance(recordedPoints.last().latitude to recordedPoints.last().longitude,location.latitude to location.longitude)>=3.0)) recordedPoints.add(Location(location))
@@ -381,14 +383,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             try {
                 if(fine) {
                     if(!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) gpsError="请开启手机 GPS 定位"
-                    manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { last ->
-                        val age=System.currentTimeMillis()-last.time
-                        if(age in 0L..10000L && last.accuracy<=50f) {
-                            current=Location(last)
-                            centerLat=last.latitude
-                            centerLon=last.longitude
-                        } else gpsError="正在等待新的高精度 GPS 定位…"
-                    } ?: run { gpsError="正在等待新的高精度 GPS 定位…" }
+                    gpsError="正在等待新的高精度 GPS 定位…"
                     manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1500L,1f,listener)
                 } else { active=false;gpsError="请授予定位权限" }
             } catch(e:Exception) { gpsError="定位启动失败：${e.message ?: "请检查定位设置"}";active=false }
@@ -531,13 +526,20 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val recordingElapsedText=String.format(Locale.CHINA,"%02d:%02d",recordingSeconds/60,recordingSeconds%60)
     DisposableEffect(context) {
         val manager=context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val sensor=manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val rotationSensor=manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        @Suppress("DEPRECATION")
+        val fallbackSensor=if(rotationSensor==null) manager.getDefaultSensor(Sensor.TYPE_ORIENTATION) else null
+        val sensor=rotationSensor ?: fallbackSensor
         val listener=object:SensorEventListener {
             override fun onSensorChanged(event:SensorEvent) {
-                val matrix=FloatArray(9);val orientation=FloatArray(3)
-                SensorManager.getRotationMatrixFromVector(matrix,event.values)
-                SensorManager.getOrientation(matrix,orientation)
-                heading=((Math.toDegrees(orientation[0].toDouble()).toFloat()+360f)%360f)
+                if(event.sensor.type==Sensor.TYPE_ROTATION_VECTOR) {
+                    val matrix=FloatArray(9);val orientation=FloatArray(3)
+                    SensorManager.getRotationMatrixFromVector(matrix,event.values)
+                    SensorManager.getOrientation(matrix,orientation)
+                    heading=((Math.toDegrees(orientation[0].toDouble()).toFloat()+360f)%360f)
+                } else {
+                    heading=((event.values[0]+360f)%360f)
+                }
             }
             override fun onAccuracyChanged(sensor:Sensor?,accuracy:Int) { compassAccuracy=accuracy }
         }
@@ -791,7 +793,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     canvas.drawLine(bx,by-7f,bx,by+5f,overlay);canvas.drawLine(bx+bar,by-7f,bx+bar,by+5f,overlay)
                     canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
                 }
-                Text("绿线：已走   橙线：剩余   蓝点：定位/精度范围   橙点：GPX途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Text("绿线：已走   橙线：剩余   蓝点：当前位置/精度范围   橙色箭头：手机朝向   橙点：GPX途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={measureMode=!measureMode;if(!measureMode)measurePoints.clear()},modifier=Modifier.weight(1f)){Text(if(measureMode)"结束测距" else "地图测距")}
                     OutlinedButton(onClick={measurePoints.clear()},modifier=Modifier.weight(1f),enabled=measurePoints.isNotEmpty()){Text("清除测距点")}

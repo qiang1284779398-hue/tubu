@@ -69,6 +69,14 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     return 2*r*asin(sqrt(h.coerceIn(0.0,1.0)))
 }
 
+private fun recoverRecordedGpx(file:File):ByteArray {
+    val source=file.readText(Charsets.UTF_8)
+    if(source.contains("</gpx>")) return source.toByteArray(Charsets.UTF_8)
+    val lastPointEnd=source.lastIndexOf("</trkpt>")
+    val safe=if(lastPointEnd>=0)source.substring(0,lastPointEnd+8) else source.substringBefore("<trkpt")
+    return (safe.trimEnd()+"\n</trkseg></trk></gpx>").toByteArray(Charsets.UTF_8)
+}
+
 @Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",encodedElevations:String="[]",onClose:()->Unit) {
     val context=androidx.compose.ui.platform.LocalContext.current
     val db=remember(path) { if(path.isBlank()) null else try { SQLiteDatabase.openDatabase(path,null,SQLiteDatabase.OPEN_READONLY) } catch(_:Exception){null} }
@@ -159,7 +167,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
             }
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 val file=File(context.filesDir,"trailkit_active_track.gpx")
-                if(file.exists() && file.length()>80L) file.inputStream().use { it.copyTo(output) }
+                if(file.exists() && file.length()>80L) output.write(recoverRecordedGpx(file))
                 else output.write(body.toByteArray(Charsets.UTF_8))
             }
         } catch(_:Exception) { gpsError="GPX 导出失败，请检查保存位置" }

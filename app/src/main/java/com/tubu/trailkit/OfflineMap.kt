@@ -394,7 +394,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val nextWaypointRouteDistance=nextWaypointMatch?.second?.minus(travelled)?.coerceAtLeast(0.0)
     val remaining=(total-travelled).coerceAtLeast(0.0)
     val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}?.plus(gpsStatusTick*0L)
-    LaunchedEffect(active,gpsFixAgeSeconds,voiceGuidance) {
+    LaunchedEffect(active,gpsStatusTick,voiceGuidance) {
         val stale=active && current!=null && (gpsFixAgeSeconds?:999L)>15L
         if(stale && !gpsStaleWas) {
             gpsStaleWas=true

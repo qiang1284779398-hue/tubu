@@ -100,7 +100,7 @@ class TrailNavigationService : Service(), LocationListener {
 
     override fun onDestroy() {
         try { manager.removeUpdates(this) } catch(_:Exception) {}
-        if(Build.VERSION.SDK_INT>=24) stopForeground(STOP_FOREGROUND_REMOVE) else @Suppress("DEPRECATION") stopForeground(true)
+        if(Build.VERSION.SDK_INT>=24) stopForeground(STOP_FOREGROUND_REMOVE) else stopForeground(true)
         super.onDestroy()
     }
 

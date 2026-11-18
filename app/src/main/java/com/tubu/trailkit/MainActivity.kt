@@ -382,7 +382,7 @@ fun TrailKitApp() {
     if (weatherOpen && project != null) TrailWeatherDialog(project.place) { weatherOpen=false }
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
-    if (mapOpen && project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData) { mapOpen=false }
+    if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen) { mapOpen=false }
 
     if (advancedToolsOpen && project != null) {
         TrailKitAdvancedDialog(

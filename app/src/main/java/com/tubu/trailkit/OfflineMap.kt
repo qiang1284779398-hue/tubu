@@ -421,8 +421,18 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                     current=Location(location)
                     gpsError=if(location.accuracy<=75f) "" else "当前为网络辅助粗略定位（±${location.accuracy.roundToInt()} 米）；导航进度和轨迹记录暂不启用"
-                    if(isRecording && location.provider==LocationManager.GPS_PROVIDER && location.accuracy<=25f &&
-                        (recordedPoints.isEmpty() || mapDistance(recordedPoints.last().latitude to recordedPoints.last().longitude,location.latitude to location.longitude)>=3.0)) recordedPoints.add(Location(location))
+                    if(isRecording && location.provider==LocationManager.GPS_PROVIDER &&
+                        age in 0L..15000L && location.accuracy<=50f) {
+                        val previousRecorded=recordedPoints.lastOrNull()
+                        val movedMeters=previousRecorded?.let {
+                            mapDistance(it.latitude to it.longitude,location.latitude to location.longitude)
+                        } ?: Double.POSITIVE_INFINITY
+                        val elapsedSincePrevious=previousRecorded?.let { location.time-it.time } ?: Long.MAX_VALUE
+                        if(previousRecorded==null || movedMeters>=3.0 ||
+                            (elapsedSincePrevious>=8000L && movedMeters>=1.5)) {
+                            recordedPoints.add(Location(location))
+                        }
+                    }
                     if(followGps) { centerLat=location.latitude;centerLon=location.longitude }
                 }
                 @Deprecated("Deprecated in Java") override fun onStatusChanged(provider:String?,status:Int,extras:Bundle?) {}
@@ -887,6 +897,49 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                                 }
                             }
                         }
+                    }
+                    // Live GPS track: draw the points collected during this recording session
+                    // above the imported route so the hiker can see the path already walked.
+                    if(isRecording && recordedPoints.isNotEmpty()) {
+                        val livePath=AndroidPath()
+                        recordedPoints.forEachIndexed { index,location ->
+                            val q=project(location.latitude,location.longitude)
+                            if(index==0) livePath.moveTo(q.x,q.y) else livePath.lineTo(q.x,q.y)
+                        }
+                        if(recordedPoints.size>=2) {
+                            val liveOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=android.graphics.Color.WHITE
+                                style=Paint.Style.STROKE
+                                strokeWidth=12f
+                                strokeCap=Paint.Cap.ROUND
+                                strokeJoin=Paint.Join.ROUND
+                            }
+                            val liveStroke=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=android.graphics.Color.rgb(238,91,42)
+                                style=Paint.Style.STROKE
+                                strokeWidth=7f
+                                strokeCap=Paint.Cap.ROUND
+                                strokeJoin=Paint.Join.ROUND
+                            }
+                            canvas.drawPath(livePath,liveOutline)
+                            canvas.drawPath(livePath,liveStroke)
+                        }
+                        val firstLive=recordedPoints.first()
+                        val lastLive=recordedPoints.last()
+                        val startLive=project(firstLive.latitude,firstLive.longitude)
+                        val endLive=project(lastLive.latitude,lastLive.longitude)
+                        val liveHalo=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color=android.graphics.Color.WHITE
+                            style=Paint.Style.FILL
+                        }
+                        val liveDot=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color=android.graphics.Color.rgb(238,91,42)
+                            style=Paint.Style.FILL
+                        }
+                        canvas.drawCircle(startLive.x,startLive.y,8f,liveHalo)
+                        canvas.drawCircle(startLive.x,startLive.y,5f,liveDot)
+                        canvas.drawCircle(endLive.x,endLive.y,11f,liveHalo)
+                        canvas.drawCircle(endLive.x,endLive.y,7f,liveDot)
                     }
                     cp?.let {
                         val projected=project(it.first,it.second);val x=projected.x;val y=projected.y

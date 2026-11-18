@@ -344,7 +344,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val nextTurnInfo=remember(routeMatch,navigationPoints,preparedRoute) {
         routeMatch?.let { match ->
             val i=match.segmentIndex
-            if(i+2<navigationPoints.size) {
+            if(i+2<navigationPoints.size && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f) {
                 val nextBearing=bearingToPoint(navigationPoints[i+1],navigationPoints[i+2])
                 val delta=((nextBearing-match.bearingDegrees+540.0)%360.0)-180.0
                 val distance=preparedRoute.prefixMeters[i+1]-match.progressMeters
@@ -851,6 +851,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 if(nextTurnInfo!=null) {
                     val (direction,distance)=nextTurnInfo
                     Text("前方约 ${distance.roundToInt()} 米 · $direction",fontWeight=FontWeight.Bold,fontSize=13.sp,color=Color(0xFF8B5A22))
+                } else if(routeMatch!=null && (gpsFixAgeSeconds?:999L)>15L) {
+                    Text("GPS 定位过期，暂停转弯判断",fontSize=11.sp,color=Color(0xFF9A6A25))
+                } else if(routeMatch!=null && (current?.accuracy?:999f)>50f) {
+                    Text("GPS 精度不足，暂停转弯判断",fontSize=11.sp,color=Color(0xFF9A6A25))
                 } else if(routeMatch!=null) {
                     Text("前方 500 米内无明显转弯",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 } else {

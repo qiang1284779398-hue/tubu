@@ -345,7 +345,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var lastTurnAnnouncementProgress by remember(projectId,encoded) { mutableDoubleStateOf(-1000.0) }
     LaunchedEffect(active,routeMatch,voiceGuidance,voiceReady.value) {
         val match=routeMatch
-        if(active && voiceGuidance && voiceReady.value && match!=null) {
+        if(active && voiceGuidance && voiceReady.value && match!=null && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f) {
             val index=match.segmentIndex
             if(index+2<navigationPoints.size && index !in announcedTurns) {
                 val nextBearing=bearingToPoint(navigationPoints[index+1],navigationPoints[index+2])
@@ -360,8 +360,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             }
         }
     }
-    LaunchedEffect(active, closestWaypoint, current?.accuracy) {
-        if(active && cp!=null && closestWaypoint!=null && (current?.accuracy ?: 999f)<=25f) {
+    LaunchedEffect(active, closestWaypoint, current?.accuracy, gpsStatusTick, voiceReady.value) {
+        if(active && cp!=null && closestWaypoint!=null && (current?.accuracy ?: 999f)<=25f && (gpsFixAgeSeconds?:999L)<=15L) {
             val index=allWaypoints.indexOf(closestWaypoint)
             val distance=mapDistance(cp,closestWaypoint.lat to closestWaypoint.lon)
             if(index>=0 && distance<=100.0 && distance>30.0 && index !in announcedApproaches) {

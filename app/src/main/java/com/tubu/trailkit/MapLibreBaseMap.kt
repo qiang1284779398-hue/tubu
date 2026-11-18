@@ -144,7 +144,7 @@ internal fun MapLibreBaseMap(
                 nativeMap.setStyle(styleUrl) {
                     nativeMap.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(centerLat, centerLon))
-                        .zoom(zoom.toDouble().coerceIn(2.0, 18.0))
+                        .zoom(zoom.toDouble().coerceIn(2.0, 20.0))
                         .bearing(mapBearing.toDouble())
                         .build()
                     ready = true
@@ -173,7 +173,7 @@ internal fun MapLibreBaseMap(
                     abs(p.zoom - zoom.toDouble()) > 0.08 || abs(p.bearing - mapBearing.toDouble()) > 0.5) {
                     nativeMap.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(centerLat, centerLon))
-                        .zoom(zoom.toDouble().coerceIn(2.0, 18.0))
+                        .zoom(zoom.toDouble().coerceIn(2.0, 20.0))
                         .bearing(mapBearing.toDouble())
                         .build()
                 }

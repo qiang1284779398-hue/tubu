@@ -631,14 +631,22 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     if(waypointDistance>30.0) Text("前往途经点方向：${turnGuidance(heading,waypointBearing.toFloat())}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 }
                 if(navigationPoints.size>=2) OutlinedButton(onClick={exportRouteGpx.launch("TrailKit-路线${if(reverseRoute)"-反向" else ""}.gpx")},modifier=Modifier.fillMaxWidth()) { Text("导出当前路线 GPX（含海拔与途经点）") }
-                if(waypoints.isNotEmpty()) {
+                if(allWaypoints.isNotEmpty()) {
                     TextButton(onClick={showWaypointList=!showWaypointList},modifier=Modifier.fillMaxWidth()) {
-                        Text(if(showWaypointList)"收起途经点列表（${waypoints.size}）" else "查看全部途经点（${waypoints.size}）")
+                        Text(if(showWaypointList)"收起标记列表（${allWaypoints.size}）" else "查看全部标记与途经点（${allWaypoints.size}）")
                     }
                     if(showWaypointList) allWaypoints.forEachIndexed { index,wp ->
                         val coordinateText=String.format(Locale.US,"%.5f, %.5f",wp.lat,wp.lon)
-                        OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false},modifier=Modifier.fillMaxWidth()) {
-                            Text("${index+1}. ${wp.name}  ·  $coordinateText",fontSize=11.sp)
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false},modifier=Modifier.weight(1f)) {
+                                Text("${index+1}. ${wp.name}  ·  $coordinateText",fontSize=11.sp)
+                            }
+                            if(index>=waypoints.size) OutlinedButton(onClick={
+                                customWaypoints.remove(wp)
+                                val saved=JSONArray()
+                                customWaypoints.forEach{item->saved.put(JSONObject().put("lat",item.lat).put("lon",item.lon).put("name",item.name))}
+                                customWaypointPrefs.edit().putString("custom_waypoints_$projectId",saved.toString()).apply()
+                            }) { Text("删除") }
                         }
                     }
                 }

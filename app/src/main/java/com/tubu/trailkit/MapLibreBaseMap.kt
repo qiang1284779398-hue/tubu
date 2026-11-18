@@ -215,7 +215,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
     var bytes by remember(projectId){mutableLongStateOf(0L)}
     var busy by remember(projectId){mutableStateOf(false)}
     var complete by remember(projectId){mutableStateOf(false)}
-    var message by remember(projectId){mutableStateOf("地形图和卫星图可分别下载，按小区域分批保存，避免单个离线包过大。")}
+    var message by remember(projectId){mutableStateOf("标准矢量、地形图和卫星影像均可切换；离线地图按小区域分批保存。")}
 
     fun startDownload(styleUrl:String,label:String) {
         if(points.size<2 || busy)return
@@ -288,16 +288,18 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
 
     Card(modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
-            Text("离线底图 · 地形 / 卫星双图层",style=MaterialTheme.typography.titleSmall)
+            Text("地图图层 · 标准矢量 / 地形 / 卫星",style=MaterialTheme.typography.titleSmall)
             Text(message,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()) {
+                FilterChip(selected=selectedStyle=="standard",onClick={onSelectStyle("standard")},label={Text("标准矢量")},enabled=!busy)
                 FilterChip(selected=selectedStyle=="terrain",onClick={onSelectStyle("terrain")},label={Text("地形图")},enabled=!busy)
-                FilterChip(selected=selectedStyle=="satellite",onClick={onSelectStyle("satellite")},label={Text("卫星影像")},enabled=!busy)
+                FilterChip(selected=selectedStyle=="satellite",onClick={onSelectStyle("satellite")},label={Text("卫星")},enabled=!busy)
                 Spacer(Modifier.weight(1f))
             }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形图")}
-                Button(onClick={startDownload(TRAILKIT_SATELLITE_STYLE,"卫星图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载卫星图")}
+                OutlinedButton(onClick={startDownload(TRAILKIT_MAP_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
+                OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形")}
+                Button(onClick={startDownload(TRAILKIT_SATELLITE_STYLE,"卫星图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载卫星")}
             }
             if(busy||complete) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())

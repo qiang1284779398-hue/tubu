@@ -55,4 +55,12 @@ class NavigationEngineTest {
     @Test fun utmRejectsLatitudesOutsideItsCoverage() {
         assertEquals(null,toUtm(85.0,0.0))
     }
+    @Test fun utmEquatorAndPrimeMeridianUsesZone31() {
+        val utm=toUtm(0.0,0.0)
+        assertNotNull(utm)
+        assertEquals(31,utm!!.zone)
+        assertEquals('N',utm.hemisphere)
+        assertTrue(kotlin.math.abs(utm.easting-166021.0)<100.0)
+        assertTrue(kotlin.math.abs(utm.northing)<1.0)
+    }
 }

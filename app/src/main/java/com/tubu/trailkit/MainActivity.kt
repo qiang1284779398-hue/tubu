@@ -169,7 +169,29 @@ fun TrailKitApp() {
     fun save(list:List<Project>) { projects=list; persist(context,list) }
     val project=projects.firstOrNull { it.id==selected }
 
-    MaterialTheme(colorScheme=lightColorScheme(primary=forest,secondary=androidx.compose.ui.graphics.Color(0xFF78917A),background=sand,surface=androidx.compose.ui.graphics.Color.White)) {
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = forest,
+            onPrimary = androidx.compose.ui.graphics.Color.White,
+            primaryContainer = androidx.compose.ui.graphics.Color(0xFFDCE7DC),
+            onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFF183C32),
+            secondary = androidx.compose.ui.graphics.Color(0xFF718477),
+            onSecondary = androidx.compose.ui.graphics.Color.White,
+            secondaryContainer = androidx.compose.ui.graphics.Color(0xFFE5EBE2),
+            background = sand,
+            surface = androidx.compose.ui.graphics.Color(0xFFFFFEFA),
+            surfaceVariant = androidx.compose.ui.graphics.Color(0xFFE9EDE6),
+            onSurface = androidx.compose.ui.graphics.Color(0xFF202D27),
+            onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFF68756C),
+            outline = androidx.compose.ui.graphics.Color(0xFFD5DCD3),
+            error = androidx.compose.ui.graphics.Color(0xFFB65346)
+        ),
+        shapes = Shapes(
+            small = RoundedCornerShape(12.dp),
+            medium = RoundedCornerShape(18.dp),
+            large = RoundedCornerShape(26.dp)
+        )
+    ) {
         Scaffold(containerColor=sand, topBar={
             TopAppBar(
                 title={ Column { Text(project?.name ?: "徒步装备管家",fontWeight=FontWeight.Bold); Text(if(project==null) "把每一次出发，准备得漂亮一点" else "装备清单 · "+project.place,fontSize=11.sp,color=muted) } },
@@ -190,7 +212,7 @@ fun TrailKitApp() {
             if(project==null) {
                 LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal=18.dp),verticalArrangement=Arrangement.spacedBy(14.dp),contentPadding=PaddingValues(top=18.dp,bottom=90.dp)) {
                     item {
-                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(forest).padding(22.dp)) {
+                        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color(0xFF244B3D), androidx.compose.ui.graphics.Color(0xFF102A23)))).padding(24.dp)) {
                             Text("TRAIL KIT  /  FIELD NOTES",color=androidx.compose.ui.graphics.Color(0xFFB9C9B5),fontSize=11.sp,fontWeight=FontWeight.Bold)
                             Spacer(Modifier.height(14.dp))
                             Text("每件装备，\n都有它的价值。",color=androidx.compose.ui.graphics.Color.White,fontSize=28.sp,fontWeight=FontWeight.ExtraBold,lineHeight=36.sp)
@@ -204,10 +226,10 @@ fun TrailKitApp() {
                     }
                     if(projects.isEmpty()) item { Empty("还没有徒步项目","点击右下角 + 创建你的第一个计划") }
                     items(projects,key={it.id}) { p ->
-                        Card(Modifier.fillMaxWidth().combinedClickable(onClick={ selected=p.id },onLongClick={ manageProjectId=p.id }),shape=RoundedCornerShape(20.dp)) {
+                        Card(Modifier.fillMaxWidth().combinedClickable(onClick={ selected=p.id },onLongClick={ manageProjectId=p.id }),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA)),elevation=CardDefaults.cardElevation(defaultElevation=3.dp)) {
                             Column(Modifier.padding(18.dp)) {
                                 Row(verticalAlignment=Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(36.dp))
+                                    Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center) { Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(27.dp)) }
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) { Text(p.name,fontSize=17.sp,fontWeight=FontWeight.Bold); Text(listOf(p.place,p.date).filter{it.isNotBlank()}.joinToString(" · "),fontSize=12.sp,color=muted) }
                                     IconButton(onClick={ manageProjectId=p.id }) { Icon(Icons.Default.MoreVert,"项目管理",tint=muted) }
@@ -222,7 +244,7 @@ fun TrailKitApp() {
                 val p=project
                 LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(11.dp),contentPadding=PaddingValues(top=14.dp,bottom=90.dp)) {
                     item {
-                        Card(shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=forest)) {
+                        Card(shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=forest),elevation=CardDefaults.cardElevation(defaultElevation=5.dp)) {
                             Row(Modifier.fillMaxWidth().padding(20.dp),verticalAlignment=Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
                                     Text("装备总价值",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=12.sp)
@@ -239,7 +261,7 @@ fun TrailKitApp() {
                         }
                     }
                     item {
-                        OutlinedTextField(value=searchQuery,onValueChange={searchQuery=it},modifier=Modifier.fillMaxWidth(),singleLine=true,label={Text("搜索装备名称 / 备注")})
+                        OutlinedTextField(value=searchQuery,onValueChange={searchQuery=it},modifier=Modifier.fillMaxWidth(),singleLine=true,shape=RoundedCornerShape(16.dp),leadingIcon={Icon(Icons.Default.Image,null,tint=muted)},label={Text("搜索装备名称 / 备注")},colors=OutlinedTextFieldDefaults.colors(unfocusedBorderColor=androidx.compose.ui.graphics.Color(0xFFD9DED6),focusedBorderColor=forest,focusedContainerColor=androidx.compose.ui.graphics.Color.White,unfocusedContainerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA)))
                         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                             FilterChip(selected=packedOnly,onClick={packedOnly=!packedOnly},label={Text("只看未打包")})
                             Spacer(Modifier.width(8.dp))
@@ -247,7 +269,7 @@ fun TrailKitApp() {
                             Spacer(Modifier.weight(1f))
                             Text("${p.gear.count{it.packed}}/${p.gear.size} 已打包",fontSize=11.sp,color=muted)
                         }
-                        LinearProgressIndicator(progress={if(p.gear.isEmpty())0f else p.gear.count{it.packed}.toFloat()/p.gear.size},modifier=Modifier.fillMaxWidth(),color=forest)
+                        LinearProgressIndicator(progress={if(p.gear.isEmpty())0f else p.gear.count{it.packed}.toFloat()/p.gear.size},modifier=Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(8.dp)),color=forest,trackColor=androidx.compose.ui.graphics.Color(0xFFDDE4DA))
                         Text("分类重量统计",fontWeight=FontWeight.Bold,color=forest)
                         categories.forEach { c ->
                             val grams=p.gear.filter{it.category==c}.sumOf{it.weightGrams*it.quantity}
@@ -279,13 +301,13 @@ fun TrailKitApp() {
                         val filtered=p.gear.filter{it.category==cat && (it.name.contains(searchQuery,true)||it.note.contains(searchQuery,true)) && (!packedOnly || !it.packed)}
                         val list=if(sortByWeight) filtered.sortedByDescending{it.weightGrams*it.quantity} else filtered
                         if(list.isNotEmpty()) {
-                            item { Text(cat,fontWeight=FontWeight.Bold,color=forest,fontSize=15.sp) }
+                            item { Row(Modifier.fillMaxWidth().padding(top=5.dp,bottom=1.dp),verticalAlignment=Alignment.CenterVertically) { Box(Modifier.width(4.dp).height(18.dp).clip(RoundedCornerShape(4.dp)).background(forest)); Spacer(Modifier.width(9.dp)); Text(cat,fontWeight=FontWeight.Bold,color=forest,fontSize=15.sp) } }
                             items(list,key={it.id}) { g ->
-                                Card(Modifier.fillMaxWidth().clickable { editing=g;chosenPhoto=g.photo;gearDialog=true },shape=RoundedCornerShape(18.dp)) {
+                                Card(Modifier.fillMaxWidth().clickable { editing=g;chosenPhoto=g.photo;gearDialog=true },shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA)),elevation=CardDefaults.cardElevation(defaultElevation=2.dp)) {
                                     Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
                                         val image=remember(g.photo) { try { if(g.photo.isNotBlank()) android.graphics.BitmapFactory.decodeStream(context.contentResolver.openInputStream(Uri.parse(g.photo))) else null } catch(_:Exception){null} }
                                         if(image!=null) Image(image.asImageBitmap(),null,Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop)
-                                        else Box(Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)).background(androidx.compose.ui.graphics.Color(0xFFE9EEE8)),contentAlignment=Alignment.Center){Icon(Icons.Default.PhotoCamera,null,tint=forest)}
+                                        else Box(Modifier.size(68.dp).clip(RoundedCornerShape(16.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center){Icon(Icons.Default.PhotoCamera,null,tint=forest)}
                                         Spacer(Modifier.width(12.dp))
                                         Column(Modifier.weight(1f)) { Text(g.name,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis); Text("${g.category} · 数量 ${g.quantity}",fontSize=11.sp,color=muted); Text(yuan(g.price)+" / 件 · ${g.weightGrams.toInt()} g/件",fontSize=12.sp,color=forest,fontWeight=FontWeight.SemiBold); if(g.warrantyUntil.isNotBlank()) Text("保修至 "+g.warrantyUntil,fontSize=10.sp,color=muted); if(g.maintenanceLog.isNotBlank()) Text("维护记录："+g.maintenanceLog.take(42),fontSize=10.sp,color=muted,maxLines=1,overflow=TextOverflow.Ellipsis)
                                             Row(verticalAlignment=Alignment.CenterVertically) {

@@ -65,7 +65,7 @@ class TrailNavigationService : Service(), LocationListener {
     }
 
     override fun onLocationChanged(location:Location) {
-        val text=String.format(Locale.US,"%.5f, %.5f · 精度 ±%.0f m · %.1f km/h",
+        val text=(if(trackWriter!=null)"轨迹记录中 · " else "")+String.format(Locale.US,"%.5f, %.5f · 精度 ±%.0f m · %.1f km/h",
             location.latitude,location.longitude,location.accuracy,if(location.hasSpeed())location.speed*3.6f else 0f)
         updateNotification(text)
         try {

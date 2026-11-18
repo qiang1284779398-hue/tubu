@@ -341,6 +341,7 @@ private fun recoverRecordedGpx(file:File):ByteArray {
                 Canvas(Modifier.fillMaxWidth().height(310.dp)
                     .pointerInput(active) {
                     detectTransformGestures { _,pan,zoomChange,_ ->
+                            if(pan.x!=0f || pan.y!=0f || zoomChange!=1f) followGps=false
                             val minZ=(info?.minZoom?:3).toFloat();val maxZ=(info?.maxZoom?:18).toFloat()
                             val next=(zoom+ln(zoomChange)/ln(2.0).toFloat()).coerceIn(minZ,maxZ)
                             val z=zoom.roundToInt().coerceIn(minZ.toInt(),maxZ.toInt())

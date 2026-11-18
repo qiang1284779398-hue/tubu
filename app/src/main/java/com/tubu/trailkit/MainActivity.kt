@@ -97,6 +97,7 @@ private fun deleteProjectNavigationData(context:Context,project:Project) {
     navigation.edit()
         .remove("custom_waypoints_${project.id}")
         .remove("reverse_${project.id}")
+        .remove("voice_${project.id}")
         .remove("offroute_${project.id}")
         .remove("progress_${project.id}_${routeHash}_fwd")
         .remove("progress_${project.id}_${routeHash}_rev")

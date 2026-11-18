@@ -8,6 +8,13 @@ import android.graphics.BitmapFactory
 import android.graphics.Paint
 import android.graphics.Path as AndroidPath
 import android.graphics.RectF
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -17,6 +24,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -63,6 +72,11 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var active by remember { mutableStateOf(false) }
     var current by remember { mutableStateOf<Location?>(null) }
     var gpsError by remember { mutableStateOf("") }
+    var followGps by remember { mutableStateOf(true) }
+    var heading by remember { mutableFloatStateOf(Float.NaN) }
+    var confirmedProgress by remember(projectId) { mutableDoubleStateOf(0.0) }
+    var offRouteWas by remember(projectId) { mutableStateOf(false) }
+    var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var zoom by remember(path){mutableFloatStateOf((info?.centerZoom?:14f).coerceIn((info?.minZoom?:0).toFloat(),(info?.maxZoom?:18).toFloat()))}
     var centerLon by remember(path){mutableDoubleStateOf(if(info?.centerLon==0.0 && points.isNotEmpty()) points.map{it.second}.average() else info?.centerLon?:points.firstOrNull()?.second?:0.0)}
     var centerLat by remember(path){mutableDoubleStateOf(if(info?.centerLat==0.0 && points.isNotEmpty()) points.map{it.first}.average() else info?.centerLat?:points.firstOrNull()?.first?:0.0)}
@@ -77,7 +91,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
                     current=location
-                    centerLat=location.latitude;centerLon=location.longitude
+                    if(followGps) { centerLat=location.latitude;centerLon=location.longitude }
                 }
                 @Deprecated("Deprecated in Java") override fun onStatusChanged(provider:String?,status:Int,extras:Bundle?) {}
                 override fun onProviderEnabled(provider:String) {}
@@ -94,15 +108,44 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         } else onDispose { }
     }
     val cp=current?.let{it.latitude to it.longitude}
-    val nearest=if(cp!=null&&points.isNotEmpty()) points.indices.minByOrNull{mapDistance(cp,points[it])}?:0 else 0
-    val deviation=if(cp!=null&&points.isNotEmpty()) mapDistance(cp,points[nearest]) else null
-    val total=remember(points){points.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
-    val progress=remember(points){DoubleArray(points.size).also{a->for(i in 1 until points.size)a[i]=a[i-1]+mapDistance(points[i-1],points[i])}}
-    val travelled=if(progress.isNotEmpty())progress[nearest] else 0.0
+    val routeMatch=cp?.let { matchRoute(points,it) }
+    val nearest=routeMatch?.segmentIndex?:0
+    val deviation=routeMatch?.distanceMeters
+    val total=routeMatch?.totalMeters?:remember(points){points.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
+    val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
     val remaining=(total-travelled).coerceAtLeast(0.0)
+    LaunchedEffect(routeMatch,active) {
+        if(routeMatch!=null) confirmedProgress=maxOf(confirmedProgress,routeMatch.progressMeters)
+        val off=active && routeMatch!=null && routeMatch.distanceMeters>threshold
+        if(off && !offRouteWas && System.currentTimeMillis()-lastVibrationAt>15000L) {
+            try {
+                val vibrator=context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if(Build.VERSION.SDK_INT>=26) vibrator.vibrate(VibrationEffect.createOneShot(260L,VibrationEffect.DEFAULT_AMPLITUDE))
+                else @Suppress("DEPRECATION") vibrator.vibrate(260L)
+                lastVibrationAt=System.currentTimeMillis()
+            } catch(_:Exception) {}
+        }
+        if(off) offRouteWas=true
+        else if(routeMatch==null || routeMatch.distanceMeters<threshold*0.7) offRouteWas=false
+    }
+    DisposableEffect(context) {
+        val manager=context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val sensor=manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val listener=object:SensorEventListener {
+            override fun onSensorChanged(event:SensorEvent) {
+                val matrix=FloatArray(9);val orientation=FloatArray(3)
+                SensorManager.getRotationMatrixFromVector(matrix,event.values)
+                SensorManager.getOrientation(matrix,orientation)
+                heading=((Math.toDegrees(orientation[0].toDouble()).toFloat()+360f)%360f)
+            }
+            override fun onAccuracyChanged(sensor:Sensor?,accuracy:Int) {}
+        }
+        if(sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_UI)
+        onDispose { manager.unregisterListener(listener) }
+    }
     Dialog(onDismissRequest={active=false;onClose()}) {
         Surface(shape=RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().heightIn(max=780.dp)) {
-            Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(14.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if(active)"轨迹跟随导航" else info?.name?:"离线地图导航",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
@@ -117,9 +160,9 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                 }
                 Canvas(Modifier.fillMaxWidth().height(310.dp).pointerInput(active) {
                     detectTransformGestures { _,pan,zoomChange,_ ->
-                        if(info!=null) {
-                            val next=(zoom+ln(zoomChange)/ln(2.0).toFloat()).coerceIn(info.minZoom.toFloat(),info.maxZoom.toFloat())
-                            val z=zoom.roundToInt().coerceIn(info.minZoom,info.maxZoom)
+                            val minZ=(info?.minZoom?:3).toFloat();val maxZ=(info?.maxZoom?:18).toFloat()
+                            val next=(zoom+ln(zoomChange)/ln(2.0).toFloat()).coerceIn(minZ,maxZ)
+                            val z=zoom.roundToInt().coerceIn(minZ.toInt(),maxZ.toInt())
                             val scale=2.0.pow((zoom-z).toDouble())
                             val wx=worldX(centerLon,z)-pan.x/scale
                             val wy=worldY(centerLat,z)-pan.y/scale
@@ -128,7 +171,6 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             val n=Math.PI-2.0*Math.PI*wy/world
                             centerLat=(atan(sinh(n))*180.0/Math.PI).coerceIn(-85.0,85.0)
                             zoom=next
-                        }
                     }
                 }) {
                     val canvas=drawContext.canvas.nativeCanvas
@@ -199,9 +241,9 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val off=deviation?:0.0
                         Text(if(off>threshold)"偏航警告：偏离轨迹 ${off.roundToInt()} 米（阈值 ${threshold.roundToInt()} 米）" else "路线正常：距轨迹 ${off.roundToInt()} 米",fontWeight=FontWeight.Bold,color=if(off>threshold)MaterialTheme.colorScheme.error else Color(0xFF23734D))
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                            MapStat("已走","%.2f km".format(Locale.CHINA,travelled/1000))
-                            MapStat("剩余","%.2f km".format(Locale.CHINA,remaining/1000))
-                            MapStat("总长","%.2f km".format(Locale.CHINA,total/1000))
+                            MapStat("已走",formatNavDistance(travelled))
+                            MapStat("剩余",formatNavDistance(remaining))
+                            MapStat("总长",formatNavDistance(total))
                         }
                         LinearProgressIndicator(progress={if(total>0)(travelled/total).toFloat().coerceIn(0f,1f)else 0f},modifier=Modifier.fillMaxWidth())
                     } else Text(if(active)"正在等待 GPS 定位，请移至开阔处……" else "导入 GPX 后即可开始沿轨迹导航。",fontSize=12.sp,color=MaterialTheme.colorScheme.secondary)
@@ -210,12 +252,32 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("20 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary);Text("300 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)}
                 } else Text("当前项目没有有效 GPX 轨迹，请先导入 GPX 文件。",fontSize=12.sp,color=MaterialTheme.colorScheme.error)
                 if(gpsError.isNotBlank())Text(gpsError,fontSize=12.sp,color=MaterialTheme.colorScheme.error)
+                if(current!=null) {
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        MapStat("GPS 精度","±${current!!.accuracy.roundToInt()} m")
+                        MapStat("海拔","%.0f m".format(Locale.CHINA,current!!.altitude))
+                        MapStat("速度","%.1f km/h".format(Locale.CHINA,current!!.speed*3.6f))
+                    }
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    MapStat("罗盘",if(heading.isNaN())"无传感器" else "${directionLabel(heading)} ${heading.roundToInt()}°")
+                    MapStat("路线方向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
+                    OutlinedButton(onClick={if(current!=null){centerLat=current!!.latitude;centerLon=current!!.longitude;followGps=true}else if(points.isNotEmpty()){centerLat=points.first().first;centerLon=points.first().second}} ,modifier=Modifier.weight(1f)){Text("回到当前位置")}
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}
+                    OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost((info?.maxZoom?:18).toFloat())},modifier=Modifier.weight(1f)){Text("+ 放大")}
+                    OutlinedButton(onClick={confirmedProgress=0.0;offRouteWas=false},modifier=Modifier.weight(1f)){Text("重置进度")}
+                }
                 Button(onClick={
                     if(active)active=false else {
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
                         if(fine)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
                     }
-                },modifier=Modifier.fillMaxWidth(),enabled=points.size>=2){Text(if(active)"暂停 GPS 跟随" else "开始导航 / 开启 GPS")}
+                },modifier=Modifier.fillMaxWidth(),enabled=points.size>=2){Text(if(active)"暂停导航定位" else "开始导航 / 开启 GPS")}
                 Text("导航使用手机 GPS 和导入的 GPX；离线地图数据需要事先导入。山区 GPS 可能漂移，请结合指北针、纸质地图和现场判断。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
             }
         }

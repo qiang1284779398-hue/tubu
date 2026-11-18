@@ -117,6 +117,15 @@ fun matchRoute(points:List<Pair<Double,Double>>,location:Pair<Double,Double>,las
 }
 
 fun formatNavDistance(meters:Double):String = if(meters>=1000) String.format(java.util.Locale.CHINA,"%.2f km",meters/1000.0) else "${meters.roundToInt()} m"
+fun formatDms(value:Double,isLatitude:Boolean):String {
+    val absolute=abs(value)
+    val degrees=absolute.toInt()
+    val minutesFull=(absolute-degrees)*60.0
+    val minutes=minutesFull.toInt()
+    val seconds=(minutesFull-minutes)*60.0
+    val hemisphere=if(isLatitude)if(value>=0)"N" else "S" else if(value>=0)"E" else "W"
+    return String.format(java.util.Locale.US,"%d°%02d′%05.2f″%s",degrees,minutes,seconds,hemisphere)
+}
 fun directionLabel(degrees:Float):String {
     val names=listOf("北","东北","东","东南","南","西南","西","西北")
     return names[(kotlin.math.floor(((degrees%360f+360f)%360f+22.5f)/45f).toInt())%8]

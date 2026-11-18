@@ -704,9 +704,10 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                     if(showWaypointList) allWaypoints.forEachIndexed { index,wp ->
                         val coordinateText=String.format(Locale.US,"%.5f, %.5f",wp.lat,wp.lon)
+                        val arrived=announcedWaypoints.contains(index)
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                             OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false},modifier=Modifier.weight(1f)) {
-                                Text("${index+1}. ${wp.name}  ·  $coordinateText",fontSize=11.sp)
+                                Text("${if(arrived)"✓ " else ""}${index+1}. ${wp.name}  ·  $coordinateText",fontSize=11.sp)
                             }
                             OutlinedButton(onClick={
                                 val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

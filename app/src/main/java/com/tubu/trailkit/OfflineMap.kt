@@ -121,6 +121,9 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember { mutableStateOf(false) }
     var showWaypointList by remember { mutableStateOf(false) }
+    var measureMode by remember(projectId) { mutableStateOf(false) }
+    val measurePoints=remember(projectId){mutableStateListOf<Pair<Double,Double>>()}
+    val measureDistance=remember(measurePoints.toList()){measurePoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val recordedPoints = remember { mutableStateListOf<Location>() }
     var recordingStartedAt by remember { mutableLongStateOf(0L) }
     var recordingClockTick by remember { mutableLongStateOf(0L) }
@@ -322,16 +325,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                 }.pointerInput(zoom,centerLon,centerLat) {
                     detectTapGestures(onLongPress={offset->
-                        val z=zoom.roundToInt()
-                        val scale=2.0.pow((zoom-z).toDouble())
-                        val world=256.0*(1 shl z)
-                        val left=worldX(centerLon,z)-size.width/(2.0*scale)
-                        val top=worldY(centerLat,z)-size.height/(2.0*scale)
-                        val px=left+offset.x/scale
-                        val py=top+offset.y/scale
-                        val lon=(px/world*360.0-180.0).coerceIn(-180.0,180.0)
-                        val n=Math.PI-2.0*Math.PI*py/world
-                        val lat=Math.toDegrees(atan(sinh(n))).coerceIn(-85.0,85.0)
+                        val (lat,lon)=coordinateAt(offset)
                         val coords=String.format(Locale.US,"%.6f, %.6f",lat,lon)
                         val clipboard=context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         clipboard.setPrimaryClip(ClipData.newPlainText("地图坐标",coords))
@@ -408,6 +402,18 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             canvas.drawLine(p1.x,p1.y,p2.x,p2.y,grid)
                             if(p1.y in 18f..size.height) canvas.drawText(String.format(Locale.US,"%.3f°%s",kotlin.math.abs(lat),if(lat>=0)"N" else "S"),5f,p1.y-4f,label)
                         }
+                    }
+                    if(measurePoints.isNotEmpty()) {
+                        val measurePaint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(36,105,190);strokeWidth=4f;style=Paint.Style.STROKE;strokeCap=Paint.Cap.ROUND}
+                        val measurePath=AndroidPath()
+                        measurePoints.forEachIndexed { index,p ->
+                            val x=((worldX(p.second,z)-left)*scale).toFloat()
+                            val y=((worldY(p.first,z)-top)*scale).toFloat()
+                            if(index==0)measurePath.moveTo(x,y) else measurePath.lineTo(x,y)
+                            val dot=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(36,105,190);style=Paint.Style.FILL}
+                            canvas.drawCircle(x,y,6f,dot)
+                        }
+                        canvas.drawPath(measurePath,measurePaint)
                     }
                     if(navigationPoints.isNotEmpty()) {
                         fun point(p:Pair<Double,Double>)=android.graphics.PointF(((worldX(p.second,z)-left)*scale).toFloat(),((worldY(p.first,z)-top)*scale).toFloat())
@@ -497,6 +503,12 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
                 }
                 Text("绿线：已走   橙线：剩余   蓝点：定位   橙色点：途经点（${allWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick={measureMode=!measureMode;if(!measureMode)measurePoints.clear()},modifier=Modifier.weight(1f)){Text(if(measureMode)"结束测距" else "地图测距")}
+                    OutlinedButton(onClick={measurePoints.clear()},modifier=Modifier.weight(1f),enabled=measurePoints.isNotEmpty()){Text("清除测距点")}
+                    MapStat("测量距离",formatNavDistance(measureDistance))
+                }
+                if(measureMode) Text("测距模式：点击地图依次添加测量点；蓝线为测量路线。",fontSize=10.sp,color=Color(0xFF2469BE))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("速度",if(current?.hasSpeed()==true) String.format(Locale.CHINA,"%.1f km/h",gpsSpeed*3.6) else "--")
                     MapStat("海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")

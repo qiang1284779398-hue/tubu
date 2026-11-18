@@ -69,8 +69,9 @@ class TrailNavigationService : Service(), LocationListener {
             location.latitude,location.longitude,location.accuracy,if(location.hasSpeed())location.speed*3.6f else 0f)
         updateNotification(text)
         try {
+            val elevation=if(location.hasAltitude()) String.format(Locale.US,"<ele>%.1f</ele>",location.altitude) else ""
             trackWriter?.apply {
-                write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\"><ele>%.1f</ele><time>%s</time></trkpt>\n",location.latitude,location.longitude,if(location.hasAltitude())location.altitude else 0.0,Instant.ofEpochMilli(location.time)))
+                write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\">%s<time>%s</time></trkpt>\n",location.latitude,location.longitude,elevation,Instant.ofEpochMilli(location.time)))
                 flush()
             }
         } catch(_:Exception) { finishRecording() }

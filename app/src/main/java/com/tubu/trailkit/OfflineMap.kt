@@ -556,6 +556,11 @@ private fun projectTrackFile(context:Context,projectId:String)=File(context.file
                     }
                     cp?.let {
                         val x=((worldX(it.second,z)-left)*scale).toFloat();val y=((worldY(it.first,z)-top)*scale).toFloat()
+                        val accuracyMeters=current?.accuracy?.toDouble()?:0.0
+                        val metersPerPixel=(2.0*Math.PI*6378137.0*cos(Math.toRadians(it.first)).coerceAtLeast(0.01))/(256.0*2.0.pow(zoom.toDouble()))
+                        val accuracyRadius=(accuracyMeters/metersPerPixel).toFloat().coerceIn(8f,120f)
+                        val accuracyHalo=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.argb(45,32,115,210);style=Paint.Style.FILL}
+                        canvas.drawCircle(x,y,accuracyRadius,accuracyHalo)
                         val p=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
                         canvas.drawCircle(x,y,13f,p);p.color=android.graphics.Color.rgb(30,105,210);canvas.drawCircle(x,y,9f,p)
                         p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)

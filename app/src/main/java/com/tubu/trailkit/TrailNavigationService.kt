@@ -29,6 +29,7 @@ class TrailNavigationService : Service(), LocationListener {
     private val channelId="trailkit_navigation"
     private val notificationId=4107
     private var trackWriter:BufferedWriter?=null
+    private var lastTrackLocation:Location?=null
 
     override fun onCreate() {
         super.onCreate()
@@ -69,16 +70,27 @@ class TrailNavigationService : Service(), LocationListener {
             location.latitude,location.longitude,location.accuracy,if(location.hasSpeed())location.speed*3.6f else 0f)
         updateNotification(text)
         try {
-            val elevation=if(location.hasAltitude()) String.format(Locale.US,"<ele>%.1f</ele>",location.altitude) else ""
-            trackWriter?.apply {
-                write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\">%s<time>%s</time></trkpt>\n",location.latitude,location.longitude,elevation,Instant.ofEpochMilli(location.time)))
-                flush()
+            val writer=trackWriter
+            if(writer!=null && location.provider==LocationManager.GPS_PROVIDER) {
+                val age=System.currentTimeMillis()-location.time
+                if(age in 0L..15000L && location.accuracy<=50f) {
+                    val previous=lastTrackLocation
+                    val distance=previous?.distanceTo(location)?.toDouble() ?: Double.POSITIVE_INFINITY
+                    val elapsed=previous?.let { location.time-it.time } ?: Long.MAX_VALUE
+                    if(previous==null || distance>=3.0 || (elapsed>=8000L && distance>=1.5)) {
+                        val elevation=if(location.hasAltitude()) String.format(Locale.US,"<ele>%.1f</ele>",location.altitude) else ""
+                        writer.write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\">%s<time>%s</time></trkpt>\n",location.latitude,location.longitude,elevation,Instant.ofEpochMilli(location.time)))
+                        writer.flush()
+                        lastTrackLocation=Location(location)
+                    }
+                }
             }
         } catch(_:Exception) { finishRecording() }
     }
 
     private fun beginRecording(projectId:String) {
         finishRecording()
+        lastTrackLocation=null
         try {
             val file=File(filesDir,"trailkit_track_${projectId.hashCode()}.gpx")
             trackWriter=BufferedWriter(OutputStreamWriter(FileOutputStream(file,false),StandardCharsets.UTF_8)).apply {
@@ -92,6 +104,7 @@ class TrailNavigationService : Service(), LocationListener {
     private fun finishRecording() {
         try { trackWriter?.write("</trkseg></trk></gpx>");trackWriter?.flush();trackWriter?.close() } catch(_:Exception) {}
         trackWriter=null
+        lastTrackLocation=null
     }
 
     private fun createChannel() {

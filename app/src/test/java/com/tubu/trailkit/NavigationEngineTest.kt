@@ -43,4 +43,15 @@ class NavigationEngineTest {
         assertTrue(match!!.progressMeters in 500.0..620.0)
         assertTrue(match.remainingMeters in 1660.0..1680.0)
     }
+    @Test fun utmConversionMatchesKnownWgs84Coordinate() {
+        val utm=toUtm(48.8583,2.2945)
+        assertNotNull(utm)
+        assertEquals(31,utm!!.zone)
+        assertEquals('N',utm.hemisphere)
+        assertTrue(kotlin.math.abs(utm.easting-448251.0)<100.0)
+        assertTrue(kotlin.math.abs(utm.northing-5411932.0)<100.0)
+    }
+    @Test fun utmRejectsLatitudesOutsideItsCoverage() {
+        assertEquals(null,toUtm(85.0,0.0))
+    }
 }

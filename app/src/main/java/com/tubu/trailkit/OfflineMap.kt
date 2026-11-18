@@ -71,11 +71,14 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     DisposableEffect(db) { onDispose { try{db?.close()}catch(_:Exception){} } }
     val info=remember(db) { try{db?.let(::readMbInfo)}catch(_:Exception){null} }
     val points=remember(encoded){decodeTrackPoints(encoded)}
+    var reverseRoute by remember(projectId){mutableStateOf(false)}
+    val navigationPoints=remember(points,reverseRoute){if(reverseRoute)points.asReversed() else points}
     val waypoints=remember(encodedWaypoints){decodeGpxWaypoints(encodedWaypoints)}
     val elevationProfile=remember(encodedElevations){decodeGpxElevations(encodedElevations)}
+    val navigationElevations=remember(elevationProfile,reverseRoute){if(reverseRoute)elevationProfile.asReversed() else elevationProfile}
     val elevationStats=remember(elevationProfile){
-        val pairs=elevationProfile.zipWithNext().filter{it.first!=null&&it.second!=null}
-        Triple(pairs.sumOf{(a,b)->(b!!-a!!).coerceAtLeast(0.0)},pairs.sumOf{(a,b)->(a!!-b!!).coerceAtLeast(0.0)},elevationProfile.filterNotNull())
+        val pairs=navigationElevations.zipWithNext().filter{it.first!=null&&it.second!=null}
+        Triple(pairs.sumOf{(a,b)->(b!!-a!!).coerceAtLeast(0.0)},pairs.sumOf{(a,b)->(a!!-b!!).coerceAtLeast(0.0)},navigationElevations.filterNotNull())
     }
     val prefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
     var threshold by remember(projectId){mutableFloatStateOf(prefs.getInt("offroute_$projectId",80).toFloat().coerceIn(20f,300f))}
@@ -155,7 +158,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
         } else onDispose { }
     }
     val cp=current?.let{it.latitude to it.longitude}
-    val routeMatch=cp?.let { matchRoute(points,it,lastMatchedSegment) }
+    val routeMatch=cp?.let { matchRoute(navigationPoints,it,lastMatchedSegment) }
     val closestWaypoint=if(cp!=null) waypoints.minByOrNull { mapDistance(cp,it.lat to it.lon) } else null
     val announcedWaypoints = remember(projectId) { mutableStateListOf<Int>() }
     LaunchedEffect(active, closestWaypoint, current?.accuracy) {
@@ -175,7 +178,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     }
     val nearest=routeMatch?.segmentIndex?:0
     val deviation=routeMatch?.distanceMeters
-    val total=routeMatch?.totalMeters?:remember(points){points.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
+    val total=routeMatch?.totalMeters?:remember(navigationPoints){navigationPoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
     val travelled=if(routeMatch!=null) maxOf(confirmedProgress,routeMatch.progressMeters) else confirmedProgress
     val remaining=(total-travelled).coerceAtLeast(0.0)
     val gpsSpeed=current?.takeIf{it.hasSpeed()}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
@@ -338,22 +341,22 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             if(p1.y in 18f..size.height) canvas.drawText(String.format(Locale.US,"%.3f°",lat),5f,p1.y-4f,label)
                         }
                     }
-                    if(points.isNotEmpty()) {
+                    if(navigationPoints.isNotEmpty()) {
                         fun point(p:Pair<Double,Double>)=android.graphics.PointF(((worldX(p.second,z)-left)*scale).toFloat(),((worldY(p.first,z)-top)*scale).toFloat())
                         val rp=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=5f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
                         val snapped=routeMatch?.let { android.graphics.PointF(((worldX(it.snappedLon,z)-left)*scale).toFloat(),((worldY(it.snappedLat,z)-top)*scale).toFloat()) }
                         val remainingPath=AndroidPath()
-                        val firstRemaining=snapped?:point(points[nearest])
+                        val firstRemaining=snapped?:point(navigationPoints[nearest])
                         remainingPath.moveTo(firstRemaining.x,firstRemaining.y)
-                        for(i in (nearest+1)..points.lastIndex) { val q=point(points[i]);remainingPath.lineTo(q.x,q.y) }
+                        for(i in (nearest+1)..navigationPoints.lastIndex) { val q=point(navigationPoints[i]);remainingPath.lineTo(q.x,q.y) }
                         rp.color=android.graphics.Color.rgb(218,145,54)
-                        if(nearest<points.lastIndex)canvas.drawPath(remainingPath,rp)
+                        if(nearest<navigationPoints.lastIndex)canvas.drawPath(remainingPath,rp)
                         val passedPath=AndroidPath()
-                        points.take(nearest+1).forEachIndexed{i,p->val q=point(p);if(i==0)passedPath.moveTo(q.x,q.y)else passedPath.lineTo(q.x,q.y)}
+                        navigationPoints.take(nearest+1).forEachIndexed{i,p->val q=point(p);if(i==0)passedPath.moveTo(q.x,q.y)else passedPath.lineTo(q.x,q.y)}
                         if(snapped!=null)passedPath.lineTo(snapped.x,snapped.y)
                         rp.color=android.graphics.Color.rgb(30,125,78)
                         if(nearest>0 || snapped!=null)canvas.drawPath(passedPath,rp)
-                        val start=point(points.first());val end=point(points.last())
+                        val start=point(navigationPoints.first());val end=point(navigationPoints.last())
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,130,75);style=Paint.Style.FILL}
                         canvas.drawCircle(start.x,start.y,7f,marker);marker.color=android.graphics.Color.rgb(205,78,58);canvas.drawCircle(end.x,end.y,7f,marker)
                     }
@@ -427,7 +430,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     MapStat("海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")
                     MapStat("GPS",current?.accuracy?.let{"±${it.roundToInt()} m"}?:"等待定位")
                 }
-                if(points.size>=2) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                if(navigationPoints.size>=2) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("预计剩余",etaText)
                     MapStat("下一航向",routeMatch?.let{"${directionLabel(it.bearingDegrees.toFloat())} ${it.bearingDegrees.roundToInt()}°"}?:"--")
                 }
@@ -456,7 +459,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         modifier=Modifier.weight(1f)
                     ) { Text("用地图查看") }
                 }
-                if(points.size>=2) {
+                if(navigationPoints.size>=2) {
                     if(cp!=null) {
                         val off=deviation?:0.0
                         val gpsAccuracy=current?.accuracy?:999f
@@ -476,7 +479,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                             MapStat("总长",formatNavDistance(total))
                         }
                         LinearProgressIndicator(progress={if(total>0)(travelled/total).toFloat().coerceIn(0f,1f)else 0f},modifier=Modifier.fillMaxWidth())
-                        if(elevationStats.third.size>=2 && elevationProfile.size==points.size) {
+                        if(elevationStats.third.size>=2 && navigationElevations.size==navigationPoints.size) {
                             val valid=elevationStats.third
                             val minEle=valid.minOrNull()?:0.0
                             val maxEle=valid.maxOrNull()?:0.0
@@ -492,14 +495,14 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                                 canvas.drawRoundRect(RectF(0f,0f,size.width,size.height),12f,12f,bg)
                                 val padX=12f;val padY=12f
                                 val span=(maxEle-minEle).coerceAtLeast(1.0)
-                                val cumulative=DoubleArray(points.size)
-                                for(i in 1 until points.size)cumulative[i]=cumulative[i-1]+mapDistance(points[i-1],points[i])
+                                val cumulative=DoubleArray(navigationPoints.size)
+                                for(i in 1 until navigationPoints.size)cumulative[i]=cumulative[i-1]+mapDistance(navigationPoints[i-1],navigationPoints[i])
                                 val distanceTotal=cumulative.last().coerceAtLeast(1.0)
                                 val grid=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(211,220,210);strokeWidth=1f}
                                 for(i in 0..3){val y=padY+(size.height-2*padY)*i/3f;canvas.drawLine(padX,y,size.width-padX,y,grid)}
                                 val line=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(35,112,77);style=Paint.Style.STROKE;strokeWidth=4f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
                                 val path=AndroidPath();var started=false
-                                elevationProfile.forEachIndexed { i,value ->
+                                navigationElevations.forEachIndexed { i,value ->
                                     if(value==null) started=false else {
                                         val x=padX+(cumulative[i]/distanceTotal).toFloat()*(size.width-2*padX)
                                         val y=(size.height-padY)-((value-minEle)/span).toFloat()*(size.height-2*padY)
@@ -567,8 +570,9 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick={reverseRoute=!reverseRoute;confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false},modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
                     OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
-                    OutlinedButton(onClick={if(current!=null){centerLat=current!!.latitude;centerLon=current!!.longitude;followGps=true}else if(points.isNotEmpty()){centerLat=points.first().first;centerLon=points.first().second}} ,modifier=Modifier.weight(1f)){Text("回到当前位置")}
+                    OutlinedButton(onClick={if(current!=null){centerLat=current!!.latitude;centerLon=current!!.longitude;followGps=true}else if(navigationPoints.isNotEmpty()){centerLat=points.first().first;centerLon=points.first().second}} ,modifier=Modifier.weight(1f)){Text("回到当前位置")}
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}
@@ -603,7 +607,7 @@ private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
                         val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
                         if(fine)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
                     }
-                },modifier=Modifier.fillMaxWidth(),enabled=points.size>=2){Text(if(active)"暂停导航定位" else "开始导航 / 开启 GPS")}
+                },modifier=Modifier.fillMaxWidth(),enabled=navigationPoints.size>=2){Text(if(active)"暂停导航定位" else "开始导航 / 开启 GPS")}
                 Text("导航使用手机 GPS 和导入的 GPX；离线地图数据需要事先导入。山区 GPS 可能漂移，请结合指北针、纸质地图和现场判断。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
             }
         }

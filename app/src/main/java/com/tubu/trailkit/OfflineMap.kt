@@ -339,9 +339,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val announcedApproaches = remember(projectId,encoded) { mutableStateListOf<Int>() }
     val announcedTurns = remember(projectId,encoded) { mutableStateListOf<Int>() }
     var lastTurnAnnouncementProgress by remember(projectId,encoded) { mutableDoubleStateOf(-1000.0) }
-    LaunchedEffect(active,routeMatch,voiceGuidance) {
+    LaunchedEffect(active,routeMatch,voiceGuidance,voiceReady.value) {
         val match=routeMatch
-        if(active && voiceGuidance && match!=null) {
+        if(active && voiceGuidance && voiceReady.value && match!=null) {
             val index=match.segmentIndex
             if(index+2<navigationPoints.size && index !in announcedTurns) {
                 val nextBearing=bearingToPoint(navigationPoints[index+1],navigationPoints[index+2])

@@ -4,6 +4,7 @@ on:
     paths:
       - 'test/1795123810990_837b8c91_Screenshot_2026-11-20-05-28-50-95_adf6b73ee393c413bf8f2031da44ae56.jpg'
       - '.github/workflows/export-latest-screenshot.yml'
+      - 'test/trigger-export.txt'
 jobs:
   export:
     runs-on: ubuntu-latest

@@ -18,3 +18,5 @@ jobs:
         with:
           name: project-screenshots
           path: /tmp/project-shots.zip
+
+# Re-run export to inspect the two newest uploaded screenshots.

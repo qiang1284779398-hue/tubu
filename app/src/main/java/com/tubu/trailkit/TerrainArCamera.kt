@@ -155,6 +155,16 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
         val dialogWindow = (dialogView.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
         DisposableEffect(dialogWindow) {
             if (dialogWindow != null) {
+                // Compose Dialog may keep a wrap-content window even when its content requests fillMaxSize().
+                // Force the actual Android dialog Window to occupy the complete display; otherwise the
+                // camera preview is clipped to a short band and the underlying project page remains visible.
+                dialogWindow.setBackgroundDrawableResource(android.R.color.black)
+                dialogWindow.setLayout(
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                    android.view.WindowManager.LayoutParams.MATCH_PARENT
+                )
+                dialogWindow.setGravity(android.view.Gravity.FILL)
+                dialogWindow.decorView.setPadding(0, 0, 0, 0)
                 androidx.core.view.WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
                 val controller = androidx.core.view.WindowCompat.getInsetsController(dialogWindow, dialogWindow.decorView)
                 controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE

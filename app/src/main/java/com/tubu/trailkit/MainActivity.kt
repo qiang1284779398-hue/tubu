@@ -59,15 +59,45 @@ data class Gear(val id:String,val name:String,val category:String,val price:Doub
 data class Project(val id:String,val name:String,val place:String,val date:String,val gear:List<Gear>,val route:String="",val lodging:String="",val resupply:String="",val emergency:String="",val trackData:String="",val mapPath:String="",val waypointData:String="[]",val elevationData:String="[]")
 
 class MainActivity : ComponentActivity() {
+    var incomingSharedGpx by mutableStateOf<Uri?>(null)
+        private set
+
+    private fun sharedGpxFrom(intent: Intent?): Uri? {
+        if (intent == null) return null
+        val action = intent.action
+        return when (action) {
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                 else intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
+                    ?: intent.data
+            }
+            Intent.ACTION_VIEW -> intent.data
+            else -> null
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        incomingSharedGpx = sharedGpxFrom(intent)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             try {
                 val mode = window.windowManager.defaultDisplay.supportedModes.maxByOrNull { it.refreshRate }
                 if (mode != null && mode.refreshRate >= 90f) window.attributes = window.attributes.apply { preferredDisplayModeId = mode.modeId }
             } catch (_: Exception) { }
         }
-        setContent { TrailKitApp() }
+        setContent {
+            TrailKitApp(
+                sharedGpxUri = incomingSharedGpx,
+                onSharedGpxHandled = { incomingSharedGpx = null }
+            )
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingSharedGpx = sharedGpxFrom(intent)
     }
 }
 
@@ -151,12 +181,14 @@ private fun deleteProjectNavigationData(context:Context,project:Project) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun TrailKitApp() {
+fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) {
     val context= LocalContext.current
     var projects by remember { mutableStateOf(loadWithBundledYubeng(context)) }
     var selected by remember { mutableStateOf<String?>(null) }
     var projectPage by remember(selected) { mutableStateOf("gear") }
     var projectDialog by remember { mutableStateOf(false) }
+    var pendingSharedGpx by remember { mutableStateOf<Uri?>(null) }
+    var sharedGpxSuggestedName by remember { mutableStateOf("") }
     var gearDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Gear?>(null) }
     var chosenPhoto by remember { mutableStateOf("") }
@@ -182,6 +214,26 @@ fun TrailKitApp() {
     var gpxTargetProjectId by remember { mutableStateOf<String?>(null) }
     var mapOpen by remember { mutableStateOf(false) }
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(sharedGpxUri) {
+        if (sharedGpxUri != null) {
+            pendingSharedGpx = sharedGpxUri
+            val sharedName = try {
+                context.contentResolver.query(sharedGpxUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }.orEmpty()
+            } catch (_: Exception) { "" }
+            if (sharedName.isNotBlank() && !sharedName.lowercase(Locale.ROOT).endsWith(".gpx")) {
+                Toast.makeText(context, "分享的文件不是 GPX 格式", Toast.LENGTH_LONG).show()
+                pendingSharedGpx = null
+                onSharedGpxHandled()
+            } else {
+                sharedGpxSuggestedName = sharedName.substringBeforeLast('.', sharedName).ifBlank { "新建徒步项目" }
+                projectDialog = true
+            }
+        }
+    }
+
     val gpxImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) try {
             val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
@@ -522,8 +574,47 @@ fun TrailKitApp() {
         )
     }
 
-    if(projectDialog) ProjectDialog({projectDialog=false}) { name,place,date ->
-        val p=Project(System.currentTimeMillis().toString(),name,place,date,emptyList()); save(projects+p);selected=p.id;projectDialog=false
+    if(projectDialog) ProjectDialog(
+        close = {
+            projectDialog = false
+            if (pendingSharedGpx != null) {
+                pendingSharedGpx = null
+                onSharedGpxHandled()
+            }
+        },
+        initialName = sharedGpxSuggestedName
+    ) { name,place,date ->
+        val p=Project(System.currentTimeMillis().toString(),name,place,date,emptyList())
+        val sharedUri = pendingSharedGpx
+        if (sharedUri != null) {
+            try {
+                val displayName = context.contentResolver.query(sharedUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }.orEmpty()
+                if (displayName.isNotBlank() && !displayName.lowercase(Locale.ROOT).endsWith(".gpx")) error("分享的文件不是 GPX 格式")
+                val imported = readGpxTrack(context, sharedUri)
+                val importedProject = p.copy(
+                    route = imported.summary,
+                    trackData = imported.encodedPoints,
+                    waypointData = imported.encodedWaypoints,
+                    elevationData = imported.encodedElevations
+                )
+                save(projects + importedProject)
+                selected = importedProject.id
+                Toast.makeText(context, "项目创建成功，GPX 轨迹已自动导入", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                save(projects + p)
+                selected = p.id
+                Toast.makeText(context, "项目已创建，但 GPX 导入失败：" + (e.message ?: "文件读取失败") + "。可在项目中重新导入。", Toast.LENGTH_LONG).show()
+            } finally {
+                pendingSharedGpx = null
+                onSharedGpxHandled()
+            }
+        } else {
+            save(projects+p)
+            selected=p.id
+        }
+        projectDialog=false
     }
     val managedProject = projects.firstOrNull { it.id == manageProjectId }
     if (manageProjectId != null && managedProject != null) {
@@ -669,8 +760,8 @@ fun TrailKitApp() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable private fun ProjectDialog(close:()->Unit,save:(String,String,String)->Unit) {
-    var name by remember{mutableStateOf("")};var place by remember{mutableStateOf("")};var date by remember{mutableStateOf("")}
+@Composable private fun ProjectDialog(close:()->Unit,initialName:String="",save:(String,String,String)->Unit) {
+    var name by remember(initialName){mutableStateOf(initialName)};var place by remember{mutableStateOf("")};var date by remember{mutableStateOf("")}
     AlertDialog(onDismissRequest=close,title={Text("创建徒步项目")},text={
         Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(name,{name=it},label={Text("项目名称 *")},singleLine=true)

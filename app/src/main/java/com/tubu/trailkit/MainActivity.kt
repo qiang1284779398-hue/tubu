@@ -564,8 +564,8 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                                         Icon(Icons.Default.PhotoCamera,null,tint=androidx.compose.ui.graphics.Color.White,modifier=Modifier.size(30.dp))
                                         Spacer(Modifier.width(12.dp))
                                         Column(Modifier.weight(1f)) {
-                                            Text("实景 AR 山体对准",fontWeight=FontWeight.Bold,fontSize=14.sp,color=androidx.compose.ui.graphics.Color.White)
-                                            Text("打开相机 · 实时方位 / 姿态 / GPS",fontSize=11.sp,color=androidx.compose.ui.graphics.Color(0xFFD1DDD3))
+                                            Text("实景路线导航",fontWeight=FontWeight.Bold,fontSize=14.sp,color=androidx.compose.ui.graphics.Color.White)
+                                            Text("摄像头画面叠加 GPX 轨迹 · 实时方向引导",fontSize=11.sp,color=androidx.compose.ui.graphics.Color(0xFFD1DDD3))
                                         }
                                         Text("开启  ›",fontSize=12.sp,color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Bold)
                                     }

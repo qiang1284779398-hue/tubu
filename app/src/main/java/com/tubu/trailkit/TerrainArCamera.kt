@@ -174,13 +174,22 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 // Force the actual Android dialog Window to occupy the complete display; otherwise the
                 // camera preview is clipped to a short band and the underlying project page remains visible.
                 dialogWindow.setBackgroundDrawableResource(android.R.color.black)
-                dialogWindow.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                dialogWindow.addFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                        android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                )
                 dialogWindow.setLayout(
                     android.view.WindowManager.LayoutParams.MATCH_PARENT,
                     android.view.WindowManager.LayoutParams.MATCH_PARENT
                 )
-                dialogWindow.setGravity(android.view.Gravity.FILL)
+                dialogWindow.attributes = dialogWindow.attributes.apply {
+                    width = android.view.WindowManager.LayoutParams.MATCH_PARENT
+                    height = android.view.WindowManager.LayoutParams.MATCH_PARENT
+                    gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                }
+                dialogWindow.setGravity(android.view.Gravity.TOP or android.view.Gravity.START)
                 dialogWindow.decorView.setPadding(0, 0, 0, 0)
+                dialogWindow.decorView.setBackgroundColor(android.graphics.Color.BLACK)
                 dialogWindow.decorView.systemUiVisibility =
                     (android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                         or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -192,6 +201,10 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 val controller = androidx.core.view.WindowCompat.getInsetsController(dialogWindow, dialogWindow.decorView)
                 controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                // Re-apply immersive mode if Android briefly restores system bars while the dialog gains focus.
+                dialogWindow.decorView.setOnSystemUiVisibilityChangeListener {
+                    controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                }
             }
             onDispose {
                 if (dialogWindow != null) {
@@ -290,12 +303,15 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                         Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(10.dp), color = ArLime, fontSize = 11.sp, maxLines = 1)
                     }
                 }
-                Column(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .padding(bottom = 10.dp)
+                BoxWithConstraints(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
+                    Column(
+                    Modifier.fillMaxWidth()
+                        .heightIn(max = maxHeight * 0.48f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(bottom = 6.dp)
                         .background(Color(0xF20A100D))
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -398,6 +414,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                                 Text("允许定位", color = ArLime)
                             }
                         }
+                    }
                     }
                 }
             } else {

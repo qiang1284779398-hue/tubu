@@ -28,6 +28,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -41,7 +42,7 @@ import kotlin.math.roundToInt
 private val ArLime = Color(0xFFB8D5A8)
 
 @Composable
-internal fun TerrainArCameraDialog(projectName: String, visible: Boolean, onClose: () -> Unit) {
+internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, visible: Boolean, onClose: () -> Unit) {
     if (!visible) return
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -57,6 +58,9 @@ internal fun TerrainArCameraDialog(projectName: String, visible: Boolean, onClos
     var location by remember { mutableStateOf<Location?>(null) }
     var sensorReady by remember { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf("") }
+    val routePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
+    val route = remember(routePoints) { if (routePoints.size >= 2) prepareRoute(routePoints) else null }
+    val routeMatch = remember(location, route) { location?.let { fix -> route?.let { matchRoute(it, fix.latitude to fix.longitude) } } }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         cameraGranted = result[Manifest.permission.CAMERA] == true ||
@@ -151,13 +155,36 @@ internal fun TerrainArCameraDialog(projectName: String, visible: Boolean, onClos
                         )
                         Canvas(Modifier.fillMaxSize()) {
                             val cx = size.width / 2f
-                            val cy = size.height / 2f
-                            val horizonY = cy + (pitch * size.height / 90f).coerceIn(-size.height * .35f, size.height * .35f)
-                            drawLine(ArLime.copy(alpha = .75f), androidx.compose.ui.geometry.Offset(0f, horizonY), androidx.compose.ui.geometry.Offset(size.width, horizonY), 1.5f)
-                            drawCircle(ArLime.copy(alpha = .9f), size.minDimension * .045f, androidx.compose.ui.geometry.Offset(cx, cy), style = Stroke(2f))
+                            val cy = size.height * .62f
+                            val horizonY = size.height * .34f + (pitch * size.height / 110f).coerceIn(-size.height * .22f, size.height * .22f)
+                            drawLine(ArLime.copy(alpha = .48f), androidx.compose.ui.geometry.Offset(0f, horizonY), androidx.compose.ui.geometry.Offset(size.width, horizonY), 1.5f)
+                            // 将 GPX 后续路段按 GPS 距离和罗盘夹角投影到相机画面，作为实景导航引导线。
+                            val fix = location
+                            val match = routeMatch
+                            if (fix != null && match != null && routePoints.size > 1) {
+                                val path = Path()
+                                var started = false
+                                val from = match.segmentIndex
+                                val to = (from + 90).coerceAtMost(routePoints.lastIndex)
+                                for (i in from..to) {
+                                    val p = routePoints[i]
+                                    val distance = haversineForAr(p.first, p.second, fix.latitude, fix.longitude)
+                                    if (distance > 350.0) break
+                                    val bearing = bearingToPoint(fix.latitude to fix.longitude, p)
+                                    val delta = Math.toRadians(((bearing - heading + 540.0) % 360.0) - 180.0)
+                                    val x = cx + (kotlin.math.sin(delta) * distance * 0.72).toFloat()
+                                    val y = cy - (kotlin.math.cos(delta) * distance * 0.72).toFloat()
+                                    if (x >= -size.width * .2f && x <= size.width * 1.2f && y >= horizonY && y <= size.height * 1.15f) {
+                                        if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
+                                    } else started = false
+                                }
+                                if (started) drawPath(path, Color(0xFFFFC857), style = Stroke(width = 8f))
+                                // 当前位置中心标记
+                                drawCircle(Color(0xFFFFC857), 8f, androidx.compose.ui.geometry.Offset(cx, cy))
+                            }
+                            drawCircle(ArLime.copy(alpha = .95f), 24f, androidx.compose.ui.geometry.Offset(cx, cy), style = Stroke(2.5f))
                             drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx - 22f, cy), androidx.compose.ui.geometry.Offset(cx + 22f, cy), 2f)
                             drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, cy - 22f), androidx.compose.ui.geometry.Offset(cx, cy + 22f), 2f)
-                            drawLine(Color.White.copy(alpha = .4f), androidx.compose.ui.geometry.Offset(18f, 58f), androidx.compose.ui.geometry.Offset(size.width - 18f, 58f), 1f)
                         }
                         Column(
                             Modifier.align(Alignment.TopStart).padding(12.dp)
@@ -188,6 +215,17 @@ internal fun TerrainArCameraDialog(projectName: String, visible: Boolean, onClos
                         }
                     }
                 }
+                Surface(color = Color(0xFF17251E), shape = RoundedCornerShape(14.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        val match = routeMatch
+                        val guidance = if (match != null) turnGuidance(heading, match.bearingDegrees.toFloat()) else "等待 GPS 与路线"
+                        Text(if (match != null) "路线引导  ·  $guidance" else if (routePoints.size >= 2) "正在定位路线…" else "当前项目没有可用 GPX 轨迹", color = ArLime, fontSize = 14.sp)
+                        if (match != null) {
+                            Text("距路线 ${match.distanceMeters.roundToInt()} m    ·    剩余 ${formatNavDistance(match.remainingMeters)}", color = Color.White, fontSize = 12.sp)
+                            Text(if (match.distanceMeters > 35.0) "偏离轨迹，请结合地图确认方向" else "沿黄色引导线前进；请留意脚下路况", color = if (match.distanceMeters > 35.0) Color(0xFFFFB36B) else Color(0xFFD5DED7), fontSize = 11.sp)
+                        } else Text("黄色线：GPX 计划路线投影（GPS / 罗盘误差会影响贴合）", color = Color(0xFFD5DED7), fontSize = 11.sp)
+                    }
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ArReadout("航向", "${heading.roundToInt()}°", Modifier.weight(1f))
                     ArReadout("俯仰", "${pitch.roundToInt()}°", Modifier.weight(1f))
@@ -201,9 +239,9 @@ internal fun TerrainArCameraDialog(projectName: String, visible: Boolean, onClos
                 )
                 Surface(color = Color(0xFF29372E), shape = RoundedCornerShape(12.dp)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("当前阶段：实景相机 + 实时姿态 / GPS", color = ArLime, fontSize = 12.sp)
+                        Text("实景徒步导航 HUD", color = ArLime, fontSize = 12.sp)
                         Text(
-                            "山体三维模型尚未叠加。要让模型与真实山脊精准重合，还需接入地理配准的高分辨率影像 / 三维数据，并完成相机内参与地形坐标投影；本界面不会用装饰线条冒充真实山体。",
+                            "摄像头画面叠加当前 GPX 路线方向与偏航提示，类似车载 AR 导航。黄色路线是基于 GPS / 罗盘的屏幕投影，不是山体表面精准贴合；山区 GPS 和电子罗盘可能有偏差，请同时核对离线地图。",
                             color = Color(0xFFE0E5E0), fontSize = 11.sp, lineHeight = 16.sp
                         )
                     }
@@ -236,4 +274,16 @@ private fun ArReadout(label: String, value: String, modifier: Modifier = Modifie
 private fun compassDirection(degrees: Float): String {
     val names = listOf("北", "东北", "东", "东南", "南", "西南", "西", "西北")
     return names[((degrees + 22.5f) / 45f).toInt().mod(8)]
+}
+
+
+private fun haversineForAr(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val r = 6371000.0
+    val p1 = Math.toRadians(lat1)
+    val p2 = Math.toRadians(lat2)
+    val dp = Math.toRadians(lat2 - lat1)
+    val dl = Math.toRadians(lon2 - lon1)
+    val h = kotlin.math.sin(dp / 2).let { it * it } +
+        kotlin.math.cos(p1) * kotlin.math.cos(p2) * kotlin.math.sin(dl / 2).let { it * it }
+    return 2 * r * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))
 }

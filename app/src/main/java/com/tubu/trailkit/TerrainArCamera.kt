@@ -41,6 +41,24 @@ import kotlin.math.roundToInt
 
 private val ArLime = Color(0xFFB8D5A8)
 
+private data class CameraTurn(val angleDegrees: Double, val distanceMeters: Double) {
+    val isLeft: Boolean get() = angleDegrees < 0.0
+}
+
+private fun findUpcomingCameraTurn(route: PreparedRoute, match: RouteMatch): CameraTurn? {
+    val points = route.points
+    for (i in (match.segmentIndex + 1).coerceAtLeast(1) until points.lastIndex) {
+        val distance = route.prefixMeters[i] - match.progressMeters
+        if (distance < 15.0) continue
+        if (distance > 180.0) break
+        val incoming = bearingToPoint(points[i - 1], points[i])
+        val outgoing = bearingToPoint(points[i], points[i + 1])
+        val angle = signedTurnAngle(incoming, outgoing)
+        if (kotlin.math.abs(angle) >= 25.0) return CameraTurn(angle, distance)
+    }
+    return null
+}
+
 @Composable
 internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, visible: Boolean, onClose: () -> Unit) {
     if (!visible) return
@@ -61,6 +79,9 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
     val routePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
     val route = remember(routePoints) { if (routePoints.size >= 2) prepareRoute(routePoints) else null }
     val routeMatch = remember(location, route) { location?.let { fix -> route?.let { matchRoute(it, fix.latitude to fix.longitude) } } }
+    val upcomingTurn = remember(routeMatch, route) {
+        if (routeMatch != null && route != null) findUpcomingCameraTurn(route, routeMatch) else null
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         cameraGranted = result[Manifest.permission.CAMERA] == true ||
@@ -159,34 +180,44 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 )
                 Canvas(Modifier.fillMaxSize()) {
                     val cx = size.width / 2f
-                    val cy = size.height * .62f
                     val horizonY = size.height * .34f + (pitch * size.height / 110f).coerceIn(-size.height * .22f, size.height * .22f)
-                    drawLine(ArLime.copy(alpha = .48f), androidx.compose.ui.geometry.Offset(0f, horizonY), androidx.compose.ui.geometry.Offset(size.width, horizonY), 1.5f)
+                    val focalLength = size.height * .92f
+                    drawLine(ArLime.copy(alpha = .32f), androidx.compose.ui.geometry.Offset(0f, horizonY), androidx.compose.ui.geometry.Offset(size.width, horizonY), 1.2f)
                     val fix = location
                     val match = routeMatch
                     if (fix != null && match != null && routePoints.size > 1) {
-                        val path = Path()
-                        var started = false
+                        var previous: androidx.compose.ui.geometry.Offset? = null
+                        var previousDistance = 0.0
                         val from = match.segmentIndex
-                        val to = (from + 90).coerceAtMost(routePoints.lastIndex)
+                        val to = (from + 120).coerceAtMost(routePoints.lastIndex)
                         for (i in from..to) {
                             val p = routePoints[i]
                             val distance = haversineForAr(p.first, p.second, fix.latitude, fix.longitude)
-                            if (distance > 350.0) break
+                            if (distance > 450.0) break
                             val bearing = bearingToPoint(fix.latitude to fix.longitude, p)
                             val delta = Math.toRadians(((bearing - heading + 540.0) % 360.0) - 180.0)
-                            val x = cx + (kotlin.math.sin(delta) * distance * 0.72).toFloat()
-                            val y = cy - (kotlin.math.cos(delta) * distance * 0.72).toFloat()
-                            if (x >= -size.width * .2f && x <= size.width * 1.2f && y >= horizonY && y <= size.height * 1.15f) {
-                                if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
-                            } else started = false
+                            val forward = distance * kotlin.math.cos(delta)
+                            val lateral = distance * kotlin.math.sin(delta)
+                            if (forward <= 1.0) { previous = null; continue }
+                            // Ground-plane perspective: distant route points converge toward the horizon.
+                            val x = cx + (focalLength * lateral / forward).toFloat()
+                            val y = horizonY + (focalLength * 1.55 / forward).toFloat()
+                            val point = androidx.compose.ui.geometry.Offset(x, y)
+                            if (previous != null && x in -size.width * .15f..size.width * 1.15f && y in horizonY..size.height * 1.08f) {
+                                val distanceForStyle = (distance + previousDistance) * .5
+                                val width = (13.0 * 5.0 / (distanceForStyle + 5.0)).toFloat().coerceIn(1.4f, 10f)
+                                val alpha = (1.0 - distanceForStyle / 520.0).toFloat().coerceIn(.16f, .96f)
+                                drawLine(Color(0xFFFFC857).copy(alpha = alpha), previous!!, point, strokeWidth = width,
+                                    cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            }
+                            previous = if (x in -size.width * .15f..size.width * 1.15f && y in horizonY..size.height * 1.08f) point else null
+                            previousDistance = distance
                         }
-                        if (started) drawPath(path, Color(0xFFFFC857), style = Stroke(width = 8f))
-                        drawCircle(Color(0xFFFFC857), 8f, androidx.compose.ui.geometry.Offset(cx, cy))
+                        drawCircle(Color(0xFFFFC857), 7f, androidx.compose.ui.geometry.Offset(cx, size.height * .86f))
                     }
-                    drawCircle(ArLime.copy(alpha = .95f), 24f, androidx.compose.ui.geometry.Offset(cx, cy), style = Stroke(2.5f))
-                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx - 22f, cy), androidx.compose.ui.geometry.Offset(cx + 22f, cy), 2f)
-                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, cy - 22f), androidx.compose.ui.geometry.Offset(cx, cy + 22f), 2f)
+                    drawCircle(ArLime.copy(alpha = .95f), 22f, androidx.compose.ui.geometry.Offset(cx, size.height * .86f), style = Stroke(2.5f))
+                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx - 20f, size.height * .86f), androidx.compose.ui.geometry.Offset(cx + 20f, size.height * .86f), 2f)
+                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * .86f - 20f), androidx.compose.ui.geometry.Offset(cx, size.height * .86f + 20f), 2f)
                 }
                 if (cameraError.isNotBlank()) {
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
@@ -205,8 +236,8 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(12.dp), color = ArLime, fontSize = 11.sp)
                 }
                 Column(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .background(Color.Black.copy(alpha = .76f)).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 14.dp),
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 38.dp)
+                        .background(Color.Black.copy(alpha = .82f)).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -219,7 +250,12 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                                 color = Color.White, fontSize = 14.sp
                             )
                             Text(
-                                if (match != null) turnGuidance(heading, match.bearingDegrees.toFloat()) else "等待 GPS 定位",
+                                if (match != null) {
+                                    val turn = upcomingTurn
+                                    if (turn != null && turn.distanceMeters <= 85.0) {
+                                        "${if (turn.isLeft) "↰ 左转" else "↱ 右转"} ${kotlin.math.abs(turn.angleDegrees).roundToInt()}° · ${turn.distanceMeters.roundToInt()} m 后"
+                                    } else turnGuidance(heading, match.bearingDegrees.toFloat())
+                                } else "等待 GPS 定位",
                                 color = Color(0xFFFFC857), fontSize = 12.sp
                             )
                         }

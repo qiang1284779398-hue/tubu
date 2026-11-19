@@ -10,8 +10,21 @@ android {
         applicationId = "com.tubu.trailkit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0"
+    }
+    signingConfigs {
+        create("stable") {
+            storeFile = file(System.getenv("TRAILKIT_KEYSTORE_PATH") ?: "trailkit-release.jks")
+            storePassword = System.getenv("TRAILKIT_STORE_PASSWORD")
+            keyAlias = "trailkit"
+            keyPassword = System.getenv("TRAILKIT_STORE_PASSWORD")
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("stable")
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

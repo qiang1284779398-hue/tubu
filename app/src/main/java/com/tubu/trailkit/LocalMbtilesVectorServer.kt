@@ -31,6 +31,11 @@ internal object LocalMbtilesVectorServer {
                 }
             }
             val db = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+            // Tippecanoe's compact MBTiles output uses the normalized map/images
+            // schema rather than the optional flat "tiles" table.
+            db.rawQuery("SELECT map.tile_id FROM map JOIN images USING(tile_id) LIMIT 1", null).use { cursor ->
+                if (!cursor.moveToFirst()) error("MBTiles contains no vector tiles")
+            }
             val listener = ServerSocket(0, 32, InetAddress.getByName("127.0.0.1"))
             database = db
             server = listener
@@ -81,7 +86,7 @@ internal object LocalMbtilesVectorServer {
                 val bytes = database?.let { db ->
                     synchronized(db) {
                         db.rawQuery(
-                            "SELECT tile_data FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",
+                            "SELECT images.tile_data FROM map JOIN images USING(tile_id) WHERE map.zoom_level=? AND map.tile_column=? AND map.tile_row=? LIMIT 1",
                             arrayOf(z.toString(), x.toString(), tmsY.toString())
                         ).use { cursor -> if (cursor.moveToFirst()) cursor.getBlob(0) else null }
                     }

@@ -27,6 +27,13 @@ jobs:
           unzip -p /tmp/osm-z18/trial.zip yubeng-z18.mbtiles > app/src/main/assets/yubeng-z18.mbtiles
           test "$(stat -c%s app/src/main/assets/yubeng-z18.mbtiles)" -gt 1000000
           echo "Bundled Yubeng MBTiles: $(du -h app/src/main/assets/yubeng-z18.mbtiles | cut -f1)"
+      - name: Bundle MapLibre GL JS for 3D terrain view
+        run: |
+          mkdir -p app/src/main/assets
+          curl -fL --retry 4 https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js -o app/src/main/assets/maplibre-gl.js
+          curl -fL --retry 4 https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css -o app/src/main/assets/maplibre-gl.css
+          test "$(stat -c%s app/src/main/assets/maplibre-gl.js)" -gt 100000
+          test "$(stat -c%s app/src/main/assets/maplibre-gl.css)" -gt 10000
       - name: Build debug APK
         run: gradle testDebugUnitTest assembleDebug
       - uses: actions/upload-artifact@v4

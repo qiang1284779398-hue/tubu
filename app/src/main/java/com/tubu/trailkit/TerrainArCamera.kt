@@ -95,7 +95,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
     val gpsReliable = location != null && location!!.hasAccuracy() &&
         location!!.accuracy <= 35f && gpsAgeMillis <= 15_000L
     val displayProjectName = remember(projectName) {
-        if (projectName.matches(Regex("""\\d{4}-\\d{2}-\\d{2}.*\\d{10,}.*"""))) "当前徒步项目" else projectName
+        if (projectName.matches(Regex("""\d{4}-\d{2}-\d{2}.*\d{10,}.*"""))) "当前徒步项目" else projectName
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -339,7 +339,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Text(if (turn != null && turn.distanceMeters <= 85.0) "↱" else "◎",
+                                Text(if (turn != null && turn.distanceMeters <= 85.0) { if (turn.isLeft) "↶" else "↷" } else "◎",
                                     color = Color(0xFFFFE082), fontSize = 28.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                                 Text(
                                     if (turn != null && turn.distanceMeters <= 85.0)

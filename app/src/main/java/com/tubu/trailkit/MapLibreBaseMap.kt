@@ -359,15 +359,8 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
 
     Card(modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
-            Text("地图图层 · 标准矢量 / 地形 / 卫星",style=MaterialTheme.typography.titleSmall)
-            Text("Esri 高清卫星无需注册或 Token，需要联网浏览。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("离线地图下载",style=MaterialTheme.typography.titleSmall)
             Text(message,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()) {
-                FilterChip(selected=selectedStyle=="standard",onClick={onSelectStyle("standard")},label={Text("标准矢量")},enabled=!busy)
-                FilterChip(selected=selectedStyle=="terrain",onClick={onSelectStyle("terrain")},label={Text("地形图")},enabled=!busy)
-                FilterChip(selected=selectedStyle=="satellite",onClick={onSelectStyle("satellite")},label={Text("标准卫星")},enabled=!busy)
-                FilterChip(selected=selectedStyle=="esri",onClick={onSelectStyle("esri")},label={Text("Esri 高清卫星")},enabled=!busy)
-            }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
                 OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形")}

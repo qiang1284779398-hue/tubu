@@ -84,13 +84,19 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
  @Volatile private var cameraY=-1.02f
  @Volatile private var cameraZ=0.18f
  @Volatile private var cameraFov=72f
+ @Volatile private var terrainHeights:FloatArray?=null
+ @Volatile private var terrainSize=0
+ @Volatile private var terrainMinElev=0f
+ @Volatile private var terrainMaxElev=0f
+ @Volatile private var terrainGroundSpan=1f
+ @Volatile private var terrainAspectX=1f
+ @Volatile private var terrainAspectY=1f
  private var program=0
  private var texture=0
  private var pendingTexture:Bitmap?=null
  private var ready=false
  private var vertices:FloatBuffer?=null
- private var indices:ShortBuffer?=null
- private var indexCount=0
+ private var terrainVertexCount=0
  private var routeBuffer:FloatBuffer?=null
  private var routeCount=0
  private var w=1;private var h=1
@@ -99,15 +105,33 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
   yaw=(yaw+dx*.24f)%360f
   pitch=(pitch-dy*.22f).coerceIn(-72f,68f)
  }
+ private fun groundZAt(x:Float,y:Float):Float{
+  val a=terrainHeights?:return cameraZ
+  val size=terrainSize
+  if(size<2)return cameraZ
+  val u=(x/(1.72f*terrainAspectX)+.5f).coerceIn(0f,1f)
+  val vv=(.5f-y/(1.72f*terrainAspectY)).coerceIn(0f,1f)
+  val elev=sampleHeight(a,u*(size-1),vv*(size-1),size)
+  return ((elev-(terrainMinElev+terrainMaxElev)*.5f)/terrainGroundSpan*5f)
+ }
  fun move(dx:Float,dy:Float,viewHeight:Int){
-  val step=2.8f/viewHeight.coerceAtLeast(1)
+  val step=4.2f/viewHeight.coerceAtLeast(1)
   val strafe=dx*step
   val forward=-dy*step
   val a=Math.toRadians(yaw.toDouble())
-  cameraX=(cameraX+cos(a).toFloat()*strafe+sin(a).toFloat()*forward).coerceIn(-2.2f,2.2f)
-  cameraY=(cameraY-sin(a).toFloat()*strafe+cos(a).toFloat()*forward).coerceIn(-2.2f,2.2f)
+  val limitX=.84f*terrainAspectX
+  val limitY=.84f*terrainAspectY
+  cameraX=(cameraX+cos(a).toFloat()*strafe+sin(a).toFloat()*forward).coerceIn(-limitX,limitX)
+  cameraY=(cameraY-sin(a).toFloat()*strafe+cos(a).toFloat()*forward).coerceIn(-limitY,limitY)
+  val eye=(1.7f*5f/terrainGroundSpan.coerceAtLeast(1f)).coerceIn(.008f,.06f)
+  cameraZ=groundZAt(cameraX,cameraY)+eye
  }
- fun zoom(scale:Float){if(scale.isFinite()&&scale>0f)cameraFov=(cameraFov/scale).coerceIn(16f,96f)}
+ fun zoom(scale:Float){
+  if(scale.isFinite()&&scale>0f){
+   val factor=scale.coerceIn(.2f,5f).pow(1.65f)
+   cameraFov=(cameraFov/factor).coerceIn(3.5f,100f)
+  }
+ }
  override fun onSurfaceCreated(gl:GL10?,cfg:EGLConfig?){
   GLES20.glClearColor(.12f,.15f,.13f,1f);GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glDisable(GLES20.GL_CULL_FACE)
   val vs="attribute vec3 p;attribute vec2 uv;uniform mat4 m;varying vec2 t;void main(){gl_Position=m*vec4(p,1.);t=uv;}"
@@ -202,16 +226,18 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    val groundSpan=max(spanPxX,spanPxY)*metersPerPixel
    val aspectX=(spanPxX/max(spanPxX,spanPxY)).toFloat()
    val aspectY=(spanPxY/max(spanPxX,spanPxY)).toFloat()
-   val v=FloatArray(255*255*5);var k=0
-   for(y in 0 until 255)for(x in 0 until 255){
-    val u=x/254f;val vv=y/254f;val elev=sampleHeight(heights,u*(rasterSize-1),vv*(rasterSize-1),rasterSize)
+   // 385×385 网格：直接展开三角形，避免 GLES2 16 位索引的 65535 顶点限制
+   val gridSize=385
+   val v=FloatArray((gridSize-1)*(gridSize-1)*6*5);var k=0
+   fun putVertex(x:Int,y:Int){
+    val u=x/(gridSize-1f);val vv=y/(gridSize-1f)
+    val elev=sampleHeight(heights,u*(rasterSize-1),vv*(rasterSize-1),rasterSize)
     val zPos=((elev-(minElev+maxElev)*.5f)/groundSpan*5.0).toFloat()
     v[k++]=(u-.5f)*1.72f*aspectX;v[k++]=(.5f-vv)*1.72f*aspectY;v[k++]=zPos;v[k++]=u;v[k++]=vv
    }
-   val ix=ShortArray(254*254*6);k=0
-   for(y in 0 until 254)for(x in 0 until 254){
-    val a=y*255+x;val b=a+1;val c=a+255;val d=c+1
-    ix[k++]=a.toShort();ix[k++]=c.toShort();ix[k++]=b.toShort();ix[k++]=b.toShort();ix[k++]=c.toShort();ix[k++]=d.toShort()
+   for(y in 0 until gridSize-1)for(x in 0 until gridSize-1){
+    putVertex(x,y);putVertex(x,y+1);putVertex(x+1,y)
+    putVertex(x+1,y);putVertex(x,y+1);putVertex(x+1,y+1)
    }
    val texSize=1536;val pixels=IntArray(texSize*texSize);val rasterMeters=groundSpan/(texSize-1).toDouble()
    for(y in 0 until texSize)for(x in 0 until texSize){
@@ -241,13 +267,13 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
     }
    }
    val vb=ByteBuffer.allocateDirect(v.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer().put(v).apply{position(0)}
-   val ib=ByteBuffer.allocateDirect(ix.size*2).order(ByteOrder.nativeOrder()).asShortBuffer().put(ix).apply{position(0)}
    val rb=ByteBuffer.allocateDirect(route.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
    route.forEach{rb.put(it)};rb.position(0)
-   synchronized(this){vertices=vb;indices=ib;indexCount=ix.size;routeBuffer=rb;routeCount=route.size/3;pendingTexture=texBitmap;ready=true}
-   val nearEdge=sampleHeight(heights,(rasterSize-1)*.5f,(rasterSize-1)*.94f,rasterSize)
-   cameraX=0f;cameraY=-.92f;cameraZ=((nearEdge-(minElev+maxElev)*.5f)/groundSpan*5.0).toFloat()+.035f
-   report("沉浸式山地视角已就绪："+loaded+" 张 DEM · 单指环视 · 双指移动 · 捏合缩放。")
+   synchronized(this){vertices=vb;terrainVertexCount=v.size/5;routeBuffer=rb;routeCount=route.size/3;pendingTexture=texBitmap;terrainHeights=heights;terrainSize=rasterSize;terrainMinElev=minElev;terrainMaxElev=maxElev;terrainGroundSpan=groundSpan.toFloat();terrainAspectX=aspectX;terrainAspectY=aspectY;ready=true}
+   cameraX=0f;cameraY=-.78f*aspectY
+   val eye=(1.7f*5f/groundSpan.toFloat().coerceAtLeast(1f)).coerceIn(.008f,.06f)
+   cameraZ=groundZAt(cameraX,cameraY)+eye
+   report("高精度地形已就绪："+loaded+" 张 DEM · 385×385 山体网格 · 贴地行走 · 高倍率缩放。")
   }catch(e:Exception){report("地形加载失败："+(e.message?:e.javaClass.simpleName)+"；请检查网络后重试。")}
   finally{mosaic?.recycle()}
  }
@@ -281,7 +307,7 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
   GLES20.glEnableVertexAttribArray(p);GLES20.glEnableVertexAttribArray(uv)
   val vb=vertices!!;vb.position(0);GLES20.glVertexAttribPointer(p,3,GLES20.GL_FLOAT,false,20,vb)
   vb.position(3);GLES20.glVertexAttribPointer(uv,2,GLES20.GL_FLOAT,false,20,vb)
-  GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"route"),0);GLES20.glDrawElements(GLES20.GL_TRIANGLES,indexCount,GLES20.GL_UNSIGNED_SHORT,indices)
+  GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"route"),0);GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,terrainVertexCount)
   if(routeCount>1){
    GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"route"),1)
    routeBuffer!!.position(0);GLES20.glVertexAttribPointer(p,3,GLES20.GL_FLOAT,false,12,routeBuffer)

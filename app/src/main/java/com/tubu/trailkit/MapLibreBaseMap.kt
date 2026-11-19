@@ -139,7 +139,10 @@ internal fun MapLibreBaseMap(
                 nativeMap.uiSettings.isDoubleTapGesturesEnabled = true
                 nativeMap.uiSettings.isQuickZoomGesturesEnabled = true
                 nativeMap.uiSettings.isRotateGesturesEnabled = false
-                nativeMap.uiSettings.isTiltGesturesEnabled = false
+                // Enable two-finger tilt so Maptoolkit Street's native building-extrusion layer
+                // can be inspected in 3D. Rotation stays disabled because the route overlay
+                // is intentionally north-up.
+                nativeMap.uiSettings.isTiltGesturesEnabled = true
                 nativeMap.addOnMapClickListener { point ->
                     tapCallback(point.latitude, point.longitude)
                     true
@@ -153,6 +156,7 @@ internal fun MapLibreBaseMap(
                         .target(LatLng(centerLat, centerLon))
                         .zoom(zoom.toDouble().coerceIn(2.0, 20.0))
                         .bearing(mapBearing.toDouble())
+                        .tilt(nativeMap.cameraPosition.tilt)
                         .build()
                     ready = true
                     appliedStyleUrl = styleUrl

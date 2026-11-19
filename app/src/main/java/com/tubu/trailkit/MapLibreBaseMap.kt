@@ -203,15 +203,9 @@ internal fun MapLibreBaseMap(
         verticalAlignment = Alignment.CenterVertically
     ) {
         when {
-            styleUrl.contains("esri") -> Text(
-                "Powered by Esri · Source: Esri, Maxar, Earthstar Geographics",
-                modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.esri.com/en-us/legal/terms/full-master-agreement"))) },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
             styleUrl.contains("satellite") -> Text(
-                "EOxCloudless · Copernicus Sentinel-2",
-                modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cloudless.eox.at/"))) },
+                "EOxCloudless · EOX IT Services · Copernicus Sentinel-2 2016",
+                modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cloudless.eox.at/documentation/license"))) },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )

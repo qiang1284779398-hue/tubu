@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             TrailKitApp(
                 sharedGpxUri = incomingSharedGpx,
+                autoOpen3D = intent.getBooleanExtra("trailkit_test_3d", false),
                 onSharedGpxHandled = { incomingSharedGpx = null }
             )
         }
@@ -202,11 +203,11 @@ private fun deleteProjectNavigationData(context:Context,project:Project) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) {
+fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onSharedGpxHandled: () -> Unit = {}) {
     val context= LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var projects by remember { mutableStateOf(loadWithBundledYubeng(context)) }
-    var selected by remember { mutableStateOf<String?>(null) }
+    var selected by remember { mutableStateOf<String?>(if (autoOpen3D) "bundled-yubeng" else null) }
     var projectPage by remember(selected) { mutableStateOf("gear") }
     var projectDialog by remember { mutableStateOf(false) }
     var pendingSharedGpx by remember { mutableStateOf<Uri?>(null) }
@@ -235,7 +236,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
     var trackOpen by remember { mutableStateOf(false) }
     var gpxTargetProjectId by remember { mutableStateOf<String?>(null) }
     var mapOpen by remember { mutableStateOf(false) }
-    var terrain3dOpen by remember { mutableStateOf(false) }
+    var terrain3dOpen by remember { mutableStateOf(autoOpen3D) }
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(sharedGpxUri) {

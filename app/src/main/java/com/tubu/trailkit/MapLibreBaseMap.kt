@@ -81,15 +81,7 @@ internal fun MapLibreBaseMap(
             .addInterceptor { chain ->
                 val original = chain.request()
                 val url = original.url
-                val token = context.getSharedPreferences("trailkit_map_settings", Context.MODE_PRIVATE)
-                    .getString("geovis_token", "").orEmpty().trim()
-                val requestUrl = if (url.host == "api.open.geovisearth.com" &&
-                    url.encodedPath.contains("/pj/base/v1/img/") && token.isNotEmpty() &&
-                    url.queryParameter("token") == null) {
-                    url.newBuilder().addQueryParameter("token", token).build()
-                } else url
                 val request = original.newBuilder()
-                    .url(requestUrl)
                     .header("User-Agent", "TrailKit-Android/1.3 (+https://github.com/qiang1284779398-hue/tubu)")
                     .build()
                 chain.proceed(request)
@@ -214,12 +206,6 @@ internal fun MapLibreBaseMap(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            styleUrl.contains("geovis") -> Text(
-                "© 中科星图",
-                modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://open.geovisearth.com/product/Image_Map"))) },
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface
-            )
             styleUrl.contains("satellite") -> Text(
                 "EOxCloudless · Copernicus Sentinel-2",
                 modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cloudless.eox.at/"))) },
@@ -287,7 +273,6 @@ private fun splitOfflineBounds(west:Double,south:Double,east:Double,north:Double
 
 internal const val TRAILKIT_TERRAIN_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-terrain.json"
 internal const val TRAILKIT_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-satellite.json"
-internal const val TRAILKIT_GEOVIS_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-geovis-satellite.json"
 internal const val TRAILKIT_ESRI_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-esri-satellite.json"
 
 @Composable
@@ -301,10 +286,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
     var bytes by remember(projectId){mutableLongStateOf(0L)}
     var busy by remember(projectId){mutableStateOf(false)}
     var complete by remember(projectId){mutableStateOf(false)}
-    var message by remember(projectId){mutableStateOf("可切换标准卫星与高清卫星。高清卫星需要个人星图云 Token；请勿把 Token 发到公开仓库。")}
-    val mapPrefs = remember(context) { context.getSharedPreferences("trailkit_map_settings", Context.MODE_PRIVATE) }
-    var geovisToken by remember { mutableStateOf(mapPrefs.getString("geovis_token", "").orEmpty()) }
-    var tokenSaved by remember { mutableStateOf(geovisToken.isNotBlank()) }
+    var message by remember(projectId){mutableStateOf("可在线切换 Esri 高清卫星影像；标准卫星、矢量和地形图仍可下载离线。")}
 
     fun startDownload(styleUrl:String,label:String) {
         if(points.size<2 || busy)return
@@ -378,30 +360,24 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
     Card(modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
             Text("地图图层 · 标准矢量 / 地形 / 卫星",style=MaterialTheme.typography.titleSmall)
-            OutlinedTextField(value=geovisToken, onValueChange={geovisToken=it;tokenSaved=false}, modifier=Modifier.fillMaxWidth(), singleLine=true, label={Text("星图云个人 Token")}, placeholder={Text("在星图云控制台创建静态 Token")}, supportingText={Text("仅保存在本机应用私有设置中，不会写入 GitHub")})
-            Row(horizontalArrangement=Arrangement.spacedBy(8.dp), modifier=Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick={mapPrefs.edit().putString("geovis_token",geovisToken.trim()).apply();tokenSaved=geovisToken.isNotBlank();message=if(tokenSaved)"星图云 Token 已保存在本机。选择“高清卫星”即可加载。" else "已清除本机星图云 Token。"}, enabled=!busy) { Text(if(tokenSaved)"Token 已保存" else "保存 Token") }
-                Text("高清影像需要联网和有效额度", style=MaterialTheme.typography.labelSmall, modifier=Modifier.align(Alignment.CenterVertically))
-            }
+            Text("Esri 高清卫星无需注册或 Token，需要联网浏览。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Text(message,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement=Arrangement.spacedBy(6.dp),modifier=Modifier.fillMaxWidth()) {
                 FilterChip(selected=selectedStyle=="standard",onClick={onSelectStyle("standard")},label={Text("标准矢量")},enabled=!busy)
                 FilterChip(selected=selectedStyle=="terrain",onClick={onSelectStyle("terrain")},label={Text("地形图")},enabled=!busy)
                 FilterChip(selected=selectedStyle=="satellite",onClick={onSelectStyle("satellite")},label={Text("标准卫星")},enabled=!busy)
-                FilterChip(selected=selectedStyle=="geovis",onClick={onSelectStyle("geovis")},label={Text("高清卫星")},enabled=!busy&&tokenSaved&&geovisToken.isNotBlank())
-                Spacer(Modifier.weight(1f))
+                FilterChip(selected=selectedStyle=="esri",onClick={onSelectStyle("esri")},label={Text("Esri 高清卫星")},enabled=!busy)
             }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
                 OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形")}
                 Button(onClick={startDownload(TRAILKIT_SATELLITE_STYLE,"标准卫星图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载标准卫星")}
             }
-            OutlinedButton(onClick={message="高清卫星离线下载暂未开放：星图云公开文档说明了在线瓦片 API 和 Token，但没有明确授予批量离线下载/长期缓存权限。取得服务方书面许可后再开放，避免账号或数据授权风险。"}, enabled=!busy&&points.size>=2&&selectedStyle=="geovis", modifier=Modifier.fillMaxWidth()) { Text("查看高清卫星离线说明") }
             if(busy||complete) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
                 Text("${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · ${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)
             }
-            Text("标准卫星：Sentinel-2 Cloudless 2024（约 10 米级，可下载离线）。Esri 高清卫星免 Token、仅在线浏览，雨崩清晰度以实际影像为准；星图云高清源仍需个人 Token。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("标准卫星：Sentinel-2 Cloudless 2024（约 10 米级，可下载离线）。Esri World Imagery：免 Token，在线浏览；雨崩实际清晰度以影像覆盖为准。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

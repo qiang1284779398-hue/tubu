@@ -23,8 +23,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p app/src/main/assets /tmp/osm-z18
-          curl -fL --retry 4 -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \\
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/14493679742/zip" -o /tmp/osm-z18/trial.zip
+          curl -fL --retry 4 -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/14493679742/zip" -o /tmp/osm-z18/trial.zip
           unzip -p /tmp/osm-z18/trial.zip yubeng-z18.mbtiles > app/src/main/assets/yubeng-z18.mbtiles
           test "$(stat -c%s app/src/main/assets/yubeng-z18.mbtiles)" -gt 1000000
           echo "Bundled Yubeng MBTiles: $(du -h app/src/main/assets/yubeng-z18.mbtiles | cut -f1)"

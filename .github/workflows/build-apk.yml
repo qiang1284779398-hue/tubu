@@ -1,7 +1,7 @@
 name: Build TrailKit APK
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,13 +27,6 @@ jobs:
           unzip -p /tmp/osm-z18/trial.zip yubeng-z18.mbtiles > app/src/main/assets/yubeng-z18.mbtiles
           test "$(stat -c%s app/src/main/assets/yubeng-z18.mbtiles)" -gt 1000000
           echo "Bundled Yubeng MBTiles: $(du -h app/src/main/assets/yubeng-z18.mbtiles | cut -f1)"
-      - name: Bundle MapLibre GL JS for 3D terrain view
-        run: |
-          mkdir -p app/src/main/assets
-          curl -fL --retry 4 https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js -o app/src/main/assets/maplibre-gl.js
-          curl -fL --retry 4 https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css -o app/src/main/assets/maplibre-gl.css
-          test "$(stat -c%s app/src/main/assets/maplibre-gl.js)" -gt 100000
-          test "$(stat -c%s app/src/main/assets/maplibre-gl.css)" -gt 10000
       - name: Build debug APK
         run: gradle testDebugUnitTest assembleDebug
       - uses: actions/upload-artifact@v4
@@ -41,42 +34,3 @@ jobs:
           name: TrailKit-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
-      - name: Prepare Android rendering diagnostics
-        run: mkdir -p test-output
-      - name: Launch 3D map in Android emulator and inspect rendered frame
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          emulator-boot-timeout: 900
-          disable-animations: true
-          script: |
-            adb install -r app/build/outputs/apk/debug/app-debug.apk
-            adb shell am start -n com.tubu.trailkit/.MainActivity --ez trailkit_test_3d true
-            sleep 40
-            mkdir -p test-output
-            adb exec-out screencap -p > test-output/3d-map-emulator.png
-            adb logcat -d > test-output/logcat.txt
-            python3 -m pip install pillow
-            python3 - <<'PY'
-            from PIL import Image
-            im=Image.open("test-output/3d-map-emulator.png").convert("RGB")
-            w,h=im.size
-            crop=im.crop((int(w*.08),int(h*.22),int(w*.92),int(h*.82)))
-            colors=len(crop.resize((160,160)).getcolors(256*256) or [])
-            extrema=crop.getextrema()
-            print(f"3D map screenshot: {w}x{h}; sampled distinct colors={colors}; channel ranges={extrema}")
-            if colors < 80:
-                raise SystemExit("FAIL: 3D map view appears blank/black or did not render enough visible content")
-            print("PASS: emulator screenshot contains rendered visual content")
-            PY
-      - name: Upload Android rendering diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: TrailKit-android-render-test
-          path: test-output/
-          if-no-files-found: ignore
-          retention-days: 14

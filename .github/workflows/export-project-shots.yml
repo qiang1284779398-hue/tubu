@@ -1,0 +1,20 @@
+name: Export project screenshots
+on:
+  push:
+    paths:
+      - '.github/workflows/export-project-shots.yml'
+  workflow_dispatch:
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          mkdir -p /tmp/project-shots
+          cp test/*.png /tmp/project-shots/
+          cd /tmp/project-shots
+          zip -q /tmp/project-shots.zip *.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: project-screenshots
+          path: /tmp/project-shots.zip

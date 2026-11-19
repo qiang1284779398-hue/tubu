@@ -388,7 +388,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val activeMapStyle = if (useOsmOffline) {
         LocalMbtilesVectorServer.start(context) ?: TRAILKIT_MAP_STYLE
     } else when(mapLayer) {
-        "esri" -> TRAILKIT_CLOUDLESS_SATELLITE_STYLE
+        "esri" -> TRAILKIT_ESRI_SATELLITE_STYLE
         "terrain" -> TRAILKIT_TERRAIN_STYLE
         else -> TRAILKIT_MAP_STYLE
     }

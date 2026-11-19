@@ -73,7 +73,7 @@ internal fun MapLibreBaseMap(
     val projectionCallback by rememberUpdatedState(onProjectionChanged)
     val mapView = remember(context) {
         MapLibre.getInstance(context.applicationContext)
-        val dispatcher = Dispatcher().apply { maxRequests = 12; maxRequestsPerHost = 8 }
+        val dispatcher = Dispatcher().apply { maxRequests = 4; maxRequestsPerHost = 4 }
         val http = OkHttpClient.Builder()
             .dispatcher(dispatcher)
             .connectTimeout(25, TimeUnit.SECONDS)

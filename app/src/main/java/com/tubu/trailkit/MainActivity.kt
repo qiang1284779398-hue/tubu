@@ -672,7 +672,6 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
             selected=p.id
         }
     }
-    val managedProject =
     val managedProject = projects.firstOrNull { it.id == manageProjectId }
     if (manageProjectId != null && managedProject != null) {
         AlertDialog(

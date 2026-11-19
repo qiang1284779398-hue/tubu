@@ -269,8 +269,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var followGps by remember(projectId) { mutableStateOf(true) }
     var mapOrientation by remember(projectId) { mutableStateOf(prefs.getString("orientation_$projectId","north") ?: "north") }
     var mapBearing by remember(projectId) { mutableFloatStateOf(0f) }
-    var mapFullscreen by remember(projectId) { mutableStateOf(true) }
-    BackHandler(enabled=mapFullscreen) { mapFullscreen=false }
+    var mapCanvasFullscreen by remember(projectId) { mutableStateOf(false) }
+    BackHandler(enabled=mapCanvasFullscreen) { mapCanvasFullscreen=false }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
     var compassAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_UNRELIABLE) }
     val progressKey="progress_${projectId}_${encoded.hashCode()}_${if(reverseRoute)"rev" else "fwd"}"
@@ -714,10 +714,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         if(visible && sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
         onDispose { manager.unregisterListener(listener) }
     }
-    if(visible) Dialog(onDismissRequest={if(mapFullscreen)mapFullscreen=false else onClose()},properties=DialogProperties(usePlatformDefaultWidth=!mapFullscreen)) {
-        Surface(shape=if(mapFullscreen)RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surface,modifier=if(mapFullscreen)Modifier.fillMaxSize() else Modifier.fillMaxWidth().heightIn(max=780.dp)) {
-            Column(Modifier.then(if(mapFullscreen)Modifier.fillMaxSize() else Modifier.padding(14.dp).verticalScroll(rememberScrollState())),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                if(!mapFullscreen) {
+    if(visible) Dialog(onDismissRequest={if(mapCanvasFullscreen)mapCanvasFullscreen=false else onClose()},properties=DialogProperties(usePlatformDefaultWidth=false)) {
+        Surface(shape=RoundedCornerShape(0.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxSize()) {
+            Column(Modifier.then(if(mapCanvasFullscreen)Modifier.fillMaxSize() else Modifier.fillMaxSize().padding(14.dp).verticalScroll(rememberScrollState())),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                if(!mapCanvasFullscreen) {
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if(active)"轨迹跟随导航" else info?.name?:"离线地图导航",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)

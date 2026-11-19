@@ -312,13 +312,16 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
                 }
                 Row(
-                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.Top
                 ) {
                     Column(
-                        Modifier.weight(1f)
-                            .background(Color.Black.copy(alpha = .68f), RoundedCornerShape(12.dp)).padding(10.dp)
+                        Modifier
+                            .widthIn(max = 230.dp)
+                            .wrapContentWidth(Alignment.Start)
+                            .background(Color.Black.copy(alpha = .68f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
                     ) {
                         Text("方位 ${heading.roundToInt()}°  ${compassDirection(heading)}", color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         Text("俯仰 ${pitch.roundToInt()}° · 横滚 ${roll.roundToInt()}°", color = ArLime, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -326,16 +329,15 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     Surface(
                         color = Color.Black.copy(alpha = .68f), shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(10.dp), color = ArLime, fontSize = 11.sp, maxLines = 1)
+                        Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(horizontal = 10.dp, vertical = 9.dp), color = ArLime, fontSize = 11.sp, maxLines = 1)
                     }
                 }
                 BoxWithConstraints(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                     Column(
                     Modifier.fillMaxWidth()
                         .heightIn(max = maxHeight * 0.48f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(bottom = 6.dp)
                         .background(Color(0xF20A100D))
+                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {

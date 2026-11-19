@@ -272,7 +272,6 @@ private fun splitOfflineBounds(west:Double,south:Double,east:Double,north:Double
 }
 
 internal const val TRAILKIT_TERRAIN_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-terrain.json"
-internal const val TRAILKIT_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-satellite.json"
 internal const val TRAILKIT_ESRI_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-esri-satellite.json"
 
 @Composable
@@ -286,7 +285,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
     var bytes by remember(projectId){mutableLongStateOf(0L)}
     var busy by remember(projectId){mutableStateOf(false)}
     var complete by remember(projectId){mutableStateOf(false)}
-    var message by remember(projectId){mutableStateOf("可在线切换 Esri 高清卫星影像；标准卫星、矢量和地形图仍可下载离线。")}
+    var message by remember(projectId){mutableStateOf("Esri 高清卫星可在线浏览。离线导出需使用 Esri 授权的导出服务；当前公开浏览瓦片不支持直接批量下载。")}
 
     fun startDownload(styleUrl:String,label:String) {
         if(points.size<2 || busy)return
@@ -364,13 +363,13 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
                 OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形")}
-                Button(onClick={startDownload(TRAILKIT_SATELLITE_STYLE,"标准卫星图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载标准卫星")}
+                OutlinedButton(onClick={message="Esri World Imagery 的公开浏览接口不是离线导出接口。请使用 Esri 授权的 World Imagery（for Export）服务及符合其许可的软件流程。"},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("Esri 离线影像")}
             }
             if(busy||complete) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
                 Text("${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · ${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)
             }
-            Text("标准卫星：Sentinel-2 Cloudless 2024（约 10 米级，可下载离线）。Esri World Imagery：免 Token，在线浏览；雨崩实际清晰度以影像覆盖为准。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("卫星图层已统一为 Esri World Imagery。此处不会抓取公开浏览瓦片；Esri 离线导出需授权服务与合规使用条件。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

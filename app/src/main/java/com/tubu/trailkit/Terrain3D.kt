@@ -78,8 +78,10 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                                     style.addLayer(LineLayer("trail-route-native-line", "trail-route-native")
                                         .withProperties(PropertyFactory.lineColor("#FFB547"), PropertyFactory.lineWidth(4.5f), PropertyFactory.lineCap(Property.LINE_CAP_ROUND), PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)))
                                     )
-                                    val bounds=points.fold(org.maplibre.android.geometry.LatLngBounds.Builder().include(LatLng(points.first().first,points.first().second)).include(LatLng(points.first().first,points.first().second))){ b,p-> b.include(LatLng(p.first,p.second)) }.build()
-                                    if(points.size>1)map.easeCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,48),800)
+                                    val boundsBuilder = org.maplibre.android.geometry.LatLngBounds.Builder()
+                                    points.forEach { p -> boundsBuilder.include(LatLng(p.first, p.second)) }
+                                    val bounds = boundsBuilder.build()
+                                    if (points.size > 1) map.easeCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds, 48), 800)
                                 }
                             }
                         }

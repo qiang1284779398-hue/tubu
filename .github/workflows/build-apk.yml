@@ -41,3 +41,39 @@ jobs:
           name: TrailKit-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+      - name: Launch 3D map in Android emulator and inspect rendered frame
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell am start -n com.tubu.trailkit/.MainActivity --ez trailkit_test_3d true
+            sleep 40
+            mkdir -p test-output
+            adb exec-out screencap -p > test-output/3d-map-emulator.png
+            adb logcat -d > test-output/logcat.txt
+            python3 -m pip install pillow
+            python3 - <<'PY'
+            from PIL import Image
+            im=Image.open("test-output/3d-map-emulator.png").convert("RGB")
+            w,h=im.size
+            crop=im.crop((int(w*.08),int(h*.22),int(w*.92),int(h*.82)))
+            colors=len(crop.resize((160,160)).getcolors(256*256) or [])
+            extrema=crop.getextrema()
+            print(f"3D map screenshot: {w}x{h}; sampled distinct colors={colors}; channel ranges={extrema}")
+            if colors < 80:
+                raise SystemExit("FAIL: 3D map view appears blank/black or did not render enough visible content")
+            print("PASS: emulator screenshot contains rendered visual content")
+            PY
+      - name: Upload Android rendering diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrailKit-android-render-test
+          path: test-output/
+          if-no-files-found: ignore
+          retention-days: 14

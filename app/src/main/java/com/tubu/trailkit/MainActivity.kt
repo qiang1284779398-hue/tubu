@@ -100,21 +100,21 @@ private fun loadWithBundledYubeng(context:Context):List<Project> {
     }
     return try {
         val encoded=buildString {
-            for(part in 1..6) append(context.assets.open("yubeng_route_part${part}.dat").bufferedReader(Charsets.UTF_8).use { it.readText().trim() })
+            for(part in 1..5) append(context.assets.open("yubeng_route_v2_part${part}.dat").bufferedReader(Charsets.UTF_8).use { it.readText().trim() })
         }
         val compressed=android.util.Base64.decode(encoded,android.util.Base64.DEFAULT)
         val lines=java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(compressed)).bufferedReader(Charsets.UTF_8).use { it.readLines() }
         val track=lines.getOrNull(0).orEmpty()
         val elevations=lines.getOrNull(1).orEmpty()
         val waypoints=lines.getOrNull(2).orEmpty()
-        require(track.startsWith("P1") && elevations.startsWith("E1") && waypoints.startsWith("W1")) { "内置雨崩路线数据不完整" }
+        require(track.startsWith("P5") && elevations.startsWith("E1") && waypoints.startsWith("W1")) { "内置雨崩路线数据不完整" }
         val bundled=Project(
             id="bundled-yubeng",
             name="雨崩",
             place="云南·迪庆·雨崩",
             date="内置测试路线",
             gear=emptyList(),
-            route="内置 GPX 测试路线：原始 27,373 个轨迹点，约 2 米精度简化为 3,653 个导航点；约 72.71 km；累计爬升约 5,225 m；182 个途经点。",
+            route="内置 GPX 测试路线：原始 27,373 个轨迹点，按约 2 米误差简化为 3,647 个导航点；轨迹约 72.65 km；182 个途经点。当前内置数据不含高程剖面。",
             trackData=track,
             waypointData=waypoints,
             elevationData=elevations
@@ -123,7 +123,8 @@ private fun loadWithBundledYubeng(context:Context):List<Project> {
             persist(context,it)
             prefs.edit().putBoolean("bundled_yubeng_seeded",true).apply()
         }
-    } catch(_:Exception) {
+    } catch(e:Exception) {
+        android.widget.Toast.makeText(context,"内置雨崩测试路线加载失败：${e.message ?: "数据读取错误"}",android.widget.Toast.LENGTH_LONG).show()
         current
     }
 }

@@ -389,7 +389,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     } else when(mapLayer) {
         "satellite" -> TRAILKIT_SATELLITE_STYLE
         "esri" -> TRAILKIT_ESRI_SATELLITE_STYLE
-        "geovis" -> TRAILKIT_GEOVIS_SATELLITE_STYLE
         "terrain" -> TRAILKIT_TERRAIN_STYLE
         else -> TRAILKIT_MAP_STYLE
     }

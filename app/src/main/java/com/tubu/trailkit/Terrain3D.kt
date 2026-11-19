@@ -78,7 +78,7 @@ private class TerrainSurface(c:android.content.Context,pts:List<Pair<Double,Doub
  }
 }
 private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(String)->Unit):GLSurfaceView.Renderer{
- @Volatile @Volatile private var yaw=0f
+ @Volatile private var yaw=0f
  @Volatile private var pitch=-8f
  @Volatile private var cameraX=0f
  @Volatile private var cameraY=-1.02f

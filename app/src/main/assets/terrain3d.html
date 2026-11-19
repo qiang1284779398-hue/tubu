@@ -23,7 +23,12 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
 <script>
 (function(){
  const status=document.getElementById('status');
+ let fatalError='';
+ let tileErrors=[];
+ let sourceStats={imagery:{loaded:0,total:0},dem:{loaded:0,total:0}};
  const say=(message,error)=>{
+  if(fatalError&&!error)return;
+  if(error)fatalError=message;
   status.textContent=message;
   status.className=error?'error':'';
   try{if(window.TrailKitBridge)window.TrailKitBridge.report((error?'错误：':'')+message);}catch(_){}
@@ -33,9 +38,11 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
  say('JavaScript 已运行，正在检查 WebGL…');
  if(!window.maplibregl){say('MapLibre 引擎没有加载。检查 APK 内置 JS 文件。',true);return;}
  try{
+  // Only inspect support without creating a context; MapLibre must own the first GL context.
   const testCanvas=document.createElement('canvas');
-  const testGL=testCanvas.getContext('webgl2')||testCanvas.getContext('webgl');
-  if(!testGL){say('WebView 未提供可用的 WebGL 图形环境。',true);return;}
+  const supported=!!(window.WebGL2RenderingContext||window.WebGLRenderingContext);
+  if(!supported){say('WebView 没有提供 WebGL API。',true);return;}
+  testCanvas.width=1;testCanvas.height=1;
   say('WebGL 可用，正在创建地图…');
  }catch(e){say('WebGL 检查失败：'+(e.message||e),true);return;}
  try{
@@ -103,10 +110,32 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
     say('DEM 三维地形与地图图层已初始化，正在完成首屏渲染。');
    }catch(e){say('DEM 地形初始化失败：'+(e.message||e),true);}
   });
-  map.on('idle',function(){say('三维地图已就绪。双指上下滑动调整俯仰，双指旋转，捏合缩放。');});
   map.on('error',function(e){
    const msg=e&&e.error&&e.error.message?e.error.message:'资源加载异常';
-   say('地图资源加载异常：'+msg,true);
+   const source=e&&e.sourceId?e.sourceId:'未知数据源';
+   tileErrors.push(source+': '+msg);
+   if(tileErrors.length>4)tileErrors.shift();
+   say('地图数据加载错误（'+source+'）：'+msg,true);
+  });
+  map.on('sourcedata',function(e){
+   if(!e.sourceId||!sourceStats[e.sourceId])return;
+   const st=sourceStats[e.sourceId];
+   if(e.isSourceLoaded)st.loaded=1;
+   if(e.sourceDataType==='content')st.total++;
+  });
+  map.on('webglcontextlost',function(){say('WebGL 图形上下文丢失：手机网页渲染器无法继续绘制地图。',true);});
+  map.on('webglcontextrestored',function(){say('WebGL 上下文已恢复，正在重绘…');});
+  map.on('idle',function(){
+   if(fatalError)return;
+   const canvas=map.getCanvas();
+   const imageryLoaded=map.isSourceLoaded('imagery');
+   const demLoaded=map.isSourceLoaded('dem');
+   const dims=canvas.width+'×'+canvas.height;
+   if(!imageryLoaded||!demLoaded){
+    say('地图引擎已启动（画布 '+dims+'），但数据未全部就绪：卫星影像 '+(imageryLoaded?'已加载':'未加载')+'；高程 DEM '+(demLoaded?'已加载':'未加载')+'。请检查网络或瓦片服务。');
+   }else{
+    say('影像与 DEM 数据已加载，画布 '+dims+'。如果画面仍黑，问题在手机 WebView 的 WebGL 绘制/合成环节。');
+   }
   });
   window.__trailkitMap=map;
  }catch(e){say('地图初始化失败：'+(e.message||e),true);}

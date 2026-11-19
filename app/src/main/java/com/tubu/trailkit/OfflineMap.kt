@@ -550,7 +550,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     LaunchedEffect(fromCamera, progressMatch, gpsFixAgeSeconds, current?.accuracy) {
         if (fromCamera && !cameraReturnPromptShown && progressMatch != null &&
             (gpsFixAgeSeconds ?: 999L) <= 15L && (current?.accuracy ?: 999f) <= 35f &&
-            progressMatch.progressMeters <= 120.0
+            progressMatch.progressMeters <= 20.0
         ) {
             cameraReturnPromptShown = true
             cameraReturnPromptVisible = true

@@ -69,7 +69,7 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
     val webView = remember(context, routeJson, assetLoader) {
         WebView(context).apply {
             setBackgroundColor(Color.rgb(18, 27, 24))
-            setLayerType(View.LAYER_TYPE_NONE, null)
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false

@@ -377,7 +377,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                 FilterChip(selected=selectedStyle=="standard",onClick={onSelectStyle("standard")},label={Text("标准矢量")},enabled=!busy)
                 FilterChip(selected=selectedStyle=="terrain",onClick={onSelectStyle("terrain")},label={Text("地形图")},enabled=!busy)
                 FilterChip(selected=selectedStyle=="satellite",onClick={onSelectStyle("satellite")},label={Text("标准卫星")},enabled=!busy)
-                FilterChip(selected=selectedStyle=="geovis",onClick={onSelectStyle("geovis")},label={Text("高清卫星")},enabled=!busy&&geovisToken.isNotBlank())
+                FilterChip(selected=selectedStyle=="geovis",onClick={onSelectStyle("geovis")},label={Text("高清卫星")},enabled=!busy&&tokenSaved&&geovisToken.isNotBlank())
                 Spacer(Modifier.weight(1f))
             }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
@@ -386,7 +386,6 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                 Button(onClick={startDownload(TRAILKIT_SATELLITE_STYLE,"标准卫星图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载标准卫星")}
             }
             OutlinedButton(onClick={message="高清卫星离线下载暂未开放：星图云公开文档说明了在线瓦片 API 和 Token，但没有明确授予批量离线下载/长期缓存权限。取得服务方书面许可后再开放，避免账号或数据授权风险。"}, enabled=!busy&&points.size>=2&&selectedStyle=="geovis", modifier=Modifier.fillMaxWidth()) { Text("查看高清卫星离线说明") }
-            }
             if(busy||complete) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
                 Text("${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · ${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)

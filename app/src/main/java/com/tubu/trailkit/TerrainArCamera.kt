@@ -68,7 +68,7 @@ private fun findUpcomingCameraTurn(route: PreparedRoute, match: RouteMatch): Cam
 }
 
 @Composable
-internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, visible: Boolean, onClose: () -> Unit) {
+internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, visible: Boolean, onClose: () -> Unit, onJumpToMap: () -> Unit) {
     if (!visible) return
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -102,6 +102,23 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
     }
     val displayProjectName = remember(projectName) {
         if (projectName.matches(Regex("""\d{4}-\d{2}-\d{2}.*\d{10,}.*"""))) "当前徒步项目" else projectName
+    }
+
+    var startMapPromptVisible by remember { mutableStateOf(false) }
+    var startMapPromptHandled by remember { mutableStateOf(false) }
+    var distanceToRouteStart by remember { mutableStateOf<Double?>(null) }
+    LaunchedEffect(location, routePoints) {
+        val fix = location
+        if (!startMapPromptHandled && fix != null && routePoints.size >= 2 &&
+            fix.hasAccuracy() && fix.accuracy <= 35f &&
+            (System.currentTimeMillis() - fix.time).coerceIn(0L, Long.MAX_VALUE) <= 15_000L
+        ) {
+            val start = routePoints.first()
+            val distance = haversineForAr(fix.latitude, fix.longitude, start.first, start.second)
+            distanceToRouteStart = distance
+            if (distance <= 300.0) startMapPromptVisible = true
+            startMapPromptHandled = true
+        }
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -459,6 +476,24 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     TextButton(onClick = onClose) { Text("返回", color = ArLime) }
                 }
             }
+        }
+        if (startMapPromptVisible) {
+            AlertDialog(
+                onDismissRequest = { startMapPromptVisible = false },
+                title = { Text("已接近 GPX 起点") },
+                text = {
+                    Text("你距离这条轨迹的起点约 ${distanceToRouteStart?.roundToInt() ?: 0} 米。要切换到二维地图页面开始导航吗？")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        startMapPromptVisible = false
+                        onJumpToMap()
+                    }) { Text("切换到二维地图") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { startMapPromptVisible = false }) { Text("继续实景导航") }
+                }
+            )
         }
     }
 }

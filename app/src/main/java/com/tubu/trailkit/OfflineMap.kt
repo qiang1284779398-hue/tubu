@@ -215,38 +215,32 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         try {
             lateinit var engine:TextToSpeech
             engine=TextToSpeech(context) { status ->
-                var ready=false
-                var diagnostic=""
                 if(status==TextToSpeech.SUCCESS) {
-                    val candidates=listOf(Locale.CHINA,Locale.SIMPLIFIED_CHINESE,Locale("zh","CN"),Locale("zh"),Locale.getDefault())
-                    for(locale in candidates.distinct()) {
-                        try {
-                            val selected=engine.setLanguage(locale)
-                            if(selected!=TextToSpeech.LANG_NOT_SUPPORTED) {
-                                ready=true
-                                voiceLocaleLabel.value=if(locale.language=="zh") "中文" else "系统语音"
-                                diagnostic="已连接系统语音引擎（语言代码：$selected）"
-                                break
-                            }
-                        } catch(e:Exception) { diagnostic=e.javaClass.simpleName+": "+(e.message?: "设置语言失败") }
+                    // Some OEM TTS engines can speak Chinese but expose neither a
+                    // Chinese Voice entry nor reliable language-availability metadata.
+                    // Treat successful engine initialization as usable and let speak()
+                    // report the real result instead of blocking navigation on metadata.
+                    var languageNote="系统引擎已启动；将直接尝试中文播报"
+                    try {
+                        val result=engine.setLanguage(Locale.CHINA)
+                        languageNote += when(result) {
+                            TextToSpeech.LANG_AVAILABLE -> "（中文语言可用）"
+                            TextToSpeech.LANG_COUNTRY_AVAILABLE -> "（中文地区可用）"
+                            TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE -> "（中文地区变体可用）"
+                            TextToSpeech.LANG_MISSING_DATA -> "（引擎未报告语言数据，仍尝试播报）"
+                            TextToSpeech.LANG_NOT_SUPPORTED -> "（引擎未报告中文支持，仍尝试播报）"
+                            else -> "（语言状态码：$result，仍尝试播报）"
+                        }
+                    } catch(e:Exception) {
+                        languageNote += "（语言查询异常：${e.javaClass.simpleName}，仍尝试播报）"
                     }
-                    if(!ready) {
-                        try {
-                            val chineseVoice=engine.voices?.firstOrNull{it.locale.language=="zh"}
-                            if(chineseVoice!=null) {
-                                engine.voice=chineseVoice
-                                ready=true
-                                voiceLocaleLabel.value="中文"
-                                diagnostic="已切换到系统中文语音"
-                            }
-                        } catch(e:Exception) { diagnostic=e.javaClass.simpleName+": "+(e.message?: "读取语音列表失败") }
-                    }
-                    if(!ready && diagnostic.isBlank()) diagnostic="系统引擎已启动，但没有报告可用的中文语音"
+                    voiceLocaleLabel.value="系统语音"
+                    voiceInitMessage.value=languageNote
+                    voiceReady.value=true
                 } else {
-                    diagnostic="系统语音引擎初始化失败，状态码：$status"
+                    voiceInitMessage.value="系统语音引擎初始化失败，状态码：$status"
+                    voiceReady.value=false
                 }
-                voiceReady.value=ready
-                voiceInitMessage.value=diagnostic
                 voiceInitComplete.value=true
             }
             engine

@@ -176,8 +176,11 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 dialogWindow.setBackgroundDrawableResource(android.R.color.black)
                 dialogWindow.addFlags(
                     android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
-                        android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 )
+                dialogWindow.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                dialogWindow.setDimAmount(0f)
                 dialogWindow.setLayout(
                     android.view.WindowManager.LayoutParams.MATCH_PARENT,
                     android.view.WindowManager.LayoutParams.MATCH_PARENT
@@ -190,6 +193,13 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 dialogWindow.setGravity(android.view.Gravity.TOP or android.view.Gravity.START)
                 dialogWindow.decorView.setPadding(0, 0, 0, 0)
                 dialogWindow.decorView.setBackgroundColor(android.graphics.Color.BLACK)
+                dialogWindow.decorView.fitsSystemWindows = false
+                dialogWindow.statusBarColor = android.graphics.Color.TRANSPARENT
+                dialogWindow.navigationBarColor = android.graphics.Color.TRANSPARENT
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    dialogWindow.isStatusBarContrastEnforced = false
+                    dialogWindow.isNavigationBarContrastEnforced = false
+                }
                 dialogWindow.decorView.systemUiVisibility =
                     (android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                         or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -201,9 +211,25 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 val controller = androidx.core.view.WindowCompat.getInsetsController(dialogWindow, dialogWindow.decorView)
                 controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                // Re-apply immersive mode if Android briefly restores system bars while the dialog gains focus.
-                dialogWindow.decorView.setOnSystemUiVisibilityChangeListener {
+                // Re-apply full-screen sizing after Compose/Android updates the dialog window.
+                val forceImmersiveWindow = {
+                    dialogWindow.setLayout(
+                        android.view.WindowManager.LayoutParams.MATCH_PARENT,
+                        android.view.WindowManager.LayoutParams.MATCH_PARENT
+                    )
+                    dialogWindow.attributes = dialogWindow.attributes.apply {
+                        width = android.view.WindowManager.LayoutParams.MATCH_PARENT
+                        height = android.view.WindowManager.LayoutParams.MATCH_PARENT
+                        gravity = android.view.Gravity.TOP or android.view.Gravity.START
+                        x = 0
+                        y = 0
+                    }
+                    dialogWindow.decorView.requestLayout()
                     controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                }
+                dialogWindow.decorView.post(forceImmersiveWindow)
+                dialogWindow.decorView.setOnSystemUiVisibilityChangeListener {
+                    forceImmersiveWindow()
                 }
             }
             onDispose {
@@ -286,7 +312,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
                 }
                 Row(
-                    Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.Top
                 ) {

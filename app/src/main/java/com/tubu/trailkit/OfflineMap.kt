@@ -26,9 +26,11 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -46,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import java.util.Locale
 import org.json.JSONArray
@@ -231,6 +234,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var followGps by remember(projectId) { mutableStateOf(true) }
     var mapOrientation by remember(projectId) { mutableStateOf(prefs.getString("orientation_$projectId","north") ?: "north") }
     var mapBearing by remember(projectId) { mutableFloatStateOf(0f) }
+    var mapFullscreen by remember(projectId) { mutableStateOf(false) }
+    BackHandler(enabled=mapFullscreen) { mapFullscreen=false }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
     var compassAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_UNRELIABLE) }
     val progressKey="progress_${projectId}_${encoded.hashCode()}_${if(reverseRoute)"rev" else "fwd"}"
@@ -673,9 +678,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         if(visible && sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
         onDispose { manager.unregisterListener(listener) }
     }
-    if(visible) Dialog(onDismissRequest={onClose()}) {
-        Surface(shape=RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().heightIn(max=780.dp)) {
-            Column(Modifier.padding(14.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+    if(visible) Dialog(onDismissRequest={if(mapFullscreen)mapFullscreen=false else onClose()},properties=DialogProperties(usePlatformDefaultWidth=!mapFullscreen)) {
+        Surface(shape=if(mapFullscreen)RoundedCornerShape(0.dp) else RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surface,modifier=if(mapFullscreen)Modifier.fillMaxSize() else Modifier.fillMaxWidth().heightIn(max=780.dp)) {
+            Column(Modifier.then(if(mapFullscreen)Modifier.fillMaxSize() else Modifier.padding(14.dp).verticalScroll(rememberScrollState())),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                if(!mapFullscreen) {
                 Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(if(active)"轨迹跟随导航" else info?.name?:"离线地图导航",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
@@ -730,7 +736,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     FilterChip(selected=mapOrientation=="track",onClick={mapOrientation="track";prefs.edit().putString("orientation_$projectId","track").apply()},label={Text("轨迹朝上")})
                 }
                 Text(when(mapOrientation) { "north" -> "北向上：地图始终保持北方朝上" ; "heading" -> if(arrowHeading.isNaN()) "航向朝上：等待可靠电子罗盘或 GPS 行进方向" else "航向朝上：根据手机朝向旋转地图" ; else -> if(routeMatch==null) "轨迹朝上：等待高精度 GPS 匹配路线，暂用罗盘方向" else "轨迹朝上：根据前方路线方向旋转地图" },fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
-                Box(Modifier.fillMaxWidth().height(360.dp)) {
+                }
+                Box(if(mapFullscreen)Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(360.dp)) {
                     MapLibreBaseMap(
                         centerLat = centerLat,
                         centerLon = centerLon,
@@ -1034,7 +1041,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     canvas.drawLine(bx,by-7f,bx,by+5f,overlay);canvas.drawLine(bx+bar,by-7f,bx+bar,by+5f,overlay)
                     canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
                     }
+                    Surface(modifier=Modifier.align(Alignment.TopEnd).padding(12.dp).size(48.dp).clickable{mapFullscreen=!mapFullscreen},shape=RoundedCornerShape(24.dp),color=Color.White.copy(alpha=0.96f),shadowElevation=5.dp) {
+                        Box(contentAlignment=Alignment.Center) { Text(if(mapFullscreen)"×" else "⛶",fontSize=if(mapFullscreen)30.sp else 27.sp,fontWeight=FontWeight.Bold,color=Color(0xFF183C32)) }
+                    }
                 }
+                if(!mapFullscreen) {
                 Text("绿线：已走   橙线：剩余   蓝点：当前位置/精度范围   橙色箭头：手机朝向   橙点：GPX途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={measureMode=!measureMode;if(!measureMode)measurePoints.clear()},modifier=Modifier.weight(1f)){Text(if(measureMode)"结束测距" else "地图测距")}
@@ -1379,6 +1390,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         }){Text("保存")}},
                         dismissButton={TextButton(onClick={editingCustomWaypoint=null}){Text("取消")}}
                     )
+                }
                 }
             }
         }

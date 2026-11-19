@@ -983,37 +983,109 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         canvas.drawCircle(endLive.x,endLive.y,7f,liveDot)
                     }
                     cp?.let {
-                        val projected=project(it.first,it.second);val x=projected.x;val y=projected.y
+                        val projected=project(it.first,it.second)
+                        val x=projected.x
+                        val y=projected.y
                         val accuracyMeters=current?.accuracy?.toDouble()?:0.0
                         val metersPerPixel=(2.0*Math.PI*6378137.0*cos(Math.toRadians(it.first)).coerceAtLeast(0.01))/(256.0*2.0.pow(zoom.toDouble()))
                         val accuracyRadius=(accuracyMeters/metersPerPixel).toFloat().coerceIn(8f,120f)
                         val stale=(gpsFixAgeSeconds?:999L)>15L
-                        val markerColor=if(stale) android.graphics.Color.rgb(120,130,140) else android.graphics.Color.rgb(30,105,210)
-                        val accuracyHalo=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=if(stale)android.graphics.Color.argb(28,100,110,120) else android.graphics.Color.argb(45,32,115,210);style=Paint.Style.FILL}
+                        val blue=if(stale) android.graphics.Color.rgb(126,139,153) else android.graphics.Color.rgb(35,126,245)
+                        val deepBlue=if(stale) android.graphics.Color.rgb(91,105,120) else android.graphics.Color.rgb(20,91,205)
+
+                        // Amap-inspired live position: soft accuracy field + a clear,
+                        // white-rimmed blue direction pointer with a translucent heading fan.
+                        val accuracyHalo=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color=if(stale) android.graphics.Color.argb(24,105,119,132)
+                            else android.graphics.Color.argb(34,35,126,245)
+                            style=Paint.Style.FILL
+                        }
                         canvas.drawCircle(x,y,accuracyRadius,accuracyHalo)
-                        val p=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.FILL}
-                        canvas.drawCircle(x,y,13f,p);p.color=markerColor;canvas.drawCircle(x,y,9f,p)
-                        p.color=android.graphics.Color.WHITE;p.style=Paint.Style.STROKE;p.strokeWidth=2f;canvas.drawCircle(x,y,13f,p)
+
+                        val screenArrowHeading=(arrowHeading-mapBearing+360f)%360f
                         if(arrowCanDraw) {
-                            // The heading is an absolute true-north bearing. Convert it to
-                            // screen-space by subtracting the camera bearing, otherwise the
-                            // location arrow appears to change direction when the map rotates.
-                            val screenArrowHeading = (arrowHeading - mapBearing + 360f) % 360f
-                            val angle=Math.toRadians(screenArrowHeading.toDouble())
-                            val ux=sin(angle).toFloat()
-                            val uy=(-cos(angle)).toFloat()
-                            val tipX=x+ux*56f
-                            val tipY=y+uy*56f
-                            val direction=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(232,112,35);strokeWidth=6f;strokeCap=Paint.Cap.ROUND;style=Paint.Style.STROKE}
-                            canvas.drawLine(x,y,tipX,tipY,direction)
-                            val arrow=AndroidPath().apply {
-                                moveTo(tipX,tipY)
-                                lineTo(tipX-ux*17f+cos(angle).toFloat()*9f,tipY-uy*17f+sin(angle).toFloat()*9f)
-                                lineTo(tipX-ux*17f-cos(angle).toFloat()*9f,tipY-uy*17f-sin(angle).toFloat()*9f)
+                            canvas.save()
+                            canvas.rotate(screenArrowHeading,x,y)
+
+                            val fan=AndroidPath().apply {
+                                moveTo(x,y-76f)
+                                lineTo(x-17f,y+5f)
+                                quadTo(x,y+1f,x+17f,y+5f)
                                 close()
                             }
-                            val arrowFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(232,112,35);style=Paint.Style.FILL}
-                            canvas.drawPath(arrow,arrowFill)
+                            val fanPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=if(stale) android.graphics.Color.argb(18,105,119,132)
+                                else android.graphics.Color.argb(42,35,126,245)
+                                style=Paint.Style.FILL
+                            }
+                            canvas.drawPath(fan,fanPaint)
+
+                            // A small inner highlight keeps the pointer readable on
+                            // both satellite imagery and detailed topographic maps.
+                            val pointerShadow=AndroidPath().apply {
+                                moveTo(x,y-27f)
+                                lineTo(x-16f,y+16f)
+                                lineTo(x,y+8f)
+                                lineTo(x+16f,y+16f)
+                                close()
+                            }
+                            val pointerOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=android.graphics.Color.WHITE
+                                style=Paint.Style.STROKE
+                                strokeWidth=7f
+                                strokeJoin=Paint.Join.ROUND
+                            }
+                            val pointerFill=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=blue
+                                style=Paint.Style.FILL
+                            }
+                            canvas.drawPath(pointerShadow,pointerOutline)
+                            canvas.drawPath(pointerShadow,pointerFill)
+
+                            val pointerHighlight=AndroidPath().apply {
+                                moveTo(x,y-19f)
+                                lineTo(x-5f,y+5f)
+                                lineTo(x,y+1f)
+                                lineTo(x+5f,y+5f)
+                                close()
+                            }
+                            val highlightPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=android.graphics.Color.WHITE
+                                style=Paint.Style.FILL
+                            }
+                            canvas.drawPath(pointerHighlight,highlightPaint)
+                            canvas.restore()
+                        }
+
+                        // Layered location puck: subtle outer glow, crisp white rim,
+                        // blue core. The center remains visible even while stationary.
+                        val outerGlow=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color=android.graphics.Color.argb(42,20,70,130)
+                            style=Paint.Style.FILL
+                        }
+                        val whiteRim=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color=android.graphics.Color.WHITE
+                            style=Paint.Style.FILL
+                        }
+                        val core=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color=blue
+                            style=Paint.Style.FILL
+                        }
+                        val coreRim=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            color=deepBlue
+                            style=Paint.Style.STROKE
+                            strokeWidth=1.5f
+                        }
+                        canvas.drawCircle(x,y,22f,outerGlow)
+                        canvas.drawCircle(x,y,19f,whiteRim)
+                        canvas.drawCircle(x,y,15.5f,core)
+                        canvas.drawCircle(x,y,15.5f,coreRim)
+                        if(!arrowCanDraw) {
+                            val center=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=android.graphics.Color.WHITE
+                                style=Paint.Style.FILL
+                            }
+                            canvas.drawCircle(x,y,4.5f,center)
                         }
                     }
                     // North-up compass marker and a ground-distance scale bar.

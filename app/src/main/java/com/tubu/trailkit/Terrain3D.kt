@@ -77,7 +77,6 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                                     style.addSource(GeoJsonSource("trail-route-native", routeFeature))
                                     style.addLayer(LineLayer("trail-route-native-line", "trail-route-native")
                                         .withProperties(PropertyFactory.lineColor("#FFB547"), PropertyFactory.lineWidth(4.5f), PropertyFactory.lineCap(Property.LINE_CAP_ROUND), PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)))
-                                    )
                                     val boundsBuilder = org.maplibre.android.geometry.LatLngBounds.Builder()
                                     points.forEach { p -> boundsBuilder.include(LatLng(p.first, p.second)) }
                                     val bounds = boundsBuilder.build()

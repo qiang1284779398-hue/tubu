@@ -2,6 +2,7 @@ package com.tubu.trailkit
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.pm.PackageManager
@@ -204,18 +205,33 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var voiceGuidance by remember(projectId){mutableStateOf(prefs.getBoolean("voice_$projectId",false))}
     val voiceReady=remember{mutableStateOf(false)}
     val voiceInitComplete=remember{mutableStateOf(false)}
+    val voiceLocaleLabel=remember{mutableStateOf("中文")}
     val textToSpeech=remember(context) {
         try {
             lateinit var engine:TextToSpeech
             engine=TextToSpeech(context) { status ->
+                var ready=false
                 if(status==TextToSpeech.SUCCESS) {
-                    voiceReady.value=engine.setLanguage(Locale.SIMPLIFIED_CHINESE)>=TextToSpeech.LANG_AVAILABLE
+                    val candidates=listOf(Locale.SIMPLIFIED_CHINESE,Locale.CHINA,Locale("zh","CN"),Locale.getDefault())
+                    for(locale in candidates.distinct()) {
+                        try {
+                            val availability=engine.isLanguageAvailable(locale)
+                            if(availability>=TextToSpeech.LANG_AVAILABLE) {
+                                val selected=engine.setLanguage(locale)
+                                if(selected>=TextToSpeech.LANG_AVAILABLE) {
+                                    ready=true
+                                    voiceLocaleLabel.value=if(locale.language=="zh") "中文" else "系统语音"
+                                    break
+                                }
+                            }
+                        } catch(_:Exception) {}
+                    }
                 }
+                voiceReady.value=ready
                 voiceInitComplete.value=true
-                if(status!=TextToSpeech.SUCCESS) voiceReady.value=false
             }
             engine
-        } catch(_:Exception) { null }
+        } catch(_:Exception) { voiceInitComplete.value=true;voiceReady.value=false;null }
     }
     LaunchedEffect(textToSpeech) { if(textToSpeech==null) {voiceInitComplete.value=true;voiceReady.value=false} }
     DisposableEffect(textToSpeech) { onDispose { try{textToSpeech?.stop();textToSpeech?.shutdown()}catch(_:Exception){} } }
@@ -1428,7 +1444,13 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     })
                     Text("语音播报转弯、途经点、偏航和 GPS 异常",fontSize=12.sp,modifier=Modifier.weight(1f))
                     if(voiceGuidance && voiceReady.value) TextButton(onClick={speakNavigation("TrailKit 语音导航测试正常")}){Text("测试语音")}
-                    if(voiceGuidance && !voiceReady.value) Text(if(voiceInitComplete.value)"语音不可用" else "语音启动中",fontSize=10.sp,color=Color(0xFF9A6A25))
+                    if(voiceGuidance && !voiceReady.value) {
+                        if(!voiceInitComplete.value) Text("语音启动中",fontSize=10.sp,color=Color(0xFF9A6A25))
+                        else TextButton(onClick={
+                            try { context.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                            catch(_:Exception) { try { context.startActivity(Intent("android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch(_:Exception) {} }
+                        }) { Text("安装/设置中文语音",fontSize=10.sp) }
+                    }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}

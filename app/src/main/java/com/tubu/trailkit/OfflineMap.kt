@@ -206,16 +206,18 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val voiceReady=remember{mutableStateOf(false)}
     val voiceInitComplete=remember{mutableStateOf(false)}
     val voiceLocaleLabel=remember{mutableStateOf("中文")}
-    val textToSpeech=remember(context) {
+    val voiceInitMessage=remember{mutableStateOf("正在初始化语音引擎…")}
+    var voiceRetry by remember(projectId){mutableIntStateOf(0)}
+    val textToSpeech=remember(context,voiceRetry) {
+        voiceReady.value=false
+        voiceInitComplete.value=false
+        voiceInitMessage.value="正在连接系统语音引擎…"
         try {
             lateinit var engine:TextToSpeech
             engine=TextToSpeech(context) { status ->
                 var ready=false
+                var diagnostic=""
                 if(status==TextToSpeech.SUCCESS) {
-                    // Some Android TTS engines (including accessibility-oriented engines)
-                    // report LANG_MISSING_DATA from isLanguageAvailable even though their
-                    // installed voice can synthesize speech. Trust setLanguage and verify
-                    // the actual speak callback instead of rejecting the engine too early.
                     val candidates=listOf(Locale.CHINA,Locale.SIMPLIFIED_CHINESE,Locale("zh","CN"),Locale("zh"),Locale.getDefault())
                     for(locale in candidates.distinct()) {
                         try {
@@ -223,16 +225,37 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             if(selected!=TextToSpeech.LANG_NOT_SUPPORTED) {
                                 ready=true
                                 voiceLocaleLabel.value=if(locale.language=="zh") "中文" else "系统语音"
+                                diagnostic="已连接系统语音引擎（语言代码：$selected）"
                                 break
                             }
-                        } catch(_:Exception) {}
+                        } catch(e:Exception) { diagnostic=e.javaClass.simpleName+": "+(e.message?: "设置语言失败") }
                     }
+                    if(!ready) {
+                        try {
+                            val chineseVoice=engine.voices?.firstOrNull{it.locale.language=="zh"}
+                            if(chineseVoice!=null) {
+                                engine.voice=chineseVoice
+                                ready=true
+                                voiceLocaleLabel.value="中文"
+                                diagnostic="已切换到系统中文语音"
+                            }
+                        } catch(e:Exception) { diagnostic=e.javaClass.simpleName+": "+(e.message?: "读取语音列表失败") }
+                    }
+                    if(!ready && diagnostic.isBlank()) diagnostic="系统引擎已启动，但没有报告可用的中文语音"
+                } else {
+                    diagnostic="系统语音引擎初始化失败，状态码：$status"
                 }
                 voiceReady.value=ready
+                voiceInitMessage.value=diagnostic
                 voiceInitComplete.value=true
             }
             engine
-        } catch(_:Exception) { voiceInitComplete.value=true;voiceReady.value=false;null }
+        } catch(e:Exception) {
+            voiceInitMessage.value="无法创建语音引擎："+(e.message?:e.javaClass.simpleName)
+            voiceInitComplete.value=true
+            voiceReady.value=false
+            null
+        }
     }
     LaunchedEffect(textToSpeech) { if(textToSpeech==null) {voiceInitComplete.value=true;voiceReady.value=false} }
     DisposableEffect(textToSpeech) { onDispose { try{textToSpeech?.stop();textToSpeech?.shutdown()}catch(_:Exception){} } }
@@ -1446,11 +1469,16 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     Text("语音播报转弯、途经点、偏航和 GPS 异常",fontSize=12.sp,modifier=Modifier.weight(1f))
                     if(voiceGuidance && voiceReady.value) TextButton(onClick={speakNavigation("TrailKit 语音导航测试正常")}){Text("测试语音")}
                     if(voiceGuidance && !voiceReady.value) {
-                        if(!voiceInitComplete.value) Text("语音启动中",fontSize=10.sp,color=Color(0xFF9A6A25))
-                        else TextButton(onClick={
-                            try { context.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                            catch(_:Exception) { try { context.startActivity(Intent("android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch(_:Exception) {} }
-                        }) { Text("安装/设置中文语音",fontSize=10.sp) }
+                        Column(Modifier.weight(1f)) {
+                            Text(if(!voiceInitComplete.value) "语音引擎检测中…" else voiceInitMessage.value,fontSize=10.sp,color=Color(0xFF9A6A25))
+                            Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick={
+                                    try { context.startActivity(Intent("com.android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                                    catch(_:Exception) { try { context.startActivity(Intent("android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch(e:Exception) { voiceInitMessage.value="无法打开系统文字转语音设置："+(e.message?: "未知错误") } }
+                                }) { Text("打开系统语音设置",fontSize=10.sp) }
+                                TextButton(onClick={voiceRetry++;voiceReady.value=false;voiceInitComplete.value=false;voiceInitMessage.value="正在重新检测…"}) { Text("重新检测",fontSize=10.sp) }
+                            }
+                        }
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {

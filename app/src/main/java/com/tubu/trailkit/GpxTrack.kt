@@ -57,14 +57,15 @@ private fun decodePolylineDeltas(encoded:String):List<Int> {
  return values
 }
 fun decodeTrackPoints(encoded:String):List<Pair<Double,Double>> = try {
- if(encoded.startsWith("P1")) {
+ if(encoded.startsWith("P1") || encoded.startsWith("P5")) {
+  val scale=if(encoded.startsWith("P5")) 100_000.0 else 1_000_000.0
   val deltas=decodePolylineDeltas(encoded.substring(2))
   val result=ArrayList<Pair<Double,Double>>(deltas.size/2)
   var lat=0;var lon=0
   var i=0
   while(i+1<deltas.size) {
    lat+=deltas[i++];lon+=deltas[i++]
-   result.add(lat/1_000_000.0 to lon/1_000_000.0)
+   result.add(lat/scale to lon/scale)
   }
   result
  } else {

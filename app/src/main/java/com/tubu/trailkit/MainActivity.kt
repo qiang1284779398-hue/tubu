@@ -694,7 +694,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
     if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen) { mapOpen=false }
     if (project != null) Terrain3DDialog(project.name, project.trackData, visible=terrain3dOpen) { terrain3dOpen=false }
-    if (project != null) TerrainArCameraDialog(project.name, project.trackData, visible=arCameraOpen) { arCameraOpen=false }
+    if (project != null) TerrainArCameraDialog(project.name, project.trackData, visible=arCameraOpen, onClose={ arCameraOpen=false }, onJumpToMap={ arCameraOpen=false; mapOpen=true })
 
     if (advancedToolsOpen && project != null) {
         TrailKitAdvancedDialog(

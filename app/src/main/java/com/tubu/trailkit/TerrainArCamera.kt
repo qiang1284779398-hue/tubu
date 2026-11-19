@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,14 +48,19 @@ private data class CameraTurn(val angleDegrees: Double, val distanceMeters: Doub
 
 private fun findUpcomingCameraTurn(route: PreparedRoute, match: RouteMatch): CameraTurn? {
     val points = route.points
-    for (i in (match.segmentIndex + 1).coerceAtLeast(1) until points.lastIndex) {
+    if (points.size < 5) return null
+    val first = (match.segmentIndex + 1).coerceAtLeast(2)
+    val last = points.lastIndex - 2
+    if (first > last) return null
+    for (i in first..last) {
         val distance = route.prefixMeters[i] - match.progressMeters
-        if (distance < 15.0) continue
+        if (distance < 2.0) continue
         if (distance > 180.0) break
-        val incoming = bearingToPoint(points[i - 1], points[i])
-        val outgoing = bearingToPoint(points[i], points[i + 1])
+        // Use a wider baseline to suppress tiny GPS/GPX zigzags and calculate the actual turn angle.
+        val incoming = bearingToPoint(points[i - 2], points[i])
+        val outgoing = bearingToPoint(points[i], points[i + 2])
         val angle = signedTurnAngle(incoming, outgoing)
-        if (kotlin.math.abs(angle) >= 25.0) return CameraTurn(angle, distance)
+        if (kotlin.math.abs(angle) >= 28.0) return CameraTurn(angle, distance)
     }
     return null
 }
@@ -236,7 +242,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(12.dp), color = ArLime, fontSize = 11.sp)
                 }
                 Column(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 38.dp)
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 76.dp)
                         .background(Color.Black.copy(alpha = .82f)).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -253,8 +259,13 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                                 if (match != null) {
                                     val turn = upcomingTurn
                                     if (turn != null && turn.distanceMeters <= 85.0) {
-                                        "${if (turn.isLeft) "↰ 左转" else "↱ 右转"} ${kotlin.math.abs(turn.angleDegrees).roundToInt()}° · ${turn.distanceMeters.roundToInt()} m 后"
-                                    } else turnGuidance(heading, match.bearingDegrees.toFloat())
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                            Text("↑", modifier = Modifier.rotate(turn.angleDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 26.sp)
+                                            Text((if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后", color = Color(0xFFFFC857), fontSize = 12.sp)
+                                        }
+                                    } else {
+                                        Text(turnGuidance(heading, match.bearingDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 12.sp)
+                                    }
                                 } else "等待 GPS 定位",
                                 color = Color(0xFFFFC857), fontSize = 12.sp
                             )

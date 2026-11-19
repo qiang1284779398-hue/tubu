@@ -282,7 +282,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
     var bytes by remember(projectId){mutableLongStateOf(0L)}
     var busy by remember(projectId){mutableStateOf(false)}
     var complete by remember(projectId){mutableStateOf(false)}
-    var message by remember(projectId){mutableStateOf("卫星图已开启自动缓存：联网浏览时会把当前视野的影像瓦片保存在手机，缓存上限 512 MB。放大后再浏览可保存更高清的瓦片；离线时显示此前实际浏览并缓存过的区域。")}
+    var message by remember(projectId){mutableStateOf("Esri 卫星图使用 MapLibre 客户端缓存（上限 512 MB）。联网浏览过的区域在缓存仍保留且服务端允许缓存时，可能支持离线显示；不提供批量卫星图下载。")}
 
     fun startDownload(styleUrl:String,label:String) {
         if(points.size<2 || busy)return

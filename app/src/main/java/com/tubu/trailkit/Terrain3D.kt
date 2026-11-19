@@ -67,7 +67,7 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                 .put("type", "Feature")
                 .put("properties", JSONObject())
                 .put("geometry", JSONObject().put("type", "LineString").put("coordinates", coordinates))
-            webView.evaluateJavascript("window.setTrailRoute && window.setTrailRoute($feature);", null)
+            webView.evaluateJavascript("window.__trailkitPendingRoute = $feature; if (window.setTrailRoute) window.setTrailRoute($feature);", null)
         }
     }
 

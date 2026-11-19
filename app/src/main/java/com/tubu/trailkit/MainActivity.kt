@@ -237,6 +237,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     var gpxTargetProjectId by remember { mutableStateOf<String?>(null) }
     var mapOpen by remember { mutableStateOf(false) }
     var terrain3dOpen by remember { mutableStateOf(autoOpen3D) }
+    var arCameraOpen by remember { mutableStateOf(false) }
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(sharedGpxUri) {
@@ -558,6 +559,19 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                                 }
                             }
                             item {
+                                Card(Modifier.fillMaxWidth().clickable { arCameraOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFF173B32))) {
+                                    Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+                                        Icon(Icons.Default.PhotoCamera,null,tint=androidx.compose.ui.graphics.Color.White,modifier=Modifier.size(30.dp))
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text("实景 AR 山体对准",fontWeight=FontWeight.Bold,fontSize=14.sp,color=androidx.compose.ui.graphics.Color.White)
+                                            Text("打开相机 · 实时方位 / 姿态 / GPS",fontSize=11.sp,color=androidx.compose.ui.graphics.Color(0xFFD1DDD3))
+                                        }
+                                        Text("开启  ›",fontSize=12.sp,color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            item {
                                 Card(Modifier.fillMaxWidth().clickable { terrain3dOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFE8EEE7))) {
                                     Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
                                         Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(30.dp))
@@ -629,6 +643,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
     if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen) { mapOpen=false }
     if (project != null) Terrain3DDialog(project.name, project.trackData, visible=terrain3dOpen) { terrain3dOpen=false }
+    if (project != null) TerrainArCameraDialog(project.name, visible=arCameraOpen) { arCameraOpen=false }
 
     if (advancedToolsOpen && project != null) {
         TrailKitAdvancedDialog(

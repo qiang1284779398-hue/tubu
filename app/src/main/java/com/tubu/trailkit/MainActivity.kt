@@ -64,13 +64,22 @@ class MainActivity : ComponentActivity() {
 
     private fun sharedGpxFrom(intent: Intent?): Uri? {
         if (intent == null) return null
-        val action = intent.action
-        return when (action) {
+        return when (intent.action) {
             Intent.ACTION_SEND -> {
                 @Suppress("DEPRECATION")
                 (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
                  else intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
                     ?: intent.data
+                    ?: intent.getStringExtra(Intent.EXTRA_TEXT)?.let { value ->
+                        runCatching { Uri.parse(value) }.getOrNull()?.takeIf { it.scheme == "content" || it.scheme == "file" }
+                    }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                val streams = if (Build.VERSION.SDK_INT >= 33)
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                else intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                streams?.firstOrNull()
             }
             Intent.ACTION_VIEW -> intent.data
             else -> null

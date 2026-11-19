@@ -90,6 +90,13 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
     val upcomingTurn = remember(routeMatch, route) {
         if (routeMatch != null && route != null) findUpcomingCameraTurn(route, routeMatch) else null
     }
+    // A cached or inaccurate fix must never drive turn-by-turn AR guidance.
+    val gpsAgeMillis = location?.let { (System.currentTimeMillis() - it.time).coerceAtLeast(0L) } ?: Long.MAX_VALUE
+    val gpsReliable = location != null && location!!.hasAccuracy() &&
+        location!!.accuracy <= 35f && gpsAgeMillis <= 15_000L
+    val displayProjectName = remember(projectName) {
+        if (projectName.matches(Regex("""\\d{4}-\\d{2}-\\d{2}.*\\d{10,}.*"""))) "当前徒步项目" else projectName
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         cameraGranted = result[Manifest.permission.CAMERA] == true ||
@@ -210,7 +217,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     drawLine(ArLime.copy(alpha = .32f), androidx.compose.ui.geometry.Offset(0f, horizonY), androidx.compose.ui.geometry.Offset(size.width, horizonY), 1.2f)
                     val fix = location
                     val match = routeMatch
-                    if (fix != null && match != null && routePoints.size > 1) {
+                    if (fix != null && match != null && gpsReliable && routePoints.size > 1) {
                         var previous: androidx.compose.ui.geometry.Offset? = null
                         var previousDistance = 0.0
                         val from = match.segmentIndex
@@ -240,9 +247,13 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                         }
                         drawCircle(Color(0xFFFFC857), 7f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f))
                     }
-                    drawCircle(ArLime.copy(alpha = .95f), 22f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f), style = Stroke(2.5f))
-                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx - 20f, size.height * .5f), androidx.compose.ui.geometry.Offset(cx + 20f, size.height * .5f), 2f)
-                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * .5f - 20f), androidx.compose.ui.geometry.Offset(cx, size.height * .5f + 20f), 2f)
+                    // Larger field reticle with four clear cardinal ticks.
+                    drawCircle(ArLime.copy(alpha = .96f), 30f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f), style = Stroke(3f))
+                    drawCircle(Color.White.copy(alpha = .9f), 4f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f))
+                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx - 42f, size.height * .5f), androidx.compose.ui.geometry.Offset(cx - 25f, size.height * .5f), 3f)
+                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx + 25f, size.height * .5f), androidx.compose.ui.geometry.Offset(cx + 42f, size.height * .5f), 3f)
+                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * .5f - 42f), androidx.compose.ui.geometry.Offset(cx, size.height * .5f - 25f), 3f)
+                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * .5f + 25f), androidx.compose.ui.geometry.Offset(cx, size.height * .5f + 42f), 3f)
                 }
                 if (cameraError.isNotBlank()) {
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
@@ -268,85 +279,99 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .navigationBarsPadding().imePadding()
-                        // Keep the HUD visibly above the physical screen edge even when immersive
-                        // mode reports zero navigation-bar inset on some Android devices.
-                        .padding(bottom = 24.dp)
-                        .heightIn(max = 300.dp)
-                        .verticalScroll(rememberScrollState())
-                        .background(Color.Black.copy(alpha = .96f))
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(bottom = 12.dp)
+                        .background(Color(0xF20A100D))
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(projectName, color = ArLime, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            Text("实景路线导航", color = Color.White, fontSize = 13.sp, maxLines = 1)
-                            val match = routeMatch
-                            Text(
-                                if (match != null) "距路线 ${match.distanceMeters.roundToInt()} m  ·  剩余 ${formatNavDistance(match.remainingMeters)}"
-                                else if (routePoints.size >= 2) "正在定位 GPX 路线…" else "当前项目没有可用 GPX 轨迹",
-                                color = Color.White, fontSize = 14.sp
-                            )
-                            if (match != null) {
-                                val turn = upcomingTurn
-                                if (turn != null && turn.distanceMeters <= 85.0) {
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        color = Color(0xFF332600),
-                                        shape = RoundedCornerShape(12.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD54F).copy(alpha = .75f))
-                                    ) {
-                                        Row(
-                                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                        ) {
-                                            Text("↑", modifier = Modifier.rotate(turn.angleDegrees.toFloat()), color = Color(0xFFFFE082), fontSize = 30.sp)
-                                            Text(
-                                                (if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后",
-                                                modifier = Modifier.weight(1f),
-                                                color = Color(0xFFFFE082),
-                                                fontSize = 18.sp,
-                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                                maxLines = 2
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        color = Color(0xFF332600),
-                                        shape = RoundedCornerShape(12.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD54F).copy(alpha = .75f))
-                                    ) {
-                                        Text(
-                                            turnGuidance(heading, match.bearingDegrees.toFloat()),
-                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
-                                            color = Color(0xFFFFE082),
-                                            fontSize = 18.sp,
-                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                            maxLines = 2
-                                        )
-                                    }
-                                }
-                            } else {
-                                Text("等待 GPS 定位", color = Color(0xFFFFE082), fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                            }
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(displayProjectName, color = ArLime, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Text("实景路线导航", color = Color.White, fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                         }
                         IconButton(onClick = onClose) {
                             Icon(Icons.Default.ArrowBack, "关闭导航", tint = Color.White)
                         }
                     }
-                    Text(
-                        if (location != null) "GPS 已定位 · 精度约 ±${location!!.accuracy.roundToInt()} m"
-                        else "等待 GPS · 黄色轨迹为屏幕投影，请同时核对离线地图",
-                        color = Color(0xFFD5DED7), fontSize = 11.sp,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
-                    if (!locationGranted) {
-                        TextButton(onClick = {
-                            permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
-                        }) { Text("允许定位", color = ArLime) }
+                    val match = routeMatch
+                    if (match != null) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(Modifier.weight(1f), color = Color(0xFF202B25), shape = RoundedCornerShape(10.dp)) {
+                                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Text("偏离路线", color = Color(0xFFB9C8BE), fontSize = 11.sp)
+                                    Text(if (gpsReliable) "${match.distanceMeters.roundToInt()} m" else "暂不可用", color = Color.White, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                }
+                            }
+                            Surface(Modifier.weight(1f), color = Color(0xFF202B25), shape = RoundedCornerShape(10.dp)) {
+                                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Text("距 GPX 终点", color = Color(0xFFB9C8BE), fontSize = 11.sp)
+                                    Text(formatNavDistance(match.remainingMeters), color = Color.White, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                }
+                            }
+                        }
+                    } else {
+                        Text(if (routePoints.size >= 2) "正在获取定位并匹配 GPX 路线…" else "当前项目没有可用 GPX 轨迹",
+                            color = Color(0xFFFFE082), fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                    }
+                    if (match != null && !gpsReliable) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFF3A2418),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB74D).copy(alpha = .8f))
+                        ) {
+                            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text("GPS 精度不足，暂停精确转向", color = Color(0xFFFFCC80), fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Text("当前精度 ±${location?.accuracy?.roundToInt() ?: 0} m · 等待更稳定的定位（建议 ≤35 m）",
+                                    color = Color(0xFFFFE0B2), fontSize = 12.sp)
+                            }
+                        }
+                    } else if (match != null) {
+                        val turn = upcomingTurn
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFF332600),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD54F).copy(alpha = .85f))
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(if (turn != null && turn.distanceMeters <= 85.0) "↱" else "◎",
+                                    color = Color(0xFFFFE082), fontSize = 28.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Text(
+                                    if (turn != null && turn.distanceMeters <= 85.0)
+                                        (if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后"
+                                    else turnGuidance(heading, match.bearingDegrees.toFloat()),
+                                    modifier = Modifier.weight(1f),
+                                    color = Color(0xFFFFE082),
+                                    fontSize = 18.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+                    } else {
+                        Text("等待 GPS 定位", color = Color(0xFFFFE082), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            when {
+                                location == null -> "等待 GPS 信号"
+                                gpsReliable -> "GPS 稳定 · ±${location!!.accuracy.roundToInt()} m"
+                                else -> "定位不稳定 · ±${location!!.accuracy.roundToInt()} m"
+                            },
+                            color = if (gpsReliable) Color(0xFFB9D8A8) else Color(0xFFFFCC80),
+                            fontSize = 12.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (!locationGranted) {
+                            TextButton(onClick = { permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)) }) {
+                                Text("允许定位", color = ArLime)
+                            }
+                        }
                     }
                 }
             } else {

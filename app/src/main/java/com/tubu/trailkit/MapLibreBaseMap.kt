@@ -204,8 +204,8 @@ internal fun MapLibreBaseMap(
     ) {
         when {
             styleUrl.contains("satellite") -> Text(
-                "EOxCloudless · EOX IT Services · Copernicus Sentinel-2 2016",
-                modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://cloudless.eox.at/documentation/license"))) },
+                "Esri · World Imagery",
+                modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.esri.com/en-us/legal/terms/full-master-agreement"))) },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -314,7 +314,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                     val b=batches[index]
                     val bounds=LatLngBounds.Builder().include(LatLng(b.north,b.east)).include(LatLng(b.south,b.west)).build()
                     val definition=OfflineTilePyramidRegionDefinition(styleUrl,bounds,minZoom.toDouble(),maxZoom.toDouble(),1.0f,true)
-                    val metadata=JSONObject().put("name","TrailKit-${label}-${projectId}-${index+1}").put("projectId",projectId).put("layer",label).put("batch",index+1).put("provider",if(label=="卫星图")"EOxCloudless Sentinel-2 2024" else "EOX Terrain").toString().toByteArray(Charsets.UTF_8)
+                    val metadata=JSONObject().put("name","TrailKit-${label}-${projectId}-${index+1}").put("projectId",projectId).put("layer",label).put("batch",index+1).put("provider",if(label=="卫星图")"Esri World Imagery" else "EOX Terrain").toString().toByteArray(Charsets.UTF_8)
                     manager.createOfflineRegion(definition,metadata,object:OfflineManager.CreateOfflineRegionCallback {
                         override fun onCreate(offlineRegion:OfflineRegion) {
                             var finished=false
@@ -366,7 +366,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
                 Text("${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · ${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)
             }
-            Text("卫星底图改用 EOxCloudless Sentinel-2 2016（CC BY 4.0），原始影像约 10 米分辨率、最高原生 14 级。MapLibre 自动持久缓存最近浏览的资源，容量上限 512 MB；不会自动下载整条路线，出发前请联网放大浏览需要的区域。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("卫星底图使用 Esri World Imagery。MapLibre 客户端缓存上限为 512 MB；这不是整条路线的离线下载，未浏览过的区域不能保证断网显示。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

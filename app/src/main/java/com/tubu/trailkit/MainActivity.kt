@@ -235,6 +235,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
     var trackOpen by remember { mutableStateOf(false) }
     var gpxTargetProjectId by remember { mutableStateOf<String?>(null) }
     var mapOpen by remember { mutableStateOf(false) }
+    var terrain3dOpen by remember { mutableStateOf(false) }
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(sharedGpxUri) {
@@ -556,6 +557,19 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
                                 }
                             }
                             item {
+                                Card(Modifier.fillMaxWidth().clickable { terrain3dOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFE8EEE7))) {
+                                    Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(30.dp))
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text("3D 地形实验室",fontWeight=FontWeight.Bold,fontSize=14.sp,color=forest)
+                                            Text("旋转山体 · 三维 GPX 轨迹 · 模型导出（开发中）",fontSize=11.sp,color=muted)
+                                        }
+                                        Text("进入  ›",fontSize=12.sp,color=forest,fontWeight=FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            item {
                                 OutlinedButton(onClick={mapTargetProjectId=p.id;mbtilesImporter.launch(arrayOf("*/*"))},modifier=Modifier.fillMaxWidth()) { Text(if(p.mapPath.isBlank()) "＋ 导入离线地图包" else "更换离线地图包") }
                             }
                             item {
@@ -613,6 +627,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
     if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen) { mapOpen=false }
+    if (project != null) Terrain3DDialog(project.name, project.trackData, visible=terrain3dOpen) { terrain3dOpen=false }
 
     if (advancedToolsOpen && project != null) {
         TrailKitAdvancedDialog(

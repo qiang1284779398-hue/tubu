@@ -63,7 +63,8 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                 override fun onReceivedError(view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError) {
                     super.onReceivedError(view, request, error)
                     Log.e("TrailKit3D", "Web error ${error.errorCode}: ${error.description} ${request.url}")
-                }\n                override fun onPageFinished(view: WebView, url: String) {
+                }
+                override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
                     val routeScript = routeJson?.let {
                         "window.__trailkitPendingRoute = $it; if (window.setTrailRoute) window.setTrailRoute($it);"

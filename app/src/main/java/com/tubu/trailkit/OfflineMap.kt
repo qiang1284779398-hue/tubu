@@ -212,17 +212,18 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             engine=TextToSpeech(context) { status ->
                 var ready=false
                 if(status==TextToSpeech.SUCCESS) {
-                    val candidates=listOf(Locale.SIMPLIFIED_CHINESE,Locale.CHINA,Locale("zh","CN"),Locale.getDefault())
+                    // Some Android TTS engines (including accessibility-oriented engines)
+                    // report LANG_MISSING_DATA from isLanguageAvailable even though their
+                    // installed voice can synthesize speech. Trust setLanguage and verify
+                    // the actual speak callback instead of rejecting the engine too early.
+                    val candidates=listOf(Locale.CHINA,Locale.SIMPLIFIED_CHINESE,Locale("zh","CN"),Locale("zh"),Locale.getDefault())
                     for(locale in candidates.distinct()) {
                         try {
-                            val availability=engine.isLanguageAvailable(locale)
-                            if(availability>=TextToSpeech.LANG_AVAILABLE) {
-                                val selected=engine.setLanguage(locale)
-                                if(selected>=TextToSpeech.LANG_AVAILABLE) {
-                                    ready=true
-                                    voiceLocaleLabel.value=if(locale.language=="zh") "中文" else "系统语音"
-                                    break
-                                }
+                            val selected=engine.setLanguage(locale)
+                            if(selected!=TextToSpeech.LANG_NOT_SUPPORTED) {
+                                ready=true
+                                voiceLocaleLabel.value=if(locale.language=="zh") "中文" else "系统语音"
+                                break
                             }
                         } catch(_:Exception) {}
                     }

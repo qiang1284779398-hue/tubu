@@ -34,7 +34,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -249,7 +248,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("$projectName · 实景路线导航", color = ArLime, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("实景路线导航", color = ArLime, fontSize = 12.sp, maxLines = 1)
                             val match = routeMatch
                             Text(
                                 if (match != null) "距路线 ${match.distanceMeters.roundToInt()} m  ·  剩余 ${formatNavDistance(match.remainingMeters)}"
@@ -261,7 +260,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                                 if (turn != null && turn.distanceMeters <= 85.0) {
                                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                         Text("↑", modifier = Modifier.rotate(turn.angleDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 26.sp)
-                                        Text((if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后", modifier = Modifier.weight(1f), color = Color(0xFFFFC857), fontSize = 12.sp, maxLines = 2)
+                                        Text((if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后", modifier = Modifier.weight(1f), color = Color(0xFFFFC857), fontSize = 13.sp, maxLines = 3)
                                     }
                                 } else {
                                     Text(turnGuidance(heading, match.bearingDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 12.sp, maxLines = 2)
@@ -278,7 +277,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                         if (location != null) "GPS 已定位 · 精度约 ±${location!!.accuracy.roundToInt()} m"
                         else "等待 GPS · 黄色轨迹为屏幕投影，请同时核对离线地图",
                         color = Color(0xFFD5DED7), fontSize = 11.sp,
-                        modifier = Modifier.offset(y = (-6).dp)
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                     if (!locationGranted) {
                         TextButton(onClick = {

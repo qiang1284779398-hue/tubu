@@ -16,6 +16,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -416,7 +423,18 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
                             }
                         }
                     }
-                    if(projectPage=="gear") {
+                    AnimatedContent(
+                        targetState = projectPage,
+                        transitionSpec = {
+                            val direction = if (targetState == "nav") 1 else -1
+                            (slideInHorizontally(animationSpec = tween(280)) { width -> direction * width } +
+                                fadeIn(animationSpec = tween(180))) togetherWith
+                                (slideOutHorizontally(animationSpec = tween(280)) { width -> -direction * width / 3 } +
+                                    fadeOut(animationSpec = tween(160)))
+                        },
+                        label = "gear_navigation_transition"
+                    ) { page ->
+                    if(page=="gear") {
                 LazyColumn(Modifier.fillMaxSize().padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(11.dp),contentPadding=PaddingValues(top=14.dp,bottom=90.dp)) {
                     item {
                         Card(shape=RoundedCornerShape(26.dp),colors=CardDefaults.cardColors(containerColor=forest),elevation=CardDefaults.cardElevation(defaultElevation=5.dp)) {

@@ -89,6 +89,42 @@ private fun persist(context:Context, projects:List<Project>) {
     }
     context.getSharedPreferences("trailkit",0).edit().putString("projects",a.toString()).apply()
 }
+
+private fun loadWithBundledYubeng(context:Context):List<Project> {
+    val current=load(context)
+    val prefs=context.getSharedPreferences("trailkit",Context.MODE_PRIVATE)
+    if(prefs.getBoolean("bundled_yubeng_seeded",false)) return current
+    if(current.any { it.id=="bundled-yubeng" }) {
+        prefs.edit().putBoolean("bundled_yubeng_seeded",true).apply()
+        return current
+    }
+    return try {
+        val encoded=context.assets.open("yubeng_route.dat").bufferedReader(Charsets.UTF_8).use { it.readText().trim() }
+        val compressed=android.util.Base64.decode(encoded,android.util.Base64.DEFAULT)
+        val lines=java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(compressed)).bufferedReader(Charsets.UTF_8).use { it.readLines() }
+        val track=lines.getOrNull(0).orEmpty()
+        val elevations=lines.getOrNull(1).orEmpty()
+        val waypoints=lines.getOrNull(2).orEmpty()
+        require(track.startsWith("P1") && elevations.startsWith("E1") && waypoints.startsWith("W1")) { "内置雨崩路线数据不完整" }
+        val bundled=Project(
+            id="bundled-yubeng",
+            name="雨崩",
+            place="云南·迪庆·雨崩",
+            date="内置测试路线",
+            gear=emptyList(),
+            route="内置 GPX 测试路线：原始 27,373 个轨迹点，约 2 米精度简化为 3,653 个导航点；约 72.71 km；累计爬升约 5,225 m；182 个途经点。",
+            trackData=track,
+            waypointData=waypoints,
+            elevationData=elevations
+        )
+        (current+bundled).also {
+            persist(context,it)
+            prefs.edit().putBoolean("bundled_yubeng_seeded",true).apply()
+        }
+    } catch(_:Exception) {
+        current
+    }
+}
 private fun yuan(v:Double)="¥"+String.format(Locale.CHINA,"%.2f",v)
 
 private fun deleteProjectNavigationData(context:Context,project:Project) {
@@ -114,7 +150,7 @@ private fun deleteProjectNavigationData(context:Context,project:Project) {
 @Composable
 fun TrailKitApp() {
     val context= LocalContext.current
-    var projects by remember { mutableStateOf(load(context)) }
+    var projects by remember { mutableStateOf(loadWithBundledYubeng(context)) }
     var selected by remember { mutableStateOf<String?>(null) }
     var projectPage by remember(selected) { mutableStateOf("gear") }
     var projectDialog by remember { mutableStateOf(false) }

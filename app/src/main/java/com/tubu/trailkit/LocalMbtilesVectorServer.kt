@@ -106,13 +106,6 @@ internal object LocalMbtilesVectorServer {
                         ).use { cursor -> if (cursor.moveToFirst()) cursor.getBlob(0) else null }
                     }?.also { tileCache.put(cacheKey, it) }
                 }
-                    synchronized(db) {
-                        db.rawQuery(
-                            "SELECT images.tile_data FROM map JOIN images USING(tile_id) WHERE map.zoom_level=? AND map.tile_column=? AND map.tile_row=? LIMIT 1",
-                            arrayOf(z.toString(), x.toString(), tmsY.toString())
-                        ).use { cursor -> if (cursor.moveToFirst()) cursor.getBlob(0) else null }
-                    }
-                }
                 if (bytes == null) write(client, 204, "application/x-protobuf", ByteArray(0), true)
                 else write(client, 200, "application/x-protobuf", bytes, true)
             } catch (_: Exception) {

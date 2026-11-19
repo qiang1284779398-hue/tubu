@@ -48,7 +48,7 @@ private class TerrainSurface(c:android.content.Context,pts:List<Pair<Double,Doub
 }
 private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(String)->Unit):GLSurfaceView.Renderer{
  @Volatile var yaw=-22f;@Volatile var pitch=52f
- var program=0;var tex=0;var ready=false;var vb:FloatBuffer?=null;var ib:ShortBuffer?=null;var ic=0;var rb:FloatBuffer?=null;var rc=0
+ var program=0;var tex=0;var pendingImage:android.graphics.Bitmap?=null;var ready=false;var vb:FloatBuffer?=null;var ib:ShortBuffer?=null;var ic=0;var rb:FloatBuffer?=null;var rc=0
  var w=1;var h=1
  val proj=FloatArray(16);val view=FloatArray(16);val model=FloatArray(16);val vp=FloatArray(16);val mvp=FloatArray(16)
  fun rotate(dx:Float,dy:Float){yaw=(yaw+dx)%360f;pitch=(pitch+dy).coerceIn(18f,78f)}
@@ -84,17 +84,18 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    val vbuf=ByteBuffer.allocateDirect(v.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer().put(v);vbuf.position(0)
    val ibuf=ByteBuffer.allocateDirect(ix.size*2).order(ByteOrder.nativeOrder()).asShortBuffer().put(ix);ibuf.position(0)
    val rbuf=ByteBuffer.allocateDirect(route.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer();route.forEach{rbuf.put(it)};rbuf.position(0)
-   val t=IntArray(1);GLES20.glGenTextures(1,t,0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,t[0]);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_LINEAR);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_LINEAR);GLUtils.texImage2D(GLES20.GL_TEXTURE_2D,0,img,0)
-   synchronized(this){vb=vbuf;ib=ibuf;ic=ix.size;rb=rbuf;rc=route.size/3;tex=t[0];ready=true}
-   report("三维地形已加载 · 16,384 个网格面 · GPX 轨迹点 "+(route.size/3)+" 个。单指拖动可旋转。");dem.recycle();img.recycle()
+   synchronized(this){vb=vbuf;ib=ibuf;ic=ix.size;rb=rbuf;rc=route.size/3;pendingImage=img;ready=true}
+   report("高程网格与影像数据已就绪，正在提交 GPU 纹理…");dem.recycle()
   }catch(e:Exception){report("地形加载失败："+(e.message?:e.javaClass.simpleName)+"；请检查网络。")}
  }
  override fun onSurfaceChanged(gl:GL10?,width:Int,height:Int){w=width.coerceAtLeast(1);h=height.coerceAtLeast(1);GLES20.glViewport(0,0,w,h)}
  override fun onDrawFrame(gl:GL10?){
   GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT);if(program==0)return
   Matrix.perspectiveM(proj,0,43f,w.toFloat()/h,.1f,20f);Matrix.setLookAtM(view,0,0f,-2.8f,2.35f,0f,0f,0f,0f,0f,1f);Matrix.setIdentityM(model,0);Matrix.rotateM(model,0,pitch,1f,0f,0f);Matrix.rotateM(model,0,yaw,0f,0f,1f);Matrix.multiplyMM(vp,0,proj,0,view,0);Matrix.multiplyMM(mvp,0,vp,0,model,0)
-  GLES20.glUseProgram(program);GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program,"m"),1,false,mvp,0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,tex);GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"tex"),0)
-  if(!ready)return
+  GLES20.glUseProgram(program)
+  if(tex==0){val image=synchronized(this){pendingImage.also{pendingImage=null}};if(image!=null){val t=IntArray(1);GLES20.glGenTextures(1,t,0);tex=t[0];GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,tex);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_LINEAR);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_LINEAR);GLUtils.texImage2D(GLES20.GL_TEXTURE_2D,0,image,0);image.recycle();report("原生 3D 地形绘制完成 · 卫星影像 + DEM 网格 + GPX 轨迹。单指拖动旋转。")}}
+  GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(program,"m"),1,false,mvp,0);GLES20.glActiveTexture(GLES20.GL_TEXTURE0);GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,tex);GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"tex"),0)
+  if(!ready||tex==0)return
   val p=GLES20.glGetAttribLocation(program,"p");val uv=GLES20.glGetAttribLocation(program,"uv");GLES20.glEnableVertexAttribArray(p);GLES20.glEnableVertexAttribArray(uv)
   val a=vb!!;a.position(0);GLES20.glVertexAttribPointer(p,3,GLES20.GL_FLOAT,false,20,a);a.position(3);GLES20.glVertexAttribPointer(uv,2,GLES20.GL_FLOAT,false,20,a)
   GLES20.glUniform1i(GLES20.glGetUniformLocation(program,"route"),0);GLES20.glDrawElements(GLES20.GL_TRIANGLES,ic,GLES20.GL_UNSIGNED_SHORT,ib)

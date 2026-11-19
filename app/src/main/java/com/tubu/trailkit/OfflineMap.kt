@@ -430,14 +430,14 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                     current=Location(location)
                     gpsError=if(location.accuracy<=75f) "" else "当前定位精度 ±${location.accuracy.roundToInt()} 米；精度较低，仍显示实时位置"
-                    if(isRecording && age in 0L..20000L && location.accuracy<=250f) {
+                    if(isRecording && age in 0L..20000L && location.accuracy<=100f) {
                         val previousRecorded=recordedPoints.lastOrNull()
                         val movedMeters=previousRecorded?.let {
                             mapDistance(it.latitude to it.longitude,location.latitude to location.longitude)
                         } ?: Double.POSITIVE_INFINITY
                         val elapsedSincePrevious=previousRecorded?.let { location.time-it.time } ?: Long.MAX_VALUE
-                        if(previousRecorded==null || movedMeters>=3.0 ||
-                            (elapsedSincePrevious>=8000L && movedMeters>=1.5)) {
+                        if(previousRecorded==null || movedMeters>=1.5 ||
+                            (elapsedSincePrevious>=4000L && movedMeters>=1.0)) {
                             recordedPoints.add(Location(location))
                         }
                     }
@@ -463,12 +463,12 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         }
                     } catch(_:SecurityException) {}
                     if(fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                        try { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:SecurityException) {}
+                        try { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,500L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:SecurityException) {}
                     }
                     if(manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                        try { manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,2500L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:SecurityException) {}
+                        try { manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,1500L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:SecurityException) {}
                     }
-                    try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,5000L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:Exception) {}
+                    try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,3000L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:Exception) {}
                     gpsError=if(requested) "定位已启动：卫星 GPS + Wi-Fi/基站辅助（按权限自动切换）" else "系统定位源未启动；检查定位开关、权限和系统定位服务"
                     if(!fine) gpsError="仅获得大致位置权限：使用 Wi-Fi/基站定位；轨迹记录也允许此来源"
                 } else { active=false;gpsError="请允许 TrailKit 使用位置信息" }
@@ -924,8 +924,13 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val livePath=AndroidPath()
                         recordedPoints.forEachIndexed { index,location ->
                             val q=project(location.latitude,location.longitude)
-                            if(index==0) livePath.moveTo(q.x,q.y) else livePath.lineTo(q.x,q.y)
+                            if(index==0) livePath.moveTo(q.x,q.y) else {
+                                val previous=project(recordedPoints[index-1].latitude,recordedPoints[index-1].longitude)
+                                val midX=(previous.x+q.x)/2f;val midY=(previous.y+q.y)/2f
+                                livePath.quadTo(previous.x,previous.y,midX,midY)
+                            }
                         }
+                        if(recordedPoints.size>=2) { val last=recordedPoints.last();val q=project(last.latitude,last.longitude);livePath.lineTo(q.x,q.y) }
                         if(recordedPoints.size>=2) {
                             val liveOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply {
                                 color=android.graphics.Color.WHITE

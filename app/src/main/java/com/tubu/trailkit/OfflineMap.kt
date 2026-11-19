@@ -397,6 +397,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
             val coarse=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
             val manager=context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            TrailLocationFilter.reset()
             var previousAccepted:Location?=null
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {

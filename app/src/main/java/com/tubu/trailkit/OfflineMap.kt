@@ -146,7 +146,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     } catch(_:Exception) { null }
 }
 
-@Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",encodedElevations:String="[]",visible:Boolean=true,onClose:()->Unit) {
+@Composable fun OfflineMapDialog(path:String,encoded:String,projectId:String,encodedWaypoints:String="[]",encodedElevations:String="[]",visible:Boolean=true,onClose:()->Unit,fromCamera:Boolean=false,onReturnToCamera:()->Unit={}) {
     val context=androidx.compose.ui.platform.LocalContext.current
     val db=remember(path) { if(path.isBlank()) null else try { SQLiteDatabase.openDatabase(path,null,SQLiteDatabase.OPEN_READONLY) } catch(_:Exception){null} }
     DisposableEffect(db) { onDispose { try{db?.close()}catch(_:Exception){} } }
@@ -540,9 +540,21 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
 
     val routeMatch=cp?.takeIf { current?.accuracy?.let{accuracy->accuracy<=50f}==true && (gpsFixAgeSeconds?:999L)<=15L }
         ?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
+    var cameraReturnPromptShown by remember(projectId,fromCamera) { mutableStateOf(false) }
+    var cameraReturnPromptVisible by remember(projectId,fromCamera) { mutableStateOf(false) }
     val progressMatch=routeMatch?.takeIf {
         active && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f &&
             it.distanceMeters<=threshold.toDouble()+(current?.accuracy?:0f).toDouble()
+    }
+
+    LaunchedEffect(fromCamera, progressMatch, gpsFixAgeSeconds, current?.accuracy) {
+        if (fromCamera && !cameraReturnPromptShown && progressMatch != null &&
+            (gpsFixAgeSeconds ?: 999L) <= 15L && (current?.accuracy ?: 999f) <= 35f &&
+            progressMatch.progressMeters <= 120.0
+        ) {
+            cameraReturnPromptShown = true
+            cameraReturnPromptVisible = true
+        }
     }
     val desiredMapBearing = when(mapOrientation) {
         "heading" -> if(!arrowHeading.isNaN()) arrowHeading else 0f
@@ -713,6 +725,19 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         }
         if(visible && sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
         onDispose { manager.unregisterListener(listener) }
+    }
+    if (cameraReturnPromptVisible) {
+        AlertDialog(
+            onDismissRequest = { cameraReturnPromptVisible = false },
+            title = { Text("已到达路线起点附近") },
+            text = { Text("要返回实时相机导航吗？") },
+            confirmButton = {
+                TextButton(onClick = { cameraReturnPromptVisible = false; onReturnToCamera() }) { Text("返回实时相机") }
+            },
+            dismissButton = {
+                TextButton(onClick = { cameraReturnPromptVisible = false }) { Text("继续二维导航") }
+            }
+        )
     }
     if(visible) Dialog(onDismissRequest={if(mapCanvasFullscreen)mapCanvasFullscreen=false else onClose()},properties=DialogProperties(usePlatformDefaultWidth=false)) {
         Surface(shape=RoundedCornerShape(0.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxSize()) {

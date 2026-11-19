@@ -305,7 +305,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                             Surface(Modifier.weight(1f), color = Color(0xFF202B25), shape = RoundedCornerShape(10.dp)) {
                                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                                     Text("距 GPX 终点", color = Color(0xFFB9C8BE), fontSize = 11.sp)
-                                    Text(formatNavDistance(match.remainingMeters), color = Color.White, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                    Text(if (gpsReliable) formatNavDistance(match.remainingMeters) else "暂不可用", color = Color.White, fontSize = 18.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                                 }
                             }
                         }

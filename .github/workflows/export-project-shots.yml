@@ -19,6 +19,4 @@ jobs:
           name: project-screenshots
           path: /tmp/project-shots.zip
 
-# Re-run export to inspect the two newest uploaded screenshots.
-
-# Q-method refresh 2026-11-20 latest two screenshots
+# Q-method refresh for latest uploaded screenshot

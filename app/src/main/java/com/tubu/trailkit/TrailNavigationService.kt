@@ -54,16 +54,16 @@ class TrailNavigationService : Service(), LocationListener {
         try {
             var providersRequested=0
             if(fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,0f,this,android.os.Looper.getMainLooper())
+                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,500L,0f,this,android.os.Looper.getMainLooper())
                 manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let(::onLocationChanged)
                 providersRequested++
             }
             if(manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,2500L,0f,this,android.os.Looper.getMainLooper())
+                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,1500L,0f,this,android.os.Looper.getMainLooper())
                 manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)?.let(::onLocationChanged)
                 providersRequested++
             }
-            try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,5000L,0f,this,android.os.Looper.getMainLooper()); providersRequested++ } catch(_:Exception) {}
+            try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,3000L,0f,this,android.os.Looper.getMainLooper()); providersRequested++ } catch(_:Exception) {}
             if(providersRequested==0) updateNotification("定位源未启用，请打开手机系统定位")
         } catch(_:SecurityException) {
             updateNotification("定位权限不足")
@@ -86,7 +86,7 @@ class TrailNavigationService : Service(), LocationListener {
                     val previous=lastTrackLocation
                     val distance=previous?.distanceTo(location)?.toDouble() ?: Double.POSITIVE_INFINITY
                     val elapsed=previous?.let { location.time-it.time } ?: Long.MAX_VALUE
-                    if(previous==null || distance>=3.0 || (elapsed>=8000L && distance>=1.5)) {
+                    if(previous==null || distance>=1.5 || (elapsed>=4000L && distance>=1.0)) {
                         val elevation=if(location.hasAltitude()) String.format(Locale.US,"<ele>%.1f</ele>",location.altitude) else ""
                         writer.write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\">%s<time>%s</time></trkpt>\n",location.latitude,location.longitude,elevation,Instant.ofEpochMilli(location.time)))
                         writer.flush()

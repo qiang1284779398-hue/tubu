@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.2/maplibre-gl.css">
+<link rel="stylesheet" href="maplibre-gl.css">
 <style>
 *{box-sizing:border-box}
 html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221d;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -19,12 +19,12 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
 <div id="map"></div>
 <div id="legend">雨崩 · 真实三维地形<br>DEM 高程 · Esri 卫星影像</div>
 <div id="status">正在加载三维地形引擎…</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.6.2/maplibre-gl.js" onerror="document.getElementById('status').textContent='地图引擎下载失败：请切换可访问外网的网络后重试。';document.getElementById('status').className='error';"></script>
+<script src="maplibre-gl.js" onerror="document.getElementById('status').textContent='地图引擎下载失败：请切换可访问外网的网络后重试。';document.getElementById('status').className='error';"></script>
 <script>
 (function(){
  const status=document.getElementById('status');
  const say=(text,error)=>{status.textContent=text;status.className=error?'error':'';};
- if(!window.maplibregl){say('地图引擎加载失败，请检查安装包资源。',true);return;}
+ if(!window.maplibregl){say('地图引擎未启动：本地 maplibre-gl.js 未能执行。',true);return;}\n try{const test=document.createElement('canvas');const gl=test.getContext('webgl2')||test.getContext('webgl');if(!gl){say('手机 WebView 未提供 WebGL 图形环境，无法显示三维地图。',true);return;}gl.getExtension('WEBGL_lose_context')?.loseContext();}catch(e){say('WebGL 初始化异常：'+(e.message||e),true);return;}
  try{
   const map=new maplibregl.Map({
    container:'map',

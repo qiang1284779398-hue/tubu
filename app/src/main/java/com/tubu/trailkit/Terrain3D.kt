@@ -157,7 +157,7 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                     update = {}
                 )
                 Surface(
-                    modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
+                    modifier = Modifier.align(Alignment.TopStart).fillMaxWidth(0.48f).padding(start = 10.dp, top = 10.dp),
                     color = ComposeColor(0xE6101B16),
                     contentColor = ComposeColor.White,
                     shape = RoundedCornerShape(10.dp),
@@ -166,8 +166,10 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                     Text(
                         text = diagnostic.value,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        maxLines = 2,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
             }

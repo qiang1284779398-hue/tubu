@@ -219,11 +219,11 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                             previous = if (x in -size.width * .15f..size.width * 1.15f && y in horizonY..size.height * 1.08f) point else null
                             previousDistance = distance
                         }
-                        drawCircle(Color(0xFFFFC857), 7f, androidx.compose.ui.geometry.Offset(cx, size.height * .86f))
+                        drawCircle(Color(0xFFFFC857), 7f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f))
                     }
-                    drawCircle(ArLime.copy(alpha = .95f), 22f, androidx.compose.ui.geometry.Offset(cx, size.height * .86f), style = Stroke(2.5f))
-                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx - 20f, size.height * .86f), androidx.compose.ui.geometry.Offset(cx + 20f, size.height * .86f), 2f)
-                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * .86f - 20f), androidx.compose.ui.geometry.Offset(cx, size.height * .86f + 20f), 2f)
+                    drawCircle(ArLime.copy(alpha = .95f), 22f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f), style = Stroke(2.5f))
+                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx - 20f, size.height * .5f), androidx.compose.ui.geometry.Offset(cx + 20f, size.height * .5f), 2f)
+                    drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * .5f - 20f), androidx.compose.ui.geometry.Offset(cx, size.height * .5f + 20f), 2f)
                 }
                 if (cameraError.isNotBlank()) {
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
@@ -242,7 +242,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(12.dp), color = ArLime, fontSize = 11.sp)
                 }
                 Column(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(bottom = 76.dp)
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .background(Color.Black.copy(alpha = .82f)).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -276,7 +276,8 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     Text(
                         if (location != null) "GPS 已定位 · 精度约 ±${location!!.accuracy.roundToInt()} m"
                         else "等待 GPS · 黄色轨迹为屏幕投影，请同时核对离线地图",
-                        color = Color(0xFFD5DED7), fontSize = 11.sp
+                        color = Color(0xFFD5DED7), fontSize = 11.sp,
+                        modifier = Modifier.offset(y = (-6).dp)
                     )
                     if (!locationGranted) {
                         TextButton(onClick = {

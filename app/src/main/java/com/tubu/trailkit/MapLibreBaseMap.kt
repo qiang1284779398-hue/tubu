@@ -202,7 +202,15 @@ internal fun MapLibreBaseMap(
             color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-            "© Maptoolkit  © OpenStreetMap",
+            "© Maptoolkit",
+            modifier = Modifier.clickable {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.maptoolkit.org/")))
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            "© OpenStreetMap",
             modifier = Modifier.clickable {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.openstreetmap.org/copyright")))
             },

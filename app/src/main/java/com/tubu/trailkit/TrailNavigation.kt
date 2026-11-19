@@ -72,13 +72,17 @@ fun TrailNavigationDialog(encoded: String, onClose: () -> Unit) {
         } else onDispose { }
     }
     val currentPoint=current?.let { it.latitude to it.longitude }
-    val nearest=if(currentPoint!=null && points.isNotEmpty()) points.indices.minByOrNull { navDistance(currentPoint,points[it]) } ?: 0 else 0
-    val offRoute=currentPoint?.let { navDistance(it,points[nearest]) }
-    val total=remember(points){points.zipWithNext().sumOf{navDistance(it.first,it.second)}}
-    val completed=remember(points){DoubleArray(points.size).also { arr -> for(i in 1 until points.size) arr[i]=arr[i-1]+navDistance(points[i-1],points[i]) }}
-    val done=if(currentPoint!=null && completed.isNotEmpty()) completed[nearest] else 0.0
+    val preparedRoute=remember(points){prepareRoute(points)}
+    var lastMatchedSegment by remember(points){mutableIntStateOf(0)}
+    val routeMatch=currentPoint?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
+    LaunchedEffect(routeMatch?.segmentIndex) {
+        routeMatch?.let { lastMatchedSegment=it.segmentIndex }
+    }
+    val offRoute=routeMatch?.distanceMeters
+    val total=preparedRoute.totalMeters
+    val done=routeMatch?.progressMeters ?: 0.0
     val remaining=(total-done).coerceAtLeast(0.0)
-    val bearing=if(currentPoint!=null && nearest<points.lastIndex) navBearing(currentPoint,points[(nearest+1).coerceAtMost(points.lastIndex)]) else null
+    val bearing=routeMatch?.bearingDegrees
     Dialog(onDismissRequest={active=false;onClose()}) {
         Surface(shape=RoundedCornerShape(24.dp),color=MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().heightIn(max=720.dp)) {
             Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {

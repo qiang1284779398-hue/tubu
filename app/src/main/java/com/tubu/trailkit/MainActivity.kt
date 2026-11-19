@@ -93,7 +93,7 @@ private fun persist(context:Context, projects:List<Project>) {
 private fun loadWithBundledYubeng(context:Context):List<Project> {
     val current=load(context)
     val prefs=context.getSharedPreferences("trailkit",Context.MODE_PRIVATE)
-    if(prefs.getBoolean("bundled_yubeng_seeded",false)) return current
+    if(prefs.getBoolean("bundled_yubeng_seeded",false) && current.any { it.id=="bundled-yubeng" }) return current
     if(current.any { it.id=="bundled-yubeng" }) {
         prefs.edit().putBoolean("bundled_yubeng_seeded",true).apply()
         return current

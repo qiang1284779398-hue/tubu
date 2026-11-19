@@ -15,6 +15,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import java.util.Locale
 import java.io.BufferedWriter
@@ -30,6 +31,7 @@ class TrailNavigationService : Service(), LocationListener {
     private val notificationId=4107
     private var trackWriter:BufferedWriter?=null
     private var lastTrackLocation:Location?=null
+    private var lastLocationNotificationMs=0L
 
     override fun onCreate() {
         super.onCreate()
@@ -78,7 +80,11 @@ class TrailNavigationService : Service(), LocationListener {
         val age=System.currentTimeMillis()-location.time
         val source=when(location.provider) { LocationManager.GPS_PROVIDER -> "GPS"; LocationManager.NETWORK_PROVIDER -> "网络"; LocationManager.PASSIVE_PROVIDER -> "被动"; else -> location.provider ?: "定位" }
         val text=(if(trackWriter!=null)"记录中 · " else "")+"$source · ${String.format(Locale.US,"%.5f, %.5f",location.latitude,location.longitude)} · 精度 ±${location.accuracy.toInt()} m · ${if(age<=15000L)"实时" else "延迟 ${age/1000}s"}"
-        updateNotification(text)
+        val nowElapsed=SystemClock.elapsedRealtime()
+        if(nowElapsed-lastLocationNotificationMs>=2000L) {
+            lastLocationNotificationMs=nowElapsed
+            updateNotification(text)
+        }
         try {
             val writer=trackWriter
             if(writer!=null) {

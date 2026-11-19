@@ -322,7 +322,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                                 }
                             }
                         }
-                    } else {
+                    } else if (!offRoute) {
                         Text(if (routePoints.size >= 2) "正在获取定位并匹配 GPX 路线…" else "当前项目没有可用 GPX 轨迹",
                             color = Color(0xFFFFE082), fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     }
@@ -378,7 +378,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                                 )
                             }
                         }
-                    } else {
+                    } else if (!offRoute) {
                         Text("等待 GPS 定位", color = Color(0xFFFFE082), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {

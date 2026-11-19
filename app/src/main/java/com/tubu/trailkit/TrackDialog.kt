@@ -1,4 +1,5 @@
 package com.tubu.trailkit
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -11,7 +12,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 @Composable fun TrailTrackDialog(encoded:String,onClose:()->Unit){
- val points=decodeTrackPoints(encoded)
+ val points=remember(encoded){decodeTrackPoints(encoded)}
  AlertDialog(onDismissRequest=onClose,title={Text("离线 GPX 轨迹")},text={
   Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
    if(points.size<2) Text("没有可显示的轨迹点，请重新导入 GPX。")

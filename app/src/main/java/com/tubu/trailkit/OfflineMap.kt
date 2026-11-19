@@ -773,7 +773,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 }
                 Text(when(mapOrientation) { "north" -> "北向上：地图始终保持北方朝上" ; "heading" -> if(arrowHeading.isNaN()) "航向朝上：等待可靠电子罗盘或 GPS 行进方向" else "航向朝上：根据手机朝向旋转地图" ; else -> if(routeMatch==null) "轨迹朝上：等待高精度 GPS 匹配路线，暂用罗盘方向" else "轨迹朝上：根据前方路线方向旋转地图" },fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
                 }
-                Box(if(mapFullscreen)Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(360.dp)) {
+                Box(if(mapCanvasFullscreen)Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(360.dp)) {
                     MapLibreBaseMap(
                         centerLat = centerLat,
                         centerLon = centerLon,
@@ -1159,8 +1159,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                                     val dx=(worldX(maxLon,0)-worldX(minLon,0)).coerceAtLeast(1.0)
                                     val dy=(worldY(maxLat,0)-worldY(minLat,0)).coerceAtLeast(1.0)
                                     val density=context.resources.displayMetrics.density
-                                    val width=context.resources.displayMetrics.widthPixels*if(mapFullscreen)0.92 else 0.82
-                                    val height=(if(mapFullscreen)context.resources.displayMetrics.heightPixels.toDouble() else 360.0*density)*0.82
+                                    val width=context.resources.displayMetrics.widthPixels*if(mapCanvasFullscreen)0.92 else 0.82
+                                    val height=(if(mapCanvasFullscreen)context.resources.displayMetrics.heightPixels.toDouble() else 360.0*density)*0.82
                                     val fitScale=min((width-72.0)/dx,(height-72.0)/dy).coerceAtLeast(0.25)
                                     zoom=(ln(fitScale)/ln(2.0)).toFloat().coerceIn((info?.minZoom?:2).toFloat(),zoomLimit)
                                     followGps=false
@@ -1198,12 +1198,12 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         horizontalAlignment=Alignment.End
                     ) {
                         Surface(
-                            modifier=Modifier.size(48.dp).clickable{mapFullscreen=!mapFullscreen},
+                            modifier=Modifier.size(48.dp).clickable{mapCanvasFullscreen=!mapCanvasFullscreen},
                             shape=RoundedCornerShape(24.dp),
                             color=Color.White.copy(alpha=0.96f),
                             shadowElevation=5.dp
                         ) {
-                            Box(contentAlignment=Alignment.Center) { Text(if(mapFullscreen)"×" else "⛶",fontSize=if(mapFullscreen)30.sp else 27.sp,fontWeight=FontWeight.Bold,color=Color(0xFF183C32)) }
+                            Box(contentAlignment=Alignment.Center) { Text(if(mapCanvasFullscreen)"×" else "⛶",fontSize=if(mapCanvasFullscreen)30.sp else 27.sp,fontWeight=FontWeight.Bold,color=Color(0xFF183C32)) }
                         }
                         Box {
                             Surface(
@@ -1239,7 +1239,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         }
                     }
                 }
-                if(!mapFullscreen) {
+                if(!mapCanvasFullscreen) {
                 Text("绿线：已走   橙线：剩余   蓝点：当前位置/精度范围   橙色箭头：手机朝向   橙点：GPX途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={measureMode=!measureMode;if(!measureMode)measurePoints.clear()},modifier=Modifier.weight(1f)){Text(if(measureMode)"结束测距" else "地图测距")}

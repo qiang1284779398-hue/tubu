@@ -150,7 +150,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
 (function(){
  const button=document.getElementById('gltest-toggle');
  const canvas=document.getElementById('gltest-canvas');
- let gl=null, raf=0, started=false;
+ let gl=null, raf=0, started=false, render=null;
  const vertices=[
   // front
   -1,-1,1, 1,-1,1, 1,1,1, -1,-1,1, 1,1,1, -1,1,1,
@@ -179,20 +179,20 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
    const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.STATIC_DRAW);
    const loc=gl.getAttribLocation(program,'p');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);
    const angle=gl.getUniformLocation(program,'a');gl.enable(gl.DEPTH_TEST);
-   function frame(t){
+   render=function frame(t){
     if(canvas.style.display==='none')return;
     const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(window.devicePixelRatio||1,2);
     if(canvas.width!==Math.floor(w*dpr)||canvas.height!==Math.floor(h*dpr)){canvas.width=Math.floor(w*dpr);canvas.height=Math.floor(h*dpr);}
     gl.viewport(0,0,canvas.width,canvas.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-    gl.uniform1f(angle,t*0.0007);gl.drawArrays(gl.TRIANGLES,0,36);raf=requestAnimationFrame(frame);
+    gl.uniform1f(angle,t*0.0007);gl.drawArrays(gl.TRIANGLES,0,36);raf=requestAnimationFrame(render);
    }
-   raf=requestAnimationFrame(frame);
+   raf=requestAnimationFrame(render);
    try{TrailKitBridge.report('WebGL 自检成功：旋转立方体正在由手机 GPU 实时绘制。');}catch(_){}
   }catch(e){try{TrailKitBridge.report('WebGL 立方体自检失败：'+e.message);}catch(_){}button.textContent='WebGL 自检失败';}
  }
  button.addEventListener('click',function(){
   if(canvas.style.display==='block'){canvas.style.display='none';cancelAnimationFrame(raf);button.textContent='WebGL 立方体自检';}
-  else{canvas.style.display='block';button.textContent='关闭立方体';start();if(gl)raf=requestAnimationFrame(function(t){const ev=new Event('resize');window.dispatchEvent(ev);});}
+  else{canvas.style.display='block';button.textContent='关闭立方体';start();if(gl&&render)raf=requestAnimationFrame(render);}
  });
 })();
 </script>

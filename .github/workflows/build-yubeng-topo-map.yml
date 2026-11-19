@@ -1,0 +1,35 @@
+name: Build Yubeng Offline Topographic Map
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/build_yubeng_topo_map.sh"
+      - ".github/workflows/build-yubeng-topo-map.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-map:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install GIS tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gdal-bin python3-gdal python3-rasterio python3-numpy sqlite3
+
+      - name: Build Yubeng shaded relief and contours
+        run: bash tools/build_yubeng_topo_map.sh
+
+      - name: Upload offline map package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yubeng-Offline-Topo-MBTiles
+          path: build/yubeng-map/yubeng_topo.mbtiles
+          if-no-files-found: error
+          retention-days: 30

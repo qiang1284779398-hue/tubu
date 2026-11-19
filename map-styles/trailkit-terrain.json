@@ -1,0 +1,30 @@
+{
+  "version": 8,
+  "name": "TrailKit Terrain Relief",
+  "sources": {
+    "eoxTerrain": {
+      "type": "raster",
+      "tiles": [
+        "https://tiles.maps.eox.at/wmts/1.0.0/terrain_3857/default/g/{z}/{y}/{x}.jpg"
+      ],
+      "tileSize": 256,
+      "attribution": "Terrain basemap © EOX IT Services GmbH; contains modified Copernicus Sentinel data where applicable"
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#e6e3d9"
+      }
+    },
+    {
+      "id": "terrain-relief",
+      "type": "raster",
+      "source": "eoxTerrain",
+      "minzoom": 0,
+      "maxzoom": 16
+    }
+  ]
+}

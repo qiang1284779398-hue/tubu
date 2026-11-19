@@ -1,55 +1,65 @@
 <!doctype html>
 <html lang="zh-CN"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link href="maplibre-gl.css" rel="stylesheet">
 <style>
-html,body,#map{margin:0;width:100%;height:100%;min-height:100%;background:#e8ece5;overflow:hidden}
-#status{position:absolute;left:12px;right:12px;bottom:16px;z-index:10;padding:10px 12px;border-radius:10px;background:rgba(18,32,27,.92);color:#fff;font:13px/1.55 sans-serif;max-width:calc(100% - 48px);box-shadow:0 2px 12px #0003}
-#status.error{background:rgba(130,35,28,.95)}
-.maplibregl-ctrl-group{border-radius:12px!important;overflow:hidden}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#101915;color:#edf4ee;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+#diagnostics{position:absolute;inset:0;overflow:auto;padding:22px 18px 28px;background:linear-gradient(160deg,#1b2a23,#101915 60%);z-index:3}
+h1{font-size:22px;margin:0 0 8px}p{color:#b7c8bc;font-size:14px;line-height:1.6;margin:6px 0 16px}
+.card{background:#24362b;border:1px solid #435548;border-radius:14px;padding:14px;margin:12px 0}
+.row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #3a4b3e;font-size:14px}.row:last-child{border-bottom:0}
+.value{color:#a9d4b3;text-align:right;max-width:60%;word-break:break-word}
+button{width:100%;padding:15px;border:0;border-radius:12px;background:#d5e6d8;color:#13251a;font-weight:700;font-size:16px;margin:8px 0}
+button.secondary{background:#35493b;color:#edf4ee}
+#map{position:absolute;inset:0;background:#17231b;display:none}
+#mapstatus{position:absolute;left:12px;right:12px;bottom:18px;z-index:2;background:#15241b;color:white;padding:12px;border-radius:10px;font-size:13px;line-height:1.5;display:none}
+.error{color:#ffc0a9!important}
 </style></head><body>
-<div id="map"></div><div id="status">正在启动三维地图引擎…</div>
-<script src="maplibre-gl.js" onerror="document.getElementById('status').textContent='MapLibre 地图引擎文件加载失败。'"></script>
+<div id="diagnostics">
+<h1>TrailKit · 三维地图诊断</h1><p>先检查手机网页渲染环境，再手动启动地图。这样地图加载失败时，诊断页面仍能保留。</p>
+<div class="card" id="checks">
+<div class="row"><span>HTML 页面</span><span class="value" id="html">已加载</span></div>
+<div class="row"><span>JavaScript</span><span class="value" id="js">检测中</span></div>
+<div class="row"><span>WebGL</span><span class="value" id="gl">检测中</span></div>
+<div class="row"><span>地图引擎</span><span class="value" id="engine">等待加载</span></div>
+<div class="row"><span>运行信息</span><span class="value" id="details">页面诊断已启动</span></div>
+</div>
+<button id="start">启动 3D 地图</button><button class="secondary" id="reload">重新检测</button>
+<p>若此诊断页能显示，说明本地 HTML 已正常加载。地图启动后若失败，会在这里显示具体错误。</p>
+</div>
+<div id="map"></div><div id="mapstatus"></div>
 <script>
 (function(){
- const status=document.getElementById('status');
- function message(t,e){status.textContent=t;status.className=e?'error':'';}
- window.onerror=function(msg,src,line){message('三维页面脚本错误：'+msg+'（第'+line+'行）',true);};
- if(typeof maplibregl==='undefined'){message('地图引擎文件没有成功加载。请检查安装包资源。',true);return;}
- try{
-  if(!maplibregl.supported({failIfMajorPerformanceCaveat:false})){
-   message('当前手机的系统 WebView 未能启用 WebGL，三维地图无法启动。请更新 Android System WebView / Chrome 后重试。',true);return;
-  }
-  message('地图引擎已启动，正在请求卫星影像和高程数据…');
-  const map=new maplibregl.Map({
-   container:'map',center:[98.88,28.45],zoom:11.2,pitch:58,bearing:-18,maxPitch:85,
-   style:{version:8,sources:{
-    imagery:{type:'raster',tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19,attribution:'Esri, Vantor, Earthstar Geographics, and the GIS User Community'},
-    dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,maxzoom:15,encoding:'terrarium',attribution:'Terrain data: AWS Terrain Tiles / Mapzen'}
-   },layers:[{id:'satellite',type:'raster',source:'imagery'}]},
-   hash:false,attributionControl:true,failIfMajorPerformanceCaveat:false
-  });
-  map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');
-  map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-right');
-  map.on('load',function(){
-   try{map.setTerrain({source:'dem',exaggeration:1.12});}catch(e){message('卫星地图已加载，但三维高程初始化失败：'+e.message,true);}
-   map.addSource('trail-route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-   map.addLayer({id:'trail-route-casing',type:'line',source:'trail-route',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#10251e','line-width':7,'line-opacity':.9}});
-   map.addLayer({id:'trail-route-line',type:'line',source:'trail-route',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffb547','line-width':4}});
-   message('地图已启动。若底图空白，请检查网络。双指倾斜 / 双指旋转 / 捏合缩放');
-   if(window.pendingTrailRoute)window.setTrailRoute(window.pendingTrailRoute);
-  });
-  map.on('error',function(e){const err=e&&e.error?e.error.message:'未知资源错误';message('地图资源请求失败：'+err+'。请确认网络可访问 Esri 与高程服务。',true);});
-  map.on('webglcontextlost',function(){message('手机图形渲染上下文丢失，请关闭页面后重新进入。',true);});
-  window.setTrailRoute=function(feature){
-   if(!map.getSource('trail-route')){window.pendingTrailRoute=feature;return;}
-   map.getSource('trail-route').setData({type:'FeatureCollection',features:[feature]});
-   const coords=feature.geometry.coordinates;
-   if(coords&&coords.length>1){
-    const bounds=coords.reduce((b,p)=>b.extend(p),new maplibregl.LngLatBounds(coords[0],coords[0]));
-    map.fitBounds(bounds,{padding:48,maxZoom:14,duration:900});
-   }
-  };
- }catch(e){message('三维地图初始化失败：'+(e&&e.message?e.message:String(e)),true);}
+ const put=(id,text,err)=>{const el=document.getElementById(id);el.textContent=text;if(err)el.className='value error';};
+ put('js','正常');
+ let ctx=null;try{const c=document.createElement('canvas');ctx=c.getContext('webgl')||c.getContext('experimental-webgl');}catch(e){}
+ put('gl',ctx?'支持 WebGL':'不支持 WebGL',!ctx);
+ if(ctx){try{const ext=ctx.getExtension('WEBGL_debug_renderer_info');put('details',ext?ctx.getParameter(ext.UNMASKED_RENDERER_WEBGL):'WebGL已启用，显卡信息不可读取');}catch(e){put('details','WebGL已启用');}}
+ window.onerror=function(m,s,l){put('details','JS错误：'+m+'，行 '+l,true);};
+ document.getElementById('reload').onclick=()=>location.reload();
+ document.getElementById('start').onclick=()=>{
+   document.getElementById('diagnostics').style.display='none';
+   document.getElementById('map').style.display='block';
+   const ms=document.getElementById('mapstatus');ms.style.display='block';ms.textContent='正在加载 MapLibre 地图引擎…';
+   const script=document.createElement('script');script.src='maplibre-gl.js';
+   script.onload=()=>{put('engine','加载成功');try{
+     const map=new maplibregl.Map({container:'map',center:[98.88,28.45],zoom:11.2,pitch:58,bearing:-18,maxPitch:85,
+       style:{version:8,sources:{
+         imagery:{type:'raster',tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19,attribution:'Esri'},
+         dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,maxzoom:15,encoding:'terrarium'}
+       },layers:[{id:'satellite',type:'raster',source:'imagery'}]},hash:false,failIfMajorPerformanceCaveat:false});
+     map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');
+     map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-right');
+     map.on('load',()=>{try{map.setTerrain({source:'dem',exaggeration:1.12});}catch(e){ms.textContent='底图成功，但地形启用失败：'+e.message;return;}
+       map.addSource('trail-route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+       map.addLayer({id:'trail-route',type:'line',source:'trail-route',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffb547','line-width':4}});
+       ms.textContent='地图启动成功！双指倾斜/旋转，捏合缩放。';});
+     map.on('error',e=>{ms.textContent='地图报错：'+(e&&e.error&&e.error.message||'未知错误');});
+     window.setTrailRoute=function(feature){if(map.getSource('trail-route')){map.getSource('trail-route').setData({type:'FeatureCollection',features:[feature]});const cs=feature.geometry.coordinates;if(cs&&cs.length>1){const b=cs.reduce((bounds,p)=>bounds.extend(p),new maplibregl.LngLatBounds(cs[0],cs[0]));map.fitBounds(b,{padding:45,maxZoom:14,duration:800});}}};
+     if(window.pendingTrailRoute)window.setTrailRoute(window.pendingTrailRoute);
+   }catch(e){ms.textContent='地图初始化异常：'+(e.message||e);put('details',e.message||String(e),true);}};
+   script.onerror=()=>{put('engine','本地 JS 文件加载失败',true);ms.textContent='地图引擎文件读取失败：maplibre-gl.js';};
+   document.body.appendChild(script);
+ };
+ window.setTrailRoute=function(feature){window.pendingTrailRoute=feature;};
 })();
 </script></body></html>

@@ -61,7 +61,7 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
     val webView = remember(context, routeJson, assetLoader) {
         WebView(context).apply {
             setBackgroundColor(Color.rgb(18, 27, 24))
-            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            setLayerType(View.LAYER_TYPE_NONE, null)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = false
@@ -115,6 +115,8 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                     val routeScript = routeJson?.let {
                         "window.__trailkitPendingRoute = $it; if (window.setTrailRoute) window.setTrailRoute($it);"
                     } ?: ""
+                    Log.i("TrailKit3D", "WebView hardwareAccelerated=" + view.isHardwareAccelerated + ", layerType=" + view.layerType + ", size=" + view.width + "x" + view.height)
+                    mainHandler.post { diagnostic.value = if (view.isHardwareAccelerated) "页面已载入 · WebView GPU 硬件加速已开启" else "警告：WebView 未启用 GPU 硬件加速" }
                     view.evaluateJavascript("window.__trailkitPageReady = true; $routeScript", null)
                 }
             }

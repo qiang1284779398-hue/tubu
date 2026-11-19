@@ -86,14 +86,20 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
     var cameraError by remember { mutableStateOf("") }
     val routePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
     val route = remember(routePoints) { if (routePoints.size >= 2) prepareRoute(routePoints) else null }
-    val routeMatch = remember(location, route) { location?.let { fix -> route?.let { matchRoute(it, fix.latitude to fix.longitude) } } }
+    val routeMatchCandidate = remember(location, route) {
+        location?.let { fix -> route?.let { matchRoute(it, fix.latitude to fix.longitude) } }
+    }
+    // A fix must be fresh, accurate, and geographically close to this GPX route.
+    val gpsAgeMillis = location?.let { (System.currentTimeMillis() - it.time).coerceAtLeast(0L) } ?: Long.MAX_VALUE
+    val gpsQualityOk = location != null && location!!.hasAccuracy() &&
+        location!!.accuracy <= 35f && gpsAgeMillis <= 15_000L
+    val routeSnapLimitMeters = location?.let { (it.accuracy * 2.5f).toDouble().coerceIn(45.0, 80.0) } ?: 45.0
+    val routeMatch = routeMatchCandidate?.takeIf { gpsQualityOk && it.distanceMeters <= routeSnapLimitMeters }
+    val offRoute = gpsQualityOk && routeMatchCandidate != null && routeMatchCandidate.distanceMeters > routeSnapLimitMeters
+    val gpsReliable = gpsQualityOk && routeMatch != null
     val upcomingTurn = remember(routeMatch, route) {
         if (routeMatch != null && route != null) findUpcomingCameraTurn(route, routeMatch) else null
     }
-    // A cached or inaccurate fix must never drive turn-by-turn AR guidance.
-    val gpsAgeMillis = location?.let { (System.currentTimeMillis() - it.time).coerceAtLeast(0L) } ?: Long.MAX_VALUE
-    val gpsReliable = location != null && location!!.hasAccuracy() &&
-        location!!.accuracy <= 35f && gpsAgeMillis <= 15_000L
     val displayProjectName = remember(projectName) {
         if (projectName.matches(Regex("""\d{4}-\d{2}-\d{2}.*\d{10,}.*"""))) "当前徒步项目" else projectName
     }
@@ -168,12 +174,20 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 // Force the actual Android dialog Window to occupy the complete display; otherwise the
                 // camera preview is clipped to a short band and the underlying project page remains visible.
                 dialogWindow.setBackgroundDrawableResource(android.R.color.black)
+                dialogWindow.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
                 dialogWindow.setLayout(
                     android.view.WindowManager.LayoutParams.MATCH_PARENT,
                     android.view.WindowManager.LayoutParams.MATCH_PARENT
                 )
                 dialogWindow.setGravity(android.view.Gravity.FILL)
                 dialogWindow.decorView.setPadding(0, 0, 0, 0)
+                dialogWindow.decorView.systemUiVisibility =
+                    (android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                        or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
                 androidx.core.view.WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
                 val controller = androidx.core.view.WindowCompat.getInsetsController(dialogWindow, dialogWindow.decorView)
                 controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -278,11 +292,10 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 }
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .navigationBarsPadding().imePadding()
-                        .padding(bottom = 12.dp)
+                        .padding(bottom = 10.dp)
                         .background(Color(0xF20A100D))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -313,7 +326,19 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                         Text(if (routePoints.size >= 2) "正在获取定位并匹配 GPX 路线…" else "当前项目没有可用 GPX 轨迹",
                             color = Color(0xFFFFE082), fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     }
-                    if (match != null && !gpsReliable) {
+                    if (offRoute) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFF4A211B),
+                            shape = RoundedCornerShape(12.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF8A65))
+                        ) {
+                            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text("当前位置远离 GPX 轨迹，已暂停导航", color = Color(0xFFFFAB91), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Text("距轨迹约 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m；请检查定位、项目或重新靠近路线", color = Color(0xFFFFCCBC), fontSize = 12.sp)
+                            }
+                        }
+                    } else if (match != null && !gpsReliable) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             color = Color(0xFF3A2418),
@@ -361,6 +386,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                             when {
                                 location == null -> "等待 GPS 信号"
                                 gpsReliable -> "GPS 稳定 · ±${location!!.accuracy.roundToInt()} m"
+                                offRoute -> "已偏离 GPX 轨迹 · 导航已暂停"
                                 else -> "定位不稳定 · ±${location!!.accuracy.roundToInt()} m"
                             },
                             color = if (gpsReliable) Color(0xFFB9D8A8) else Color(0xFFFFCC80),

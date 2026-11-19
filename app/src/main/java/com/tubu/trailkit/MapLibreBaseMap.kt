@@ -282,7 +282,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
     var bytes by remember(projectId){mutableLongStateOf(0L)}
     var busy by remember(projectId){mutableStateOf(false)}
     var complete by remember(projectId){mutableStateOf(false)}
-    var message by remember(projectId){mutableStateOf("Esri 高清卫星可在线浏览。离线导出需使用 Esri 授权的导出服务；当前公开浏览瓦片不支持直接批量下载。")}
+    var message by remember(projectId){mutableStateOf("卫星图已开启自动缓存：联网浏览时会把当前视野的影像瓦片保存在手机，缓存上限 512 MB。放大后再浏览可保存更高清的瓦片；离线时显示此前实际浏览并缓存过的区域。")}
 
     fun startDownload(styleUrl:String,label:String) {
         if(points.size<2 || busy)return
@@ -360,13 +360,13 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
                 OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形")}
-                OutlinedButton(onClick={},enabled=false,modifier=Modifier.weight(1f)){Text("Esri 离线需授权")}
+                OutlinedButton(onClick={},enabled=false,modifier=Modifier.weight(1f)){Text("卫星自动缓存")}
             }
             if(busy||complete) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
                 Text("${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · ${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)
             }
-            Text("卫星图层已统一为 Esri World Imagery。此处不会抓取公开浏览瓦片；Esri 离线导出需授权服务与合规使用条件。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("卫星底图改用 EOxCloudless Sentinel-2 2016（CC BY 4.0），原始影像约 10 米分辨率、最高原生 14 级。MapLibre 自动持久缓存最近浏览的资源，容量上限 512 MB；不会自动下载整条路线，出发前请联网放大浏览需要的区域。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

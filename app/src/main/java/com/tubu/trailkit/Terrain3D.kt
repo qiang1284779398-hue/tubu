@@ -1,10 +1,6 @@
 package com.tubu.trailkit
 
-import android.annotation.SuppressLint
-import android.graphics.Color as AndroidColor
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.graphics.Color
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -15,21 +11,28 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import org.json.JSONArray
-import org.json.JSONObject
+import org.maplibre.android.MapLibre
+import org.maplibre.android.camera.CameraPosition
+import org.maplibre.android.geometry.LatLng
+import org.maplibre.android.maps.MapView
+import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory
+import org.maplibre.android.style.sources.GeoJsonSource
+import org.maplibre.geojson.Feature
+import org.maplibre.geojson.LineString
+import org.maplibre.geojson.Point
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible: Boolean, onClose: () -> Unit) {
     if (!visible) return
     val context = LocalContext.current
     val points = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
-    val routeGeoJson = remember(points) {
-        val coordinates = JSONArray()
-        points.forEach { (lat, lon) -> coordinates.put(JSONArray().put(lon).put(lat)) }
-        JSONObject().put("type", "Feature").put("geometry",
-            JSONObject().put("type", "LineString").put("coordinates", coordinates)
-        ).put("properties", JSONObject())
+    val routeFeature = remember(points) {
+        if (points.size > 1) Feature.fromGeometry(LineString.fromLngLats(points.map { Point.fromLngLat(it.second, it.first) }))
+        else null
     }
     BackHandler(onBack = onClose)
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -38,35 +41,49 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(Modifier.weight(1f)) {
-                            Text("3D TERRAIN LAB", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                            Text("$projectName · 三维地形", style = MaterialTheme.typography.titleMedium)
+                            Text("NATIVE TERRAIN VIEW", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Text("$projectName · 三维地形预览", style = MaterialTheme.typography.titleMedium)
                         }
                         TextButton(onClick = onClose) { Text("关闭") }
                     }
-                    Text("在线预览阶段 · 地形与卫星影像需要网络。离线地形包和 GLB/OBJ 导出正在后续阶段开发。",
+                    Text("原生地图渲染 · 卫星影像 · 俯仰视角 · GPX轨迹",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            AndroidView(modifier = Modifier.weight(1f).fillMaxWidth(), factory = {
-                WebView(context).apply {
-                    setBackgroundColor(AndroidColor.rgb(22, 34, 30))
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.allowFileAccess = true
-                    settings.allowContentAccess = false
-                    webChromeClient = WebChromeClient()
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView, url: String) {
-                            val payload = JSONObject.quote(routeGeoJson.toString())
-                            view.evaluateJavascript("window.setTrailRoute && window.setTrailRoute(JSON.parse($payload));", null)
+            AndroidView(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                factory = {
+                    MapLibre.getInstance(context.applicationContext)
+                    MapView(context).apply {
+                        onCreate(null)
+                        getMapAsync { map ->
+                            map.uiSettings.isCompassEnabled = true
+                            map.uiSettings.isRotateGesturesEnabled = true
+                            map.uiSettings.isTiltGesturesEnabled = true
+                            map.uiSettings.isZoomGesturesEnabled = true
+                            map.setStyle(Style.Builder().fromJson(
+                                """{"version":8,"sources":{"sat":{"type":"raster","tiles":["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],"tileSize":256,"maxzoom":19,"attribution":"Esri World Imagery"}},"layers":[{"id":"satellite","type":"raster","source":"sat"}]}"""
+                            )) { style ->
+                                map.cameraPosition = CameraPosition.Builder()
+                                    .target(LatLng(28.45, 98.88))
+                                    .zoom(11.2)
+                                    .tilt(58.0)
+                                    .bearing(-18.0)
+                                    .build()
+                                if (routeFeature != null) {
+                                    style.addSource(GeoJsonSource("trail-route-native", routeFeature))
+                                    style.addLayer(LineLayer("trail-route-native-line", "trail-route-native")
+                                        .withProperties(PropertyFactory.lineColor("#FFB547"), PropertyFactory.lineWidth(4.5f), PropertyFactory.lineCap(Property.LINE_CAP_ROUND), PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)))
+                                    )
+                                    val bounds=points.fold(org.maplibre.android.geometry.LatLngBounds.Builder().include(LatLng(points.first().first,points.first().second)).include(LatLng(points.first().first,points.first().second))){ b,p-> b.include(LatLng(p.first,p.second)) }.build()
+                                    if(points.size>1)map.easeCamera(org.maplibre.android.camera.CameraUpdateFactory.newLatLngBounds(bounds,48),800)
+                                }
+                            }
                         }
                     }
-                    loadUrl("file:///android_asset/terrain3d.html")
-                }
-            }, update = { view ->
-                val payload = JSONObject.quote(routeGeoJson.toString())
-                view.evaluateJavascript("window.setTrailRoute && window.setTrailRoute(JSON.parse($payload));", null)
-            })
+                },
+                update = {}
+            )
         }
     }
 }

@@ -18,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -39,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -391,7 +393,21 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
                 }
             } else {
                 val p=project
-                Column(Modifier.fillMaxSize().padding(padding)) {
+                Column(Modifier.fillMaxSize().padding(padding).pointerInput(project?.id, projectPage) {
+                    var dragOffset = 0f
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            dragOffset += dragAmount
+                        },
+                        onDragEnd = {
+                            if (dragOffset < -72f) projectPage = "nav"
+                            else if (dragOffset > 72f) projectPage = "gear"
+                            dragOffset = 0f
+                        },
+                        onDragCancel = { dragOffset = 0f }
+                    )
+                }) {
                     Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp).clip(RoundedCornerShape(18.dp)).background(androidx.compose.ui.graphics.Color(0xFFE4E9E1)).padding(4.dp),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                         listOf("gear" to "装备清单","nav" to "户外导航").forEach { (key,label) ->
                             val active=projectPage==key

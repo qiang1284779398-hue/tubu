@@ -245,28 +245,37 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 if (cameraError.isNotBlank()) {
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
                 }
-                Column(
-                    Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp)
-                        .background(Color.Black.copy(alpha = .58f), RoundedCornerShape(12.dp)).padding(12.dp)
+                Row(
+                    Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Text("方位 ${heading.roundToInt()}°  ${compassDirection(heading)}", color = Color.White, fontSize = 14.sp)
-                    Text("俯仰 ${pitch.roundToInt()}° · 横滚 ${roll.roundToInt()}°", color = ArLime, fontSize = 11.sp)
-                }
-                Surface(
-                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
-                    color = Color.Black.copy(alpha = .58f), shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(12.dp), color = ArLime, fontSize = 11.sp)
+                    Column(
+                        Modifier.weight(1f)
+                            .background(Color.Black.copy(alpha = .68f), RoundedCornerShape(12.dp)).padding(10.dp)
+                    ) {
+                        Text("方位 ${heading.roundToInt()}°  ${compassDirection(heading)}", color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        Text("俯仰 ${pitch.roundToInt()}° · 横滚 ${roll.roundToInt()}°", color = ArLime, fontSize = 11.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    }
+                    Surface(
+                        color = Color.Black.copy(alpha = .68f), shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(10.dp), color = ArLime, fontSize = 11.sp, maxLines = 1)
+                    }
                 }
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .navigationBarsPadding().imePadding()
-                        .background(Color.Black.copy(alpha = .92f)).padding(horizontal = 16.dp, vertical = 12.dp),
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState())
+                        .background(Color.Black.copy(alpha = .94f))
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("实景路线导航", color = ArLime, fontSize = 12.sp, maxLines = 1)
+                            Text(projectName, color = ArLime, fontSize = 12.sp, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Text("实景路线导航", color = Color.White, fontSize = 13.sp, maxLines = 1)
                             val match = routeMatch
                             Text(
                                 if (match != null) "距路线 ${match.distanceMeters.roundToInt()} m  ·  剩余 ${formatNavDistance(match.remainingMeters)}"

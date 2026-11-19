@@ -1,16 +1,16 @@
 {
   "version": 8,
-  "name": "TrailKit Cloudless Satellite · EOx Sentinel-2 2016",
+  "name": "TrailKit Esri World Imagery",
   "sources": {
-    "eox-sentinel-2-cloudless": {
+    "esri-world-imagery": {
       "type": "raster",
       "tiles": [
-        "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2016_3857/default/g/{z}/{y}/{x}.jpg"
+        "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
       ],
       "tileSize": 256,
       "minzoom": 0,
-      "maxzoom": 14,
-      "attribution": "EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016)"
+      "maxzoom": 23,
+      "attribution": "Esri, Vantor, Earthstar Geographics, and the GIS User Community"
     }
   },
   "layers": [
@@ -20,11 +20,11 @@
       "paint": { "background-color": "#e6e3d9" }
     },
     {
-      "id": "eox-sentinel-2-cloudless",
+      "id": "esri-world-imagery",
       "type": "raster",
-      "source": "eox-sentinel-2-cloudless",
+      "source": "esri-world-imagery",
       "minzoom": 0,
-      "maxzoom": 18
+      "maxzoom": 23
     }
   ]
 }

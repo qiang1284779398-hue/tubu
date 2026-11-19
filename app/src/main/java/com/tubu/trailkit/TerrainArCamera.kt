@@ -116,7 +116,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
             val start = routePoints.first()
             val distance = haversineForAr(fix.latitude, fix.longitude, start.first, start.second)
             distanceToRouteStart = distance
-            if (distance <= 300.0) startMapPromptVisible = true
+            if (distance <= 1000.0) startMapPromptVisible = true
             startMapPromptHandled = true
         }
     }

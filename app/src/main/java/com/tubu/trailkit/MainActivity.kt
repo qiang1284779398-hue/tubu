@@ -450,7 +450,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                                 Row(verticalAlignment=Alignment.CenterVertically) {
                                     Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center) { Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(27.dp)) }
                                     Spacer(Modifier.width(12.dp))
-                                    Column(Modifier.weight(1f)) { Text(p.name,fontSize=17.sp,fontWeight=FontWeight.Bold); Text(listOf(p.place,p.date).filter{it.isNotBlank()}.joinToString(" · "),fontSize=12.sp,color=muted) }
+                                    Column(Modifier.weight(1f), verticalArrangement=Arrangement.Center) { Text(p.name,fontSize=17.sp,fontWeight=FontWeight.Bold,maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=21.sp); Text(listOf(p.place,p.date).filter{it.isNotBlank()}.joinToString(" · "),fontSize=12.sp,color=muted,maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=16.sp) }
                                     IconButton(onClick={ manageProjectId=p.id }) { Icon(Icons.Default.MoreVert,"项目管理",tint=muted) }
                                 }
                                 Spacer(Modifier.height(12.dp)); HorizontalDivider(color=sand); Spacer(Modifier.height(10.dp))
@@ -582,8 +582,8 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                                     Column(Modifier.fillMaxWidth().padding(20.dp)) {
                                         Text("FIELD NAVIGATION",fontSize=10.sp,fontWeight=FontWeight.Bold,color=androidx.compose.ui.graphics.Color(0xFFB9C9B5))
                                         Spacer(Modifier.height(8.dp))
-                                        Text(p.name,fontSize=22.sp,fontWeight=FontWeight.ExtraBold,color=androidx.compose.ui.graphics.Color.White)
-                                        Text(listOf(p.place,p.date).filter{it.isNotBlank()}.joinToString("  ·  ").ifBlank{"户外路线与环境信息"},fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFFD8E2D7))
+                                        Text(p.name,fontSize=22.sp,fontWeight=FontWeight.ExtraBold,color=androidx.compose.ui.graphics.Color.White,maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=27.sp)
+                                        Text(listOf(p.place,p.date).filter{it.isNotBlank()}.joinToString("  ·  ").ifBlank{"户外路线与环境信息"},fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),maxLines=2,overflow=TextOverflow.Ellipsis,lineHeight=16.sp)
                                         Spacer(Modifier.height(12.dp))
                                         Text(if(p.trackData.isNotBlank()) "已导入徒步轨迹" else "尚未导入 GPX 轨迹",fontSize=12.sp,color=androidx.compose.ui.graphics.Color.White)
                                         Text(if(p.mapPath.isNotBlank()) "离线地图已就绪" else "可导入 MBTiles 离线地图",fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFFD8E2D7))

@@ -600,6 +600,8 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
         }
     }
 
+    }
+
     if (weatherOpen && project != null) TrailWeatherDialog(project.place) { weatherOpen=false }
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }

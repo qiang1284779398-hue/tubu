@@ -55,6 +55,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -201,6 +204,7 @@ private fun deleteProjectNavigationData(context:Context,project:Project) {
 @Composable
 fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) {
     val context= LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var projects by remember { mutableStateOf(loadWithBundledYubeng(context)) }
     var selected by remember { mutableStateOf<String?>(null) }
     var projectPage by remember(selected) { mutableStateOf("gear") }
@@ -253,26 +257,29 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
     }
 
     val gpxImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) try {
-            val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
-            }.orEmpty()
-            if (!displayName.lowercase(Locale.ROOT).endsWith(".gpx")) {
-                error("请选择 .gpx 格式的轨迹文件")
-            }
-            val track = readGpxTrack(context, uri)
-            val summary = track.summary
+        if (uri != null) {
             val target = gpxTargetProjectId
-            if (target != null) {
-                val updated = projects.map { item ->
-                    if (item.id == target) item.copy(route = listOf(item.route, summary).filter { it.isNotBlank() }.joinToString("\n"), trackData=track.encodedPoints,waypointData=track.encodedWaypoints,elevationData=track.encodedElevations) else item
+            coroutineScope.launch {
+                try {
+                    val (displayName, track) = withContext(Dispatchers.IO) {
+                        val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) cursor.getString(0) else null
+                        }.orEmpty()
+                        if (!name.lowercase(Locale.ROOT).endsWith(".gpx")) error("请选择 .gpx 格式的轨迹文件")
+                        name to readGpxTrack(context, uri)
+                    }
+                    if (target != null) {
+                        val updated = projects.map { item ->
+                            if (item.id == target) item.copy(route = listOf(item.route, track.summary).filter { it.isNotBlank() }.joinToString("\n"), trackData=track.encodedPoints, waypointData=track.encodedWaypoints, elevationData=track.encodedElevations) else item
+                        }
+                        persist(context, updated)
+                        projects = updated
+                        Toast.makeText(context, "GPX 轨迹分析完成，已保存到行程信息", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "GPX 导入失败：" + (e.message ?: "文件格式不正确"), Toast.LENGTH_LONG).show()
                 }
-                persist(context, updated)
-                projects = updated
-                Toast.makeText(context, "GPX 轨迹分析完成，已保存到行程信息", Toast.LENGTH_LONG).show()
             }
-        } catch (e: Exception) {
-            Toast.makeText(context, "GPX 导入失败：" + (e.message ?: "文件格式不正确"), Toast.LENGTH_LONG).show()
         }
     }
     val mbtilesImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -631,36 +638,41 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, onSharedGpxHandled: () -> Unit = {}) 
     ) { name,place,date ->
         val p=Project(System.currentTimeMillis().toString(),name,place,date,emptyList())
         val sharedUri = pendingSharedGpx
+        projectDialog = false
         if (sharedUri != null) {
-            try {
-                val displayName = context.contentResolver.query(sharedUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) cursor.getString(0) else null
-                }.orEmpty()
-                if (displayName.isNotBlank() && !displayName.lowercase(Locale.ROOT).endsWith(".gpx")) error("分享的文件不是 GPX 格式")
-                val imported = readGpxTrack(context, sharedUri)
-                val importedProject = p.copy(
-                    route = imported.summary,
-                    trackData = imported.encodedPoints,
-                    waypointData = imported.encodedWaypoints,
-                    elevationData = imported.encodedElevations
-                )
-                save(projects + importedProject)
-                selected = importedProject.id
-                Toast.makeText(context, "项目创建成功，GPX 轨迹已自动导入", Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                save(projects + p)
-                selected = p.id
-                Toast.makeText(context, "项目已创建，但 GPX 导入失败：" + (e.message ?: "文件读取失败") + "。可在项目中重新导入。", Toast.LENGTH_LONG).show()
-            } finally {
-                pendingSharedGpx = null
-                onSharedGpxHandled()
+            coroutineScope.launch {
+                try {
+                    val imported = withContext(Dispatchers.IO) {
+                        val displayName = context.contentResolver.query(sharedUri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                            if (cursor.moveToFirst()) cursor.getString(0) else null
+                        }.orEmpty()
+                        if (displayName.isNotBlank() && !displayName.lowercase(Locale.ROOT).endsWith(".gpx")) error("分享的文件不是 GPX 格式")
+                        readGpxTrack(context, sharedUri)
+                    }
+                    val importedProject = p.copy(
+                        route = imported.summary,
+                        trackData = imported.encodedPoints,
+                        waypointData = imported.encodedWaypoints,
+                        elevationData = imported.encodedElevations
+                    )
+                    save(projects + importedProject)
+                    selected = importedProject.id
+                    Toast.makeText(context, "项目创建成功，GPX 轨迹已自动导入", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    save(projects + p)
+                    selected = p.id
+                    Toast.makeText(context, "项目已创建，但 GPX 导入失败：" + (e.message ?: "文件读取失败") + "。可在项目中重新导入。", Toast.LENGTH_LONG).show()
+                } finally {
+                    pendingSharedGpx = null
+                    onSharedGpxHandled()
+                }
             }
         } else {
             save(projects+p)
             selected=p.id
         }
-        projectDialog=false
     }
+    val managedProject =
     val managedProject = projects.firstOrNull { it.id == manageProjectId }
     if (manageProjectId != null && managedProject != null) {
         AlertDialog(

@@ -92,6 +92,10 @@ internal fun TerrainArCameraDialog(projectName: String, visible: Boolean, onClos
             val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             val listener = object : LocationListener {
                 override fun onLocationChanged(value: Location) { location = value }
+                override fun onProviderEnabled(provider: String) {}
+                override fun onProviderDisabled(provider: String) {}
+                @Deprecated("Deprecated in Android")
+                override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
             }
             try {
                 val last = runCatching { lm.getLastKnownLocation(LocationManager.GPS_PROVIDER) }.getOrNull()

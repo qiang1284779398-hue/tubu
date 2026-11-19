@@ -41,6 +41,8 @@ jobs:
           name: TrailKit-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+      - name: Prepare Android rendering diagnostics
+        run: mkdir -p test-output
       - name: Launch 3D map in Android emulator and inspect rendered frame
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -48,6 +50,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
+          emulator-boot-timeout: 900
           disable-animations: true
           script: |
             adb install -r app/build/outputs/apk/debug/app-debug.apk

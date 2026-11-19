@@ -269,7 +269,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var followGps by remember(projectId) { mutableStateOf(true) }
     var mapOrientation by remember(projectId) { mutableStateOf(prefs.getString("orientation_$projectId","north") ?: "north") }
     var mapBearing by remember(projectId) { mutableFloatStateOf(0f) }
-    var mapFullscreen by remember(projectId) { mutableStateOf(false) }
+    var mapFullscreen by remember(projectId) { mutableStateOf(true) }
     BackHandler(enabled=mapFullscreen) { mapFullscreen=false }
     var heading by remember { mutableFloatStateOf(Float.NaN) }
     var compassAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_UNRELIABLE) }

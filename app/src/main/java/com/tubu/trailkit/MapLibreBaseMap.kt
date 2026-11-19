@@ -363,7 +363,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
                 OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形")}
-                OutlinedButton(onClick={message="Esri World Imagery 的公开浏览接口不是离线导出接口。请使用 Esri 授权的 World Imagery（for Export）服务及符合其许可的软件流程。"},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("Esri 离线影像")}
+                OutlinedButton(onClick={},enabled=false,modifier=Modifier.weight(1f)){Text("Esri 离线需授权")}
             }
             if(busy||complete) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())

@@ -53,9 +53,17 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
-            webChromeClient = object : WebChromeClient() {\n                override fun onConsoleMessage(message: ConsoleMessage): Boolean {\n                    Log.e("TrailKit3D", "JS ${message.lineNumber()}: ${message.message()}")\n                    return true\n                }\n            }
+            webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                    Log.e("TrailKit3D", "JS ${message.lineNumber()}: ${message.message()}")
+                    return true
+                }
+            }
             webViewClient = object : WebViewClient() {
-                override fun onReceivedError(view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError) {\n                    super.onReceivedError(view, request, error)\n                    Log.e("TrailKit3D", "Web error ${error.errorCode}: ${error.description} ${request.url}")\n                }\n                override fun onPageFinished(view: WebView, url: String) {
+                override fun onReceivedError(view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError) {
+                    super.onReceivedError(view, request, error)
+                    Log.e("TrailKit3D", "Web error ${error.errorCode}: ${error.description} ${request.url}")
+                }\n                override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
                     val routeScript = routeJson?.let {
                         "window.__trailkitPendingRoute = $it; if (window.setTrailRoute) window.setTrailRoute($it);"

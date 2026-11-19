@@ -255,20 +255,19 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                                 else if (routePoints.size >= 2) "正在定位 GPX 路线…" else "当前项目没有可用 GPX 轨迹",
                                 color = Color.White, fontSize = 14.sp
                             )
-                            Text(
-                                if (match != null) {
-                                    val turn = upcomingTurn
-                                    if (turn != null && turn.distanceMeters <= 85.0) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                            Text("↑", modifier = Modifier.rotate(turn.angleDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 26.sp)
-                                            Text((if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后", color = Color(0xFFFFC857), fontSize = 12.sp)
-                                        }
-                                    } else {
-                                        Text(turnGuidance(heading, match.bearingDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 12.sp)
+                            if (match != null) {
+                                val turn = upcomingTurn
+                                if (turn != null && turn.distanceMeters <= 85.0) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                        Text("↑", modifier = Modifier.rotate(turn.angleDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 26.sp)
+                                        Text((if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后", color = Color(0xFFFFC857), fontSize = 12.sp)
                                     }
-                                } else "等待 GPS 定位",
-                                color = Color(0xFFFFC857), fontSize = 12.sp
-                            )
+                                } else {
+                                    Text(turnGuidance(heading, match.bearingDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 12.sp)
+                                }
+                            } else {
+                                Text("等待 GPS 定位", color = Color(0xFFFFC857), fontSize = 12.sp)
+                            }
                         }
                         IconButton(onClick = onClose) {
                             Icon(Icons.Default.ArrowBack, "关闭导航", tint = Color.White)

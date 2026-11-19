@@ -160,8 +160,10 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
   -1,1,-1, -1,1,1, 1,1,1, -1,1,-1, 1,1,1, 1,1,-1,
   -1,-1,-1, 1,-1,-1, 1,-1,1, -1,-1,-1, 1,-1,1, -1,-1,1
  ];
- const vertexSource='attribute vec3 p; uniform float a; varying vec3 c; void main(){float x=p.x*cos(a)-p.z*sin(a);float z=p.x*sin(a)+p.z*cos(a);float y=p.y*cos(a*0.73)-z*sin(a*0.73);z=p.y*sin(a*0.73)+z*cos(a*0.73);gl_Position=vec4(x*0.65,y*0.65,z*0.22,1.0);c=abs(p)*0.55+vec3(0.2,0.25,0.15);}';
- const fragmentSource='precision mediump float; varying vec3 c; void main(){gl_FragColor=vec4(c,1.0);}';
+ const vertexSourceV1='attribute vec3 p; uniform float a; varying vec3 c; void main(){float x=p.x*cos(a)-p.z*sin(a);float z=p.x*sin(a)+p.z*cos(a);float y=p.y*cos(a*0.73)-z*sin(a*0.73);z=p.y*sin(a*0.73)+z*cos(a*0.73);gl_Position=vec4(x*0.65,y*0.65,z*0.22,1.0);c=abs(p)*0.55+vec3(0.2,0.25,0.15);}';
+ const fragmentSourceV1='precision mediump float; varying vec3 c; void main(){gl_FragColor=vec4(c,1.0);}';
+ const vertexSourceV2='#version 300 es\\nin vec3 p; uniform float a; out vec3 c; void main(){float x=p.x*cos(a)-p.z*sin(a);float z=p.x*sin(a)+p.z*cos(a);float y=p.y*cos(a*0.73)-z*sin(a*0.73);z=p.y*sin(a*0.73)+z*cos(a*0.73);gl_Position=vec4(x*0.65,y*0.65,z*0.22,1.0);c=abs(p)*0.55+vec3(0.2,0.25,0.15);}';
+ const fragmentSourceV2='#version 300 es\\nprecision mediump float; in vec3 c; out vec4 outColor; void main(){outColor=vec4(c,1.0);}';
  function report(msg,error){
   diagnostic.textContent=msg;
   diagnostic.style.display='block';
@@ -199,9 +201,10 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
    if(!gl)throw Error('WebGL 上下文创建失败（WebGL1/2 都返回 null）');
    const version=gl.getParameter(gl.VERSION);
    const renderer=gl.getParameter(gl.RENDERER);
+   const isWebGL2=typeof WebGL2RenderingContext!=='undefined' && gl instanceof WebGL2RenderingContext;
    const prog=gl.createProgram();
-   gl.attachShader(prog,shader(gl.VERTEX_SHADER,vertexSource));
-   gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,fragmentSource));
+   gl.attachShader(prog,shader(gl.VERTEX_SHADER,isWebGL2?vertexSourceV2:vertexSourceV1));
+   gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,isWebGL2?fragmentSourceV2:fragmentSourceV1));
    gl.linkProgram(prog);
    if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error('Shader 链接失败：'+gl.getProgramInfoLog(prog));
    gl.useProgram(prog);

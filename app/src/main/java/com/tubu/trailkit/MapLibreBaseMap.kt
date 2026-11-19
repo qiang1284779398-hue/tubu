@@ -208,6 +208,12 @@ internal fun MapLibreBaseMap(
         verticalAlignment = Alignment.CenterVertically
     ) {
         when {
+            styleUrl.contains("esri") -> Text(
+                "Powered by Esri · Source: Esri, Maxar, Earthstar Geographics",
+                modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.esri.com/en-us/legal/terms/full-master-agreement"))) },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
             styleUrl.contains("geovis") -> Text(
                 "© 中科星图",
                 modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://open.geovisearth.com/product/Image_Map"))) },
@@ -282,6 +288,7 @@ private fun splitOfflineBounds(west:Double,south:Double,east:Double,north:Double
 internal const val TRAILKIT_TERRAIN_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-terrain.json"
 internal const val TRAILKIT_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-satellite.json"
 internal const val TRAILKIT_GEOVIS_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-geovis-satellite.json"
+internal const val TRAILKIT_ESRI_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-esri-satellite.json"
 
 @Composable
 internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId:String,selectedStyle:String,onSelectStyle:(String)->Unit) {
@@ -394,7 +401,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
                 Text("${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · ${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)
             }
-            Text("标准卫星：Sentinel-2 Cloudless 2024（约 10 米级）。高清卫星：星图云影像 API（中国大陆官方标称最高 0.5 米，具体以雨崩实际瓦片为准），需 Token、联网和服务额度。高清源当前仅开放在线浏览；离线下载需先确认授权。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("标准卫星：Sentinel-2 Cloudless 2024（约 10 米级，可下载离线）。Esri 高清卫星免 Token、仅在线浏览，雨崩清晰度以实际影像为准；星图云高清源仍需个人 Token。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

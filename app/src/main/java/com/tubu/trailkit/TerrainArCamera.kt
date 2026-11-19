@@ -141,18 +141,6 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
         }
     }
 
-    val view = androidx.compose.ui.platform.LocalView.current
-    val activity = context.findActivity()
-    DisposableEffect(activity, visible) {
-        val window = activity?.window
-        val controller = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
-        controller?.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller?.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-        onDispose {
-            controller?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-        }
-    }
-
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onClose,
         properties = androidx.compose.ui.window.DialogProperties(
@@ -160,6 +148,25 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
             decorFitsSystemWindows = false
         )
     ) {
+        // A Compose Dialog owns a separate Window. Apply immersive mode to that Window,
+        // not the underlying Activity Window, otherwise the Activity's title/status UI
+        // can bleed through at the top when the dialog is shown.
+        val dialogView = androidx.compose.ui.platform.LocalView.current
+        val dialogWindow = (dialogView.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+        DisposableEffect(dialogWindow) {
+            if (dialogWindow != null) {
+                androidx.core.view.WindowCompat.setDecorFitsSystemWindows(dialogWindow, false)
+                val controller = androidx.core.view.WindowCompat.getInsetsController(dialogWindow, dialogWindow.decorView)
+                controller.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
+            onDispose {
+                if (dialogWindow != null) {
+                    androidx.core.view.WindowCompat.getInsetsController(dialogWindow, dialogWindow.decorView)
+                        .show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                }
+            }
+        }
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             if (cameraGranted) {
                 AndroidView(
@@ -229,21 +236,22 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
                 }
                 Column(
-                    Modifier.align(Alignment.TopStart).padding(16.dp)
+                    Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp)
                         .background(Color.Black.copy(alpha = .58f), RoundedCornerShape(12.dp)).padding(12.dp)
                 ) {
                     Text("方位 ${heading.roundToInt()}°  ${compassDirection(heading)}", color = Color.White, fontSize = 14.sp)
                     Text("俯仰 ${pitch.roundToInt()}° · 横滚 ${roll.roundToInt()}°", color = ArLime, fontSize = 11.sp)
                 }
                 Surface(
-                    modifier = Modifier.align(Alignment.TopEnd).padding(16.dp),
+                    modifier = Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(16.dp),
                     color = Color.Black.copy(alpha = .58f), shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(if (sensorReady) "传感器正常" else "读取传感器…", Modifier.padding(12.dp), color = ArLime, fontSize = 11.sp)
                 }
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                        .background(Color.Black.copy(alpha = .82f)).padding(horizontal = 16.dp, vertical = 12.dp),
+                        .navigationBarsPadding().imePadding()
+                        .background(Color.Black.copy(alpha = .92f)).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

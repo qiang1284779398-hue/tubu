@@ -23,9 +23,20 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
     if (!visible) return
     val context = LocalContext.current
     val points = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
+    val routeJson = remember(points) {
+        if (points.size > 1) {
+            val coordinates = JSONArray()
+            points.forEach { p -> coordinates.put(JSONArray().put(p.second).put(p.first)) }
+            JSONObject()
+                .put("type", "Feature")
+                .put("properties", JSONObject())
+                .put("geometry", JSONObject().put("type", "LineString").put("coordinates", coordinates))
+                .toString()
+        } else null
+    }
     BackHandler(onBack = onClose)
 
-    val webView = remember(context) {
+    val webView = remember(context, routeJson) {
         WebView(context).apply {
             setBackgroundColor(Color.rgb(18, 27, 24))
             settings.javaScriptEnabled = true
@@ -40,7 +51,10 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
-                    view.evaluateJavascript("window.__trailkitPageReady = true;", null)
+                    val routeScript = routeJson?.let {
+                        "window.__trailkitPendingRoute = $it; if (window.setTrailRoute) window.setTrailRoute($it);"
+                    } ?: ""
+                    view.evaluateJavascript("window.__trailkitPageReady = true; $routeScript", null)
                 }
             }
             isVerticalScrollBarEnabled = false
@@ -56,18 +70,6 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                 webView.loadUrl("about:blank")
                 webView.destroy()
             } catch (_: Exception) {}
-        }
-    }
-
-    LaunchedEffect(webView, points) {
-        if (points.size > 1) {
-            val coordinates = JSONArray()
-            points.forEach { p -> coordinates.put(JSONArray().put(p.second).put(p.first)) }
-            val feature = JSONObject()
-                .put("type", "Feature")
-                .put("properties", JSONObject())
-                .put("geometry", JSONObject().put("type", "LineString").put("coordinates", coordinates))
-            webView.evaluateJavascript("window.__trailkitPendingRoute = $feature; if (window.setTrailRoute) window.setTrailRoute($feature);", null)
         }
     }
 

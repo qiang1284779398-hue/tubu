@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -36,7 +37,7 @@ internal fun Terrain3DDialog(projectName:String,encodedTrack:String,visible:Bool
     }
     Text("原生 GPU 地形网格 · 卫星纹理 · 高程数据 · GPX 轨迹",style=MaterialTheme.typography.bodySmall)
    }}
-   AndroidView(Modifier.weight(1f).fillMaxWidth(),factory={view})
+   AndroidView(factory={view},modifier=Modifier.weight(1f).fillMaxWidth())
    Surface(color=MaterialTheme.colorScheme.surface){Text(status,Modifier.fillMaxWidth().padding(12.dp),style=MaterialTheme.typography.bodySmall)}
   }
  }

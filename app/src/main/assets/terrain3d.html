@@ -24,7 +24,8 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
 (function(){
  const status=document.getElementById('status');
  const say=(text,error)=>{status.textContent=text;status.className=error?'error':'';};
- if(!window.maplibregl){say('地图引擎未启动：本地 maplibre-gl.js 未能执行。',true);return;}\n try{const test=document.createElement('canvas');const gl=test.getContext('webgl2')||test.getContext('webgl');if(!gl){say('手机 WebView 未提供 WebGL 图形环境，无法显示三维地图。',true);return;}gl.getExtension('WEBGL_lose_context')?.loseContext();}catch(e){say('WebGL 初始化异常：'+(e.message||e),true);return;}
+ if(!window.maplibregl){say('地图引擎未启动：本地 maplibre-gl.js 未能执行。',true);return;}
+ try{const test=document.createElement('canvas');const gl=test.getContext('webgl2')||test.getContext('webgl');if(!gl){say('手机 WebView 未提供 WebGL 图形环境，无法显示三维地图。',true);return;}gl.getExtension('WEBGL_lose_context')?.loseContext();}catch(e){say('WebGL 初始化异常：'+(e.message||e),true);return;}
  try{
   const map=new maplibregl.Map({
    container:'map',

@@ -121,7 +121,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
         title = {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("实景 AR 山体对准", color = Color.White, fontSize = 18.sp)
+                    Text("实景路线导航", color = Color.White, fontSize = 18.sp)
                     Text("$projectName · CAMERA / SENSOR", color = ArLime, fontSize = 10.sp)
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "关闭", tint = Color.White) }

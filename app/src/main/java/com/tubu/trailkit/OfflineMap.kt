@@ -1113,6 +1113,49 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     canvas.drawLine(bx,by-7f,bx,by+5f,overlay);canvas.drawLine(bx+bar,by-7f,bx+bar,by+5f,overlay)
                     canvas.drawText(if(nice>=1000)String.format(Locale.CHINA,"%.1f km",nice/1000.0) else "${nice.roundToInt()} m",bx,by-13f,overlay)
                     }
+                    Column(Modifier.align(Alignment.TopStart).padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Surface(
+                            modifier=Modifier.size(46.dp).clickable {
+                                if(navigationPoints.size>=2) {
+                                    val minLat=navigationPoints.minOf{it.first};val maxLat=navigationPoints.maxOf{it.first}
+                                    val minLon=navigationPoints.minOf{it.second};val maxLon=navigationPoints.maxOf{it.second}
+                                    centerLat=(minLat+maxLat)/2.0;centerLon=(minLon+maxLon)/2.0
+                                    val dx=(worldX(maxLon,0)-worldX(minLon,0)).coerceAtLeast(1.0)
+                                    val dy=(worldY(maxLat,0)-worldY(minLat,0)).coerceAtLeast(1.0)
+                                    val density=context.resources.displayMetrics.density
+                                    val width=context.resources.displayMetrics.widthPixels*if(mapFullscreen)0.92 else 0.82
+                                    val height=(if(mapFullscreen)context.resources.displayMetrics.heightPixels.toDouble() else 360.0*density)*0.82
+                                    val fitScale=min((width-72.0)/dx,(height-72.0)/dy).coerceAtLeast(0.25)
+                                    zoom=(ln(fitScale)/ln(2.0)).toFloat().coerceIn((info?.minZoom?:2).toFloat(),zoomLimit)
+                                    followGps=false
+                                }
+                            },
+                            shape=RoundedCornerShape(14.dp),color=Color.White.copy(alpha=0.96f),shadowElevation=5.dp
+                        ) { Box(contentAlignment=Alignment.Center) { Text("⤢",fontSize=27.sp,fontWeight=FontWeight.SemiBold,color=Color(0xFF183C32)) } }
+                        Surface(
+                            modifier=Modifier.size(46.dp).clickable {
+                                if(navigationPoints.isNotEmpty()) {
+                                    centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second
+                                    zoom=(info?.centerZoom?:15f).coerceIn((info?.minZoom?:2).toFloat(),zoomLimit)
+                                    followGps=false
+                                }
+                            },
+                            shape=RoundedCornerShape(14.dp),color=Color.White.copy(alpha=0.96f),shadowElevation=5.dp
+                        ) { Box(contentAlignment=Alignment.Center) { Text("⚑",fontSize=24.sp,color=Color(0xFF183C32)) } }
+                        Surface(
+                            modifier=Modifier.size(46.dp).clickable {
+                                val loc=current?.takeIf { it.accuracy<=1500f }
+                                if(loc!=null) {
+                                    centerLat=loc.latitude;centerLon=loc.longitude
+                                    zoom=maxOf(zoom,info?.centerZoom?:15f).coerceIn((info?.minZoom?:2).toFloat(),zoomLimit)
+                                    followGps=true
+                                } else {
+                                    android.widget.Toast.makeText(context,"尚未获取到有效定位，请先开启 GPS 导航",android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape=RoundedCornerShape(14.dp),color=Color.White.copy(alpha=0.96f),shadowElevation=5.dp
+                        ) { Box(contentAlignment=Alignment.Center) { Text("◎",fontSize=27.sp,fontWeight=FontWeight.Bold,color=Color(0xFF2478E8)) } }
+                    }
                     Surface(modifier=Modifier.align(Alignment.TopEnd).padding(12.dp).size(48.dp).clickable{mapFullscreen=!mapFullscreen},shape=RoundedCornerShape(24.dp),color=Color.White.copy(alpha=0.96f),shadowElevation=5.dp) {
                         Box(contentAlignment=Alignment.Center) { Text(if(mapFullscreen)"×" else "⛶",fontSize=if(mapFullscreen)30.sp else 27.sp,fontWeight=FontWeight.Bold,color=Color(0xFF183C32)) }
                     }
@@ -1375,7 +1418,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         reverseRoute=nextReverse;confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear();announcedApproaches.clear();announcedTurns.clear();lastTurnAnnouncementProgress=-1000.0
                     },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
                     OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
-                    OutlinedButton(onClick={if(current!=null){centerLat=current!!.latitude;centerLon=current!!.longitude;followGps=true}else if(navigationPoints.isNotEmpty()){centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second}} ,modifier=Modifier.weight(1f)){Text("回到当前位置")}
                 }
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                     Checkbox(checked=voiceGuidance,onCheckedChange={
@@ -1391,29 +1433,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}
                     OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost(zoomLimit)},modifier=Modifier.weight(1f)){Text("+ 放大")}
                     OutlinedButton(onClick={confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear();announcedApproaches.clear();announcedTurns.clear();lastTurnAnnouncementProgress=-1000.0;prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()},modifier=Modifier.weight(1f)){Text("重置进度")}
-                }
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick={
-                        if(navigationPoints.size>=2) {
-                            val minLat=navigationPoints.minOf{it.first};val maxLat=navigationPoints.maxOf{it.first}
-                            val minLon=navigationPoints.minOf{it.second};val maxLon=navigationPoints.maxOf{it.second}
-                            centerLat=(minLat+maxLat)/2.0;centerLon=(minLon+maxLon)/2.0
-                            val dx=(worldX(maxLon,0)-worldX(minLon,0)).coerceAtLeast(1.0)
-                            val dy=(worldY(maxLat,0)-worldY(minLat,0)).coerceAtLeast(1.0)
-                            val width=context.resources.displayMetrics.widthPixels*0.86
-                            val height=310.0*context.resources.displayMetrics.density
-                            val fitScale=min((width-80.0)/dx,(height-80.0)/dy).coerceAtLeast(1.0)
-                            zoom=(ln(fitScale)/ln(2.0)).toFloat().coerceIn((info?.minZoom?:3).toFloat(),zoomLimit)
-                            followGps=false
-                        }
-                    },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text("全览整条路线")}
-                    OutlinedButton(onClick={
-                        if(navigationPoints.isNotEmpty()) {
-                            centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second
-                            zoom=(info?.centerZoom?:14f).coerceIn((info?.minZoom?:3).toFloat(),(info?.maxZoom?:18).toFloat())
-                            followGps=false
-                        }
-                    },modifier=Modifier.weight(1f),enabled=navigationPoints.isNotEmpty()){Text("定位路线起点")}
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={

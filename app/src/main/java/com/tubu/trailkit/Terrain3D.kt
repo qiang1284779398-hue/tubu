@@ -39,7 +39,7 @@ internal fun Terrain3DDialog(projectName:String,encodedTrack:String,visible:Bool
      Column(Modifier.weight(1f)){Text("NATIVE OPENGL ES · TERRAIN",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary);Text("$projectName · 全轨迹三维地形",style=MaterialTheme.typography.titleMedium)}
      TextButton(onClick=onClose){Text("关闭")}
     }
-    Text("多瓦片高程拼接 · 高程设色 · 山体阴影 · GPX 全线",style=MaterialTheme.typography.bodySmall)
+    Text("沉浸式山地视角 · 单指转头 · 双指行走 · 捏合变焦",style=MaterialTheme.typography.bodySmall)
    }}
    AndroidView(factory={view},modifier=Modifier.weight(1f).fillMaxWidth())
    Surface(color=MaterialTheme.colorScheme.surface){Text(status,Modifier.fillMaxWidth().padding(12.dp),style=MaterialTheme.typography.bodySmall)}
@@ -48,23 +48,22 @@ internal fun Terrain3DDialog(projectName:String,encodedTrack:String,visible:Bool
 }
 private class TerrainSurface(c:android.content.Context,pts:List<Pair<Double,Double>>,report:(String)->Unit):GLSurfaceView(c){
  private val renderer=TerrainRenderer(pts,report)
- private var lastX=0f;private var lastY=0f;private var lastSpan=0f;private var lastAngle=0f
+ private var lastX=0f;private var lastY=0f;private var lastSpan=0f
  init{setEGLContextClientVersion(2);preserveEGLContextOnPause=true;setRenderer(renderer);renderMode=RENDERMODE_CONTINUOUSLY}
  private fun span(e:MotionEvent):Float{val dx=e.getX(0)-e.getX(1);val dy=e.getY(0)-e.getY(1);return hypot(dx,dy)}
- private fun angle(e:MotionEvent)=Math.toDegrees(atan2((e.getY(1)-e.getY(0)).toDouble(),(e.getX(1)-e.getX(0)).toDouble())).toFloat()
  private fun centerX(e:MotionEvent)=if(e.pointerCount>1)(e.getX(0)+e.getX(1))*.5f else e.x
  private fun centerY(e:MotionEvent)=if(e.pointerCount>1)(e.getY(0)+e.getY(1))*.5f else e.y
  override fun onTouchEvent(e:MotionEvent):Boolean{
   when(e.actionMasked){
    MotionEvent.ACTION_DOWN->{lastX=e.x;lastY=e.y;lastSpan=0f}
-   MotionEvent.ACTION_POINTER_DOWN->{lastX=centerX(e);lastY=centerY(e);lastSpan=span(e);lastAngle=angle(e)}
+   MotionEvent.ACTION_POINTER_DOWN->{lastX=centerX(e);lastY=centerY(e);lastSpan=span(e)}
    MotionEvent.ACTION_MOVE->{
     val cx=centerX(e);val cy=centerY(e)
-    renderer.pan(cx-lastX,cy-lastY,height.coerceAtLeast(1))
+    if(e.pointerCount==1){renderer.look(cx-lastX,cy-lastY)}
     if(e.pointerCount>=2){
+     renderer.move(cx-lastX,cy-lastY,height.coerceAtLeast(1))
      val s=span(e);if(lastSpan>0f&&s>0f)renderer.zoom(s/lastSpan)
-     val a=angle(e);var da=a-lastAngle;if(da>180f)da-=360f;if(da< -180f)da+=360f
-     renderer.rotate(da,0f);lastSpan=s;lastAngle=a
+     lastSpan=s
     }
     lastX=cx;lastY=cy
    }
@@ -79,11 +78,12 @@ private class TerrainSurface(c:android.content.Context,pts:List<Pair<Double,Doub
  }
 }
 private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(String)->Unit):GLSurfaceView.Renderer{
- @Volatile private var yaw=-22f
- @Volatile private var pitch=54f
- @Volatile private var cameraDistance=3.35f
- @Volatile private var panX=0f
- @Volatile private var panY=0f
+ @Volatile @Volatile private var yaw=0f
+ @Volatile private var pitch=-8f
+ @Volatile private var cameraX=0f
+ @Volatile private var cameraY=-1.02f
+ @Volatile private var cameraZ=0.18f
+ @Volatile private var cameraFov=72f
  private var program=0
  private var texture=0
  private var pendingTexture:Bitmap?=null
@@ -95,13 +95,19 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
  private var routeCount=0
  private var w=1;private var h=1
  private val proj=FloatArray(16);private val view=FloatArray(16);private val model=FloatArray(16);private val vp=FloatArray(16);private val mvp=FloatArray(16)
- fun rotate(dx:Float,dy:Float){yaw=(yaw+dx)%360f;pitch=(pitch+dy).coerceIn(20f,78f)}
- fun pan(dx:Float,dy:Float,viewHeight:Int){
-  val scale=cameraDistance*1.15f/viewHeight.coerceAtLeast(1)
-  panX=(panX-dx*scale).coerceIn(-12f,12f)
-  panY=(panY+dy*scale).coerceIn(-12f,12f)
+ fun look(dx:Float,dy:Float){
+  yaw=(yaw+dx*.24f)%360f
+  pitch=(pitch-dy*.22f).coerceIn(-72f,68f)
  }
- fun zoom(scale:Float){if(scale.isFinite()&&scale>0f)cameraDistance=(cameraDistance/scale).coerceIn(.72f,20f)}
+ fun move(dx:Float,dy:Float,viewHeight:Int){
+  val step=2.8f/viewHeight.coerceAtLeast(1)
+  val strafe=dx*step
+  val forward=-dy*step
+  val a=Math.toRadians(yaw.toDouble())
+  cameraX=(cameraX+cos(a).toFloat()*strafe+sin(a).toFloat()*forward).coerceIn(-2.2f,2.2f)
+  cameraY=(cameraY-sin(a).toFloat()*strafe+cos(a).toFloat()*forward).coerceIn(-2.2f,2.2f)
+ }
+ fun zoom(scale:Float){if(scale.isFinite()&&scale>0f)cameraFov=(cameraFov/scale).coerceIn(16f,96f)}
  override fun onSurfaceCreated(gl:GL10?,cfg:EGLConfig?){
   GLES20.glClearColor(.12f,.15f,.13f,1f);GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glDisable(GLES20.GL_CULL_FACE)
   val vs="attribute vec3 p;attribute vec2 uv;uniform mat4 m;varying vec2 t;void main(){gl_Position=m*vec4(p,1.);t=uv;}"
@@ -239,16 +245,21 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    val rb=ByteBuffer.allocateDirect(route.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
    route.forEach{rb.put(it)};rb.position(0)
    synchronized(this){vertices=vb;indices=ib;indexCount=ix.size;routeBuffer=rb;routeCount=route.size/3;pendingTexture=texBitmap;ready=true}
-   report("全线地形已拼接："+loaded+" 张 DEM · GPX "+(route.size/3)+" 个点 · 高程设色与山体阴影。单指平移，双指缩放与旋转。")
+   val nearEdge=sampleHeight(heights,(rasterSize-1)*.5f,(rasterSize-1)*.94f,rasterSize)
+   cameraX=0f;cameraY=-.92f;cameraZ=((nearEdge-(minElev+maxElev)*.5f)/groundSpan*5.0).toFloat()+.035f
+   report("沉浸式山地视角已就绪："+loaded+" 张 DEM · 单指环视 · 双指移动 · 捏合缩放。")
   }catch(e:Exception){report("地形加载失败："+(e.message?:e.javaClass.simpleName)+"；请检查网络后重试。")}
   finally{mosaic?.recycle()}
  }
  override fun onSurfaceChanged(gl:GL10?,width:Int,height:Int){w=width.coerceAtLeast(1);h=height.coerceAtLeast(1);GLES20.glViewport(0,0,w,h)}
  override fun onDrawFrame(gl:GL10?){
   GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT);if(program==0)return
-  Matrix.perspectiveM(proj,0,43f,w.toFloat()/h,.1f,50f)
-  Matrix.setLookAtM(view,0,panX,panY-cameraDistance*.78f,cameraDistance*.63f,panX,panY,0f,0f,0f,1f)
-  Matrix.setIdentityM(model,0);Matrix.rotateM(model,0,pitch,1f,0f,0f);Matrix.rotateM(model,0,yaw,0f,0f,1f)
+  Matrix.perspectiveM(proj,0,cameraFov,w.toFloat()/h,.015f,80f)
+  val yr=Math.toRadians(yaw.toDouble());val pr=Math.toRadians(pitch.toDouble())
+  val cp=cos(pr).toFloat()
+  val fx=sin(yr).toFloat()*cp;val fy=cos(yr).toFloat()*cp;val fz=sin(pr).toFloat()
+  Matrix.setLookAtM(view,0,cameraX,cameraY,cameraZ,cameraX+fx,cameraY+fy,cameraZ+fz,0f,0f,1f)
+  Matrix.setIdentityM(model,0)
   Matrix.multiplyMM(vp,0,proj,0,view,0);Matrix.multiplyMM(mvp,0,vp,0,model,0)
   GLES20.glUseProgram(program)
   if(texture==0){

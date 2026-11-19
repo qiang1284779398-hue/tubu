@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -248,7 +249,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("$projectName · 实景路线导航", color = ArLime, fontSize = 12.sp)
+                            Text("$projectName · 实景路线导航", color = ArLime, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             val match = routeMatch
                             Text(
                                 if (match != null) "距路线 ${match.distanceMeters.roundToInt()} m  ·  剩余 ${formatNavDistance(match.remainingMeters)}"
@@ -258,12 +259,12 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                             if (match != null) {
                                 val turn = upcomingTurn
                                 if (turn != null && turn.distanceMeters <= 85.0) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                                         Text("↑", modifier = Modifier.rotate(turn.angleDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 26.sp)
-                                        Text((if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后", color = Color(0xFFFFC857), fontSize = 12.sp)
+                                        Text((if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后", modifier = Modifier.weight(1f), color = Color(0xFFFFC857), fontSize = 12.sp, maxLines = 2)
                                     }
                                 } else {
-                                    Text(turnGuidance(heading, match.bearingDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 12.sp)
+                                    Text(turnGuidance(heading, match.bearingDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 12.sp, maxLines = 2)
                                 }
                             } else {
                                 Text("等待 GPS 定位", color = Color(0xFFFFC857), fontSize = 12.sp)

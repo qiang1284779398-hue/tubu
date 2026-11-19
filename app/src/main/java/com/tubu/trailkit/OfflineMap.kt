@@ -428,7 +428,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         }
                         previousAccepted=Location(location)
                     }
-                    current=Location(location)
+                    val filteredLocation=TrailLocationFilter.apply(location)
+                    current=filteredLocation
                     gpsError=if(location.accuracy<=75f) "" else "当前定位精度 ±${location.accuracy.roundToInt()} 米；精度较低，仍显示实时位置"
                     if(isRecording && age in 0L..20000L && location.accuracy<=100f) {
                         val previousRecorded=recordedPoints.lastOrNull()

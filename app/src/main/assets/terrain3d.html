@@ -9,6 +9,7 @@ html,body,#map{margin:0;width:100%;height:100%;min-height:100%;background:#e8ece
 .maplibregl-ctrl-group{border-radius:12px!important;overflow:hidden}
 </style></head><body>
 <div id="map"></div><div id="status">正在启动三维地图引擎…</div>
+<script src="maplibre-gl.js" onerror="document.getElementById('status').textContent='MapLibre 地图引擎文件加载失败。'"></script>
 <script>
 (function(){
  const status=document.getElementById('status');
@@ -36,6 +37,7 @@ html,body,#map{margin:0;width:100%;height:100%;min-height:100%;background:#e8ece
    map.addLayer({id:'trail-route-casing',type:'line',source:'trail-route',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#10251e','line-width':7,'line-opacity':.9}});
    map.addLayer({id:'trail-route-line',type:'line',source:'trail-route',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffb547','line-width':4}});
    message('地图已启动。若底图空白，请检查网络。双指倾斜 / 双指旋转 / 捏合缩放');
+   if(window.pendingTrailRoute)window.setTrailRoute(window.pendingTrailRoute);
   });
   map.on('error',function(e){const err=e&&e.error?e.error.message:'未知资源错误';message('地图资源请求失败：'+err+'。请确认网络可访问 Esri 与高程服务。',true);});
   map.on('webglcontextlost',function(){message('手机图形渲染上下文丢失，请关闭页面后重新进入。',true);});
@@ -43,11 +45,11 @@ html,body,#map{margin:0;width:100%;height:100%;min-height:100%;background:#e8ece
    if(!map.getSource('trail-route')){window.pendingTrailRoute=feature;return;}
    map.getSource('trail-route').setData({type:'FeatureCollection',features:[feature]});
    const coords=feature.geometry.coordinates;
-   if(coords&&coords.length>1){const bounds=coords.reduce((b,p)=>b.extend(p),new maplibregl.LngLatBounds(coords[0],coords[0]));map.fitBounds(bounds,{padding:48,maxZoom:14,duration:900);}
+   if(coords&&coords.length>1){
+    const bounds=coords.reduce((b,p)=>b.extend(p),new maplibregl.LngLatBounds(coords[0],coords[0]));
+    map.fitBounds(bounds,{padding:48,maxZoom:14,duration:900});
+   }
   };
-  map.once('load',function(){if(window.pendingTrailRoute)window.setTrailRoute(window.pendingTrailRoute);});
  }catch(e){message('三维地图初始化失败：'+(e&&e.message?e.message:String(e)),true);}
 })();
-</script>
-<script src="maplibre-gl.js" onerror="document.getElementById('status').textContent='MapLibre 地图引擎文件加载失败。'"></script>
-</body></html>
+</script></body></html>

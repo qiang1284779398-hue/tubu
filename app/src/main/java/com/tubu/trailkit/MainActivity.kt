@@ -99,7 +99,9 @@ private fun loadWithBundledYubeng(context:Context):List<Project> {
         return current
     }
     return try {
-        val encoded=context.assets.open("yubeng_route.dat").bufferedReader(Charsets.UTF_8).use { it.readText().trim() }
+        val encoded=buildString {
+            for(part in 1..6) append(context.assets.open("yubeng_route_part${part}.dat").bufferedReader(Charsets.UTF_8).use { it.readText().trim() })
+        }
         val compressed=android.util.Base64.decode(encoded,android.util.Base64.DEFAULT)
         val lines=java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(compressed)).bufferedReader(Charsets.UTF_8).use { it.readLines() }
         val track=lines.getOrNull(0).orEmpty()

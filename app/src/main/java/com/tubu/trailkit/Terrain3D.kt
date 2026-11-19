@@ -97,11 +97,11 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
  private val proj=FloatArray(16);private val view=FloatArray(16);private val model=FloatArray(16);private val vp=FloatArray(16);private val mvp=FloatArray(16)
  fun rotate(dx:Float,dy:Float){yaw=(yaw+dx)%360f;pitch=(pitch+dy).coerceIn(20f,78f)}
  fun pan(dx:Float,dy:Float,viewHeight:Int){
-  val scale=cameraDistance*2.0f/viewHeight.coerceAtLeast(1)
-  panX=(panX+dx*scale).coerceIn(-5f,5f)
-  panY=(panY-dy*scale).coerceIn(-5f,5f)
+  val scale=cameraDistance*1.15f/viewHeight.coerceAtLeast(1)
+  panX=(panX-dx*scale).coerceIn(-12f,12f)
+  panY=(panY+dy*scale).coerceIn(-12f,12f)
  }
- fun zoom(scale:Float){if(scale.isFinite()&&scale>0f)cameraDistance=(cameraDistance/scale).coerceIn(1.05f,12f)}
+ fun zoom(scale:Float){if(scale.isFinite()&&scale>0f)cameraDistance=(cameraDistance/scale).coerceIn(.72f,20f)}
  override fun onSurfaceCreated(gl:GL10?,cfg:EGLConfig?){
   GLES20.glClearColor(.12f,.15f,.13f,1f);GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glDisable(GLES20.GL_CULL_FACE)
   val vs="attribute vec3 p;attribute vec2 uv;uniform mat4 m;varying vec2 t;void main(){gl_Position=m*vec4(p,1.);t=uv;}"
@@ -153,12 +153,12 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    var minY=projected.minOf{it.second};var maxY=projected.maxOf{it.second}
    val padX=max(48.0,(maxX-minX)*.075);val padY=max(48.0,(maxY-minY)*.075)
    minX-=padX;maxX+=padX;minY-=padY;maxY+=padY
-   var z=12
-   while(z>9){
+   var z=14
+   while(z>10){
     val factor=2.0.pow((12-z).toDouble())
     val tileCols=floor(maxX/factor/256).toInt()-floor(minX/factor/256).toInt()+1
     val tileRows=floor(maxY/factor/256).toInt()-floor(minY/factor/256).toInt()+1
-    if(tileCols*tileRows<=16)break
+    if(tileCols*tileRows<=64 && tileCols<=16 && tileRows<=16)break
     z--
    }
    val scale=2.0.pow((12-z).toDouble())
@@ -166,7 +166,7 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    val tx0=floor(minX/256).toInt();val tx1=floor(maxX/256).toInt()
    val ty0=floor(minY/256).toInt();val ty1=floor(maxY/256).toInt()
    val cols=tx1-tx0+1;val rows=ty1-ty0+1
-   require(cols in 1..16&&rows in 1..16){"轨迹范围过大，无法安全加载 DEM"}
+   require(cols in 1..16&&rows in 1..16&&cols*rows<=64){"轨迹范围过大，无法安全加载 DEM"}
    val composite=Bitmap.createBitmap(cols*256,rows*256,Bitmap.Config.ARGB_8888);mosaic=composite
    val canvas=Canvas(composite)
    fun get(url:String):ByteArray{
@@ -180,7 +180,7 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
     canvas.drawBitmap(tile,(tx-tx0)*256f,(ty-ty0)*256f,null);tile.recycle();loaded++
     report("正在拼接全线地形 DEM："+loaded+"/"+(cols*rows)+" 张瓦片…")
    }
-   val rasterSize=1025;val heights=FloatArray(rasterSize*rasterSize)
+   val rasterSize=1537;val heights=FloatArray(rasterSize*rasterSize)
    val left=minX-tx0*256.0;val top=minY-ty0*256.0
    val spanPxX=max(1.0,maxX-minX);val spanPxY=max(1.0,maxY-minY)
    for(y in 0 until rasterSize){
@@ -196,22 +196,24 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    val groundSpan=max(spanPxX,spanPxY)*metersPerPixel
    val aspectX=(spanPxX/max(spanPxX,spanPxY)).toFloat()
    val aspectY=(spanPxY/max(spanPxX,spanPxY)).toFloat()
-   val v=FloatArray(129*129*5);var k=0
-   for(y in 0..128)for(x in 0..128){
-    val u=x/128f;val vv=y/128f;val elev=sampleHeight(heights,u*1024f,vv*1024f,rasterSize)
+   val v=FloatArray(255*255*5);var k=0
+   for(y in 0 until 255)for(x in 0 until 255){
+    val u=x/254f;val vv=y/254f;val elev=sampleHeight(heights,u*(rasterSize-1),vv*(rasterSize-1),rasterSize)
     val zPos=((elev-(minElev+maxElev)*.5f)/groundSpan*5.0).toFloat()
     v[k++]=(u-.5f)*1.72f*aspectX;v[k++]=(.5f-vv)*1.72f*aspectY;v[k++]=zPos;v[k++]=u;v[k++]=vv
    }
-   val ix=ShortArray(128*128*6);k=0
-   for(y in 0 until 128)for(x in 0 until 128){
-    val a=y*129+x;val b=a+1;val c=a+129;val d=c+1
+   val ix=ShortArray(254*254*6);k=0
+   for(y in 0 until 254)for(x in 0 until 254){
+    val a=y*255+x;val b=a+1;val c=a+255;val d=c+1
     ix[k++]=a.toShort();ix[k++]=c.toShort();ix[k++]=b.toShort();ix[k++]=b.toShort();ix[k++]=c.toShort();ix[k++]=d.toShort()
    }
-   val texSize=1024;val pixels=IntArray(texSize*texSize);val rasterMeters=groundSpan/1024.0
+   val texSize=1536;val pixels=IntArray(texSize*texSize);val rasterMeters=groundSpan/(texSize-1).toDouble()
    for(y in 0 until texSize)for(x in 0 until texSize){
-    val idx=y*rasterSize+x;val elev=heights[idx]
-    val dx=(heights[y*rasterSize+(x+1).coerceAtMost(1024)]-heights[y*rasterSize+(x-1).coerceAtLeast(0)])/(2f*rasterMeters.toFloat().coerceAtLeast(1f))
-    val dy=(heights[(y+1).coerceAtMost(1024)*rasterSize+x]-heights[(y-1).coerceAtLeast(0)*rasterSize+x])/(2f*rasterMeters.toFloat().coerceAtLeast(1f))
+    val sx=(x.toDouble()*(rasterSize-1)/(texSize-1)).roundToInt().coerceIn(0,rasterSize-1)
+    val sy=(y.toDouble()*(rasterSize-1)/(texSize-1)).roundToInt().coerceIn(0,rasterSize-1)
+    val idx=sy*rasterSize+sx;val elev=heights[idx]
+    val dx=(heights[sy*rasterSize+(sx+1).coerceAtMost(rasterSize-1)]-heights[sy*rasterSize+(sx-1).coerceAtLeast(0)])/(2f*rasterMeters.toFloat().coerceAtLeast(1f))
+    val dy=(heights[(sy+1).coerceAtMost(rasterSize-1)*rasterSize+sx]-heights[(sy-1).coerceAtLeast(0)*rasterSize+sx])/(2f*rasterMeters.toFloat().coerceAtLeast(1f))
     val shade=(.88f-dx*.42f+dy*.32f).coerceIn(.58f,1.22f);val base=terrainColor(elev)
     var rr=(Color.red(base)*shade).roundToInt().coerceIn(0,255)
     var gg=(Color.green(base)*shade).roundToInt().coerceIn(0,255)
@@ -227,7 +229,7 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
     val gx=mercatorX(p.second,z);val gy=mercatorY(p.first,z)
     val u=((gx-minX)/spanPxX).toFloat();val vv=((gy-minY)/spanPxY).toFloat()
     if(u in 0f..1f&&vv in 0f..1f){
-     val elev=sampleHeight(heights,u*1024f,vv*1024f,rasterSize)
+     val elev=sampleHeight(heights,u*(rasterSize-1),vv*(rasterSize-1),rasterSize)
      val zPos=((elev-(minElev+maxElev)*.5f)/groundSpan*5.0).toFloat()+.009f
      route.add((u-.5f)*1.72f*aspectX);route.add((.5f-vv)*1.72f*aspectY);route.add(zPos)
     }
@@ -237,7 +239,7 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    val rb=ByteBuffer.allocateDirect(route.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer()
    route.forEach{rb.put(it)};rb.position(0)
    synchronized(this){vertices=vb;indices=ib;indexCount=ix.size;routeBuffer=rb;routeCount=route.size/3;pendingTexture=texBitmap;ready=true}
-   report("全线地形已拼接："+loaded+" 张 DEM · GPX "+(route.size/3)+" 个点 · 高程设色与山体阴影。单指平移，双指缩放/旋转。")
+   report("全线地形已拼接："+loaded+" 张 DEM · GPX "+(route.size/3)+" 个点 · 高程设色与山体阴影。单指平移，双指缩放与旋转。")
   }catch(e:Exception){report("地形加载失败："+(e.message?:e.javaClass.simpleName)+"；请检查网络后重试。")}
   finally{mosaic?.recycle()}
  }
@@ -245,8 +247,8 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
  override fun onDrawFrame(gl:GL10?){
   GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT);if(program==0)return
   Matrix.perspectiveM(proj,0,43f,w.toFloat()/h,.1f,50f)
-  Matrix.setLookAtM(view,0,0f,-cameraDistance*.78f,cameraDistance*.63f,0f,0f,0f,0f,0f,1f)
-  Matrix.setIdentityM(model,0);Matrix.rotateM(model,0,pitch,1f,0f,0f);Matrix.rotateM(model,0,yaw,0f,0f,1f);Matrix.translateM(model,0,panX,panY,0f)
+  Matrix.setLookAtM(view,0,panX,panY-cameraDistance*.78f,cameraDistance*.63f,panX,panY,0f,0f,0f,1f)
+  Matrix.setIdentityM(model,0);Matrix.rotateM(model,0,pitch,1f,0f,0f);Matrix.rotateM(model,0,yaw,0f,0f,1f)
   Matrix.multiplyMM(vp,0,proj,0,view,0);Matrix.multiplyMM(mvp,0,vp,0,model,0)
   GLES20.glUseProgram(program)
   if(texture==0){

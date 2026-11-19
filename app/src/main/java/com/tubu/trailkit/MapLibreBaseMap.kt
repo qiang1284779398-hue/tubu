@@ -68,7 +68,7 @@ internal fun MapLibreBaseMap(
     val projectionCallback by rememberUpdatedState(onProjectionChanged)
     val mapView = remember(context) {
         MapLibre.getInstance(context.applicationContext)
-        val dispatcher = Dispatcher().apply { maxRequests = 4; maxRequestsPerHost = 4 }
+        val dispatcher = Dispatcher().apply { maxRequests = 12; maxRequestsPerHost = 8 }
         val http = OkHttpClient.Builder()
             .dispatcher(dispatcher)
             .connectTimeout(25, TimeUnit.SECONDS)
@@ -113,12 +113,13 @@ internal fun MapLibreBaseMap(
             mapView.getMapAsync { nativeMap ->
                 map = nativeMap
                 nativeMap.uiSettings.isCompassEnabled = false
-                // Let MapLibre handle gestures natively. Publish camera state at a modest
-                // cadence so Compose does not redraw the heavy GPX/MBTiles overlay on every frame.
+                // Let MapLibre handle gestures natively. Publish camera state at up to 30 fps: MapLibre keeps native gestures/rendering
+                // independent, while the Compose GPX/MBTiles overlay stays responsive without
+                // forcing a full overlay recomposition on every GL frame.
                 var lastCameraPublishMs = 0L
                 fun publishCamera(force: Boolean = false) {
                     val now = SystemClock.elapsedRealtime()
-                    if (!force && now - lastCameraPublishMs < 60L) return
+                    if (!force && now - lastCameraPublishMs < 33L) return
                     lastCameraPublishMs = now
                     val pos = nativeMap.cameraPosition
                     val target = pos.target ?: return

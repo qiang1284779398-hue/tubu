@@ -73,6 +73,9 @@ internal fun MapLibreBaseMap(
     val projectionCallback by rememberUpdatedState(onProjectionChanged)
     val mapView = remember(context) {
         MapLibre.getInstance(context.applicationContext)
+        // Keep recently viewed raster/vector resources on disk for offline use.
+        // 512 MiB gives high-zoom imagery tiles room to remain available between launches.
+        try { OfflineManager.getInstance(context).setMaximumAmbientCacheSize(512L * 1024L * 1024L, null) } catch (_: Exception) {}
         val dispatcher = Dispatcher().apply { maxRequests = 4; maxRequestsPerHost = 4 }
         val http = OkHttpClient.Builder()
             .dispatcher(dispatcher)

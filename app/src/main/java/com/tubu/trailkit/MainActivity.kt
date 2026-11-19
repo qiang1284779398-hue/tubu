@@ -267,6 +267,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     var mapOpen by remember { mutableStateOf(false) }
     var terrain3dOpen by remember { mutableStateOf(autoOpen3D) }
     var arCameraOpen by remember { mutableStateOf(false) }
+    var mapOpenedFromCamera by remember { mutableStateOf(false) }
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
     var githubPhotoDialog by remember { mutableStateOf(false) }
     var githubToken by remember { mutableStateOf("") }
@@ -692,9 +693,9 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     if (weatherOpen && project != null) TrailWeatherDialog(project.place) { weatherOpen=false }
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
-    if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen) { mapOpen=false }
+    if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen, onClose={ mapOpen=false; mapOpenedFromCamera=false }, fromCamera=mapOpenedFromCamera, onReturnToCamera={ mapOpen=false; mapOpenedFromCamera=false; arCameraOpen=true })
     if (project != null) Terrain3DDialog(project.name, project.trackData, visible=terrain3dOpen) { terrain3dOpen=false }
-    if (project != null) TerrainArCameraDialog(project.name, project.trackData, visible=arCameraOpen, onClose={ arCameraOpen=false }, onJumpToMap={ arCameraOpen=false; mapOpen=true })
+    if (project != null) TerrainArCameraDialog(project.name, project.trackData, visible=arCameraOpen, onClose={ arCameraOpen=false }, onJumpToMap={ arCameraOpen=false; mapOpenedFromCamera=true; mapOpen=true })
 
     if (advancedToolsOpen && project != null) {
         TrailKitAdvancedDialog(

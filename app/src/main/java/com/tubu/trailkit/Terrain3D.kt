@@ -104,18 +104,6 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                     mainHandler.post { diagnostic.value = "本地地图页面已打开，正在启动 JavaScript…" }
                 }
 
-                override fun onReceivedError(
-                    view: WebView,
-                    request: WebResourceRequest,
-                    error: android.webkit.WebResourceError
-                ) {
-                    super.onReceivedError(view, request, error)
-                    Log.e("TrailKit3D", "Web error ${error.errorCode}: ${error.description} ${request.url}")
-                    if (request.isForMainFrame) {
-                        mainHandler.post { diagnostic.value = "页面加载失败：${error.description}" }
-                    }
-                }
-
                 override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
                     Log.e("TrailKit3D", "WebView renderer gone: crashed=${detail.didCrash()}")
                     mainHandler.post { diagnostic.value = "Android 网页渲染进程异常退出，请重新打开 3D 地图。" }

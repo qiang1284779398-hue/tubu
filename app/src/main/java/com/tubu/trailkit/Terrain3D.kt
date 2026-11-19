@@ -15,6 +15,10 @@ import android.webkit.WebSettings
 import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -49,6 +55,8 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
         } else null
     }
     val diagnostic = remember { mutableStateOf("正在创建 3D 地图视图…") }
+    var showDiagnosticDialog by remember { mutableStateOf(false) }
+    val clipboardManager = LocalClipboardManager.current
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val assetLoader = remember(context) {
         WebViewAssetLoader.Builder()
@@ -159,22 +167,51 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
                     update = {}
                 )
                 Surface(
-                    modifier = Modifier.align(Alignment.TopStart).fillMaxWidth(0.48f).padding(start = 10.dp, top = 10.dp),
+                    modifier = Modifier.align(Alignment.TopStart).fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp)
+                        .clickable { showDiagnosticDialog = true },
                     color = ComposeColor(0xE6101B16),
                     contentColor = ComposeColor.White,
                     shape = RoundedCornerShape(10.dp),
                     tonalElevation = 0.dp
                 ) {
-                    Text(
-                        text = diagnostic.value,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                        fontSize = 11.sp,
-                        lineHeight = 14.sp,
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                    )
+                    Column(Modifier.padding(horizontal = 12.dp, vertical = 9.dp)) {
+                        Text(
+                            text = diagnostic.value,
+                            fontSize = 11.sp,
+                            lineHeight = 14.sp,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                        Text("点击查看完整诊断并复制", fontSize = 10.sp, color = ComposeColor(0xFFB9D7C5))
+                    }
                 }
             }
         }
+    }
+
+    if (showDiagnosticDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiagnosticDialog = false },
+            title = { Text("3D 地图完整诊断") },
+            text = {
+                SelectionContainer {
+                    Text(
+                        text = diagnostic.value,
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                        fontSize = 14.sp,
+                        lineHeight = 21.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    clipboardManager.setText(AnnotatedString(diagnostic.value))
+                    showDiagnosticDialog = false
+                }) { Text("复制诊断文字") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiagnosticDialog = false }) { Text("关闭") }
+            }
+        )
     }
 }

@@ -429,6 +429,24 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true || result[Manifest.permission.ACCESS_COARSE_LOCATION]==true) { prepareNavigationStart();active=true;gpsError="正在获取手机定位…" }
         else gpsError="请允许 TrailKit 使用位置信息；仅允许大致位置也可以显示地图位置"
     }
+    // Camera-origin map opens navigation automatically; ordinary map entry stays idle.
+    var cameraAutoStartHandled by remember(projectId,fromCamera) { mutableStateOf(false) }
+    LaunchedEffect(visible,fromCamera) {
+        if(visible && fromCamera && !cameraAutoStartHandled) {
+            cameraAutoStartHandled=true
+            if(!active) {
+                prepareNavigationStart()
+                val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
+                val coarse=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
+                if(fine || coarse) {
+                    active=true
+                    gpsError="正在获取手机定位…"
+                } else {
+                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
+                }
+            }
+        }
+    }
     DisposableEffect(active,projectId) {
         if(active) {
             try { ContextCompat.startForegroundService(context,android.content.Intent(context,TrailNavigationService::class.java)) }

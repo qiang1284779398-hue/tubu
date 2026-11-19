@@ -40,14 +40,51 @@ fun readGpxTrack(context:Context,uri:Uri):GpxTrackResult {
  val summary="GPX轨迹："+points.size+" 个轨迹点 · "+String.format(Locale.CHINA,"%.2f",meters/1000.0)+" km · 累计爬升约 "+ascent.roundToInt()+" m · "+waypoints.length()+" 个途经点"
  return GpxTrackResult(summary,json.toString(),waypoints.toString(),elevationJson.toString())
 }
+private fun decodePolylineDeltas(encoded:String):List<Int> {
+ val values=mutableListOf<Int>()
+ var index=0
+ while(index<encoded.length) {
+  var result=0;var shift=0;var b:Int
+  do {
+   if(index>=encoded.length || shift>30) return values
+   b=encoded[index++].code-63
+   if(b<0 || b>63) return values
+   result=result or ((b and 0x1f) shl shift)
+   shift+=5
+  } while(b>=0x20)
+  values.add(if((result and 1)!=0) (result shr 1).inv() else result shr 1)
+ }
+ return values
+}
 fun decodeTrackPoints(encoded:String):List<Pair<Double,Double>> = try {
- val a=JSONArray(encoded);List(a.length()){i->val p=a.getJSONArray(i);p.getDouble(0) to p.getDouble(1)}
+ if(encoded.startsWith("P1")) {
+  val deltas=decodePolylineDeltas(encoded.substring(2))
+  val result=ArrayList<Pair<Double,Double>>(deltas.size/2)
+  var lat=0;var lon=0
+  var i=0
+  while(i+1<deltas.size) {
+   lat+=deltas[i++];lon+=deltas[i++]
+   result.add(lat/1_000_000.0 to lon/1_000_000.0)
+  }
+  result
+ } else {
+  val a=JSONArray(encoded);List(a.length()){i->val p=a.getJSONArray(i);p.getDouble(0) to p.getDouble(1)}
+ }
 }catch(_:Exception){emptyList()}
 data class GpxWaypoint(val lat:Double,val lon:Double,val name:String)
 fun decodeGpxWaypoints(encoded:String):List<GpxWaypoint> = try {
- val a=JSONArray(encoded);List(a.length()){i->val p=a.getJSONObject(i);GpxWaypoint(p.getDouble("lat"),p.getDouble("lon"),p.optString("name","途经点"))}
+ val source=if(encoded.startsWith("W1")) encoded.substring(2) else encoded
+ val a=JSONArray(source);List(a.length()){i->val p=a.getJSONObject(i);GpxWaypoint(p.getDouble("lat"),p.getDouble("lon"),p.optString("name","途经点"))}
 }catch(_:Exception){emptyList()}
 
 fun decodeGpxElevations(encoded:String):List<Double?> = try {
- val a=JSONArray(encoded);List(a.length()){i->if(a.isNull(i))null else a.getDouble(i)}
+ if(encoded.startsWith("E1")) {
+  val deltas=decodePolylineDeltas(encoded.substring(2))
+  val result=ArrayList<Double?>(deltas.size)
+  var elevation=0
+  deltas.forEach { elevation+=it;result.add(elevation.toDouble()) }
+  result
+ } else {
+  val a=JSONArray(encoded);List(a.length()){i->if(a.isNull(i))null else a.getDouble(i)}
+ }
 }catch(_:Exception){emptyList()}

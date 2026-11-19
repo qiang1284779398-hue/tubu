@@ -25,6 +25,9 @@ android {
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")
+    implementation("androidx.camera:camera-camera2:1.4.1")
+    implementation("androidx.camera:camera-lifecycle:1.4.1")
+    implementation("androidx.camera:camera-view:1.4.1")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.webkit:webkit:1.12.1")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")

@@ -1,10 +1,13 @@
 package com.tubu.trailkit
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.graphics.PointF
 import android.view.MotionEvent
 import android.os.SystemClock
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -33,7 +36,9 @@ import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
 import java.util.concurrent.TimeUnit
 import kotlin.math.*
 
-internal const val TRAILKIT_MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty"
+internal const val TRAILKIT_MAP_STYLE = "https://styles.maptoolkit.org/street.json"
+// OpenFreeMap remains the offline-download source; Maptoolkit Community tiles prohibit bulk/offline extraction.
+internal const val TRAILKIT_OFFLINE_VECTOR_STYLE = "https://tiles.openfreemap.org/styles/liberty"
 
 // Prevent the surrounding Compose scroll container from stealing map drag gestures.
 private class GestureFriendlyMapView(context: Context) : MapView(context) {
@@ -108,6 +113,7 @@ internal fun MapLibreBaseMap(
         }
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     AndroidView(
         factory = {
             mapView.getMapAsync { nativeMap ->
@@ -181,6 +187,30 @@ internal fun MapLibreBaseMap(
             }
         }
     )
+    // Required visible provider attribution for the Maptoolkit Community tile service.
+    Row(
+        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "Maptoolkit",
+            modifier = Modifier.heightIn(min = 24.dp).clickable {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.maptoolkit.org/")))
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            "© Maptoolkit  © OpenStreetMap",
+            modifier = Modifier.clickable {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.openstreetmap.org/copyright")))
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+    }
+    }
 }
 
 private fun lonTile(lon: Double, z: Int): Double = (lon + 180.0) / 360.0 * (1 shl z)
@@ -319,7 +349,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                 Spacer(Modifier.weight(1f))
             }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick={startDownload(TRAILKIT_MAP_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
+                OutlinedButton(onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
                 OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形")}
                 Button(onClick={startDownload(TRAILKIT_SATELLITE_STYLE,"卫星图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载卫星")}
             }

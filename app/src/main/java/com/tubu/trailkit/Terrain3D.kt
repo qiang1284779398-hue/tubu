@@ -5,6 +5,9 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.ConsoleMessage
+import android.util.Log
+import android.view.View
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -39,6 +42,7 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
     val webView = remember(context, routeJson) {
         WebView(context).apply {
             setBackgroundColor(Color.rgb(18, 27, 24))
+            setLayerType(View.LAYER_TYPE_HARDWARE, null)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
@@ -49,9 +53,9 @@ internal fun Terrain3DDialog(projectName: String, encodedTrack: String, visible:
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
-            webChromeClient = WebChromeClient()
+            webChromeClient = object : WebChromeClient() {\n                override fun onConsoleMessage(message: ConsoleMessage): Boolean {\n                    Log.e("TrailKit3D", "JS ${message.lineNumber()}: ${message.message()}")\n                    return true\n                }\n            }
             webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String) {
+                override fun onReceivedError(view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError) {\n                    super.onReceivedError(view, request, error)\n                    Log.e("TrailKit3D", "Web error ${error.errorCode}: ${error.description} ${request.url}")\n                }\n                override fun onPageFinished(view: WebView, url: String) {
                     super.onPageFinished(view, url)
                     val routeScript = routeJson?.let {
                         "window.__trailkitPendingRoute = $it; if (window.setTrailRoute) window.setTrailRoute($it);"

@@ -11,9 +11,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           mkdir -p /tmp/project-shots
-          cp test/*.png /tmp/project-shots/
+          cp test/*.png test/*.jpg /tmp/project-shots/
           cd /tmp/project-shots
-          zip -q /tmp/project-shots.zip *.png
+          zip -q /tmp/project-shots.zip *.png *.jpg
       - uses: actions/upload-artifact@v4
         with:
           name: project-screenshots

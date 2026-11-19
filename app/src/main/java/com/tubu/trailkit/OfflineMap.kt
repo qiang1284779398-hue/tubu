@@ -41,6 +41,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
@@ -759,7 +760,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             android.widget.Toast.makeText(context, "坐标：$coords", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     )
-                    Canvas(Modifier.matchParentSize()) {
+                    Canvas(Modifier.matchParentSize().clipToBounds()) {
                     val canvas=drawContext.canvas.nativeCanvas
                     // Compose Canvas is already transparent; clearing its native layer can
                     // expose the underlying MapView/window and cause visible control flicker.

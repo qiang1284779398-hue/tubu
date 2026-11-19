@@ -382,13 +382,12 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.second)}
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
     var mapProjector by remember(projectId,path) { mutableStateOf<((Double,Double)->android.graphics.PointF)?>(null) }
-    var mapLayer by remember(projectId) { mutableStateOf(prefs.getString("map_layer_$projectId","standard") ?: "standard") }
+    var mapLayer by remember(projectId) { mutableStateOf((prefs.getString("map_layer_$projectId","standard") ?: "standard").let { if(it=="satellite") "esri" else it }) }
     var useOsmOffline by remember(projectId) { mutableStateOf(false) }
     var showMapLayerMenu by remember(projectId) { mutableStateOf(false) }
     val activeMapStyle = if (useOsmOffline) {
         LocalMbtilesVectorServer.start(context) ?: TRAILKIT_MAP_STYLE
     } else when(mapLayer) {
-        "satellite" -> TRAILKIT_SATELLITE_STYLE
         "esri" -> TRAILKIT_ESRI_SATELLITE_STYLE
         "terrain" -> TRAILKIT_TERRAIN_STYLE
         else -> TRAILKIT_MAP_STYLE
@@ -1223,7 +1222,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             ) {
                                 listOf(
                                     "standard" to "标准地图",
-                                    "satellite" to "卫星地图",
                                     "terrain" to "地形图",
                                     "esri" to "Esri 高清卫星"
                                 ).forEach { (layer,label) ->

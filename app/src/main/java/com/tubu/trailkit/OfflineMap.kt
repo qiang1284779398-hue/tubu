@@ -343,7 +343,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
     var mapProjector by remember(projectId,path) { mutableStateOf<((Double,Double)->android.graphics.PointF)?>(null) }
     var mapLayer by remember(projectId) { mutableStateOf("standard") }
-    val activeMapStyle = when(mapLayer) {
+    var useOsmOffline by remember(projectId) { mutableStateOf(false) }
+    val activeMapStyle = if (useOsmOffline) {
+        LocalMbtilesVectorServer.start(context) ?: TRAILKIT_MAP_STYLE
+    } else when(mapLayer) {
         "satellite" -> TRAILKIT_SATELLITE_STYLE
         "terrain" -> TRAILKIT_TERRAIN_STYLE
         else -> TRAILKIT_MAP_STYLE
@@ -716,6 +719,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         zoom=zoom.coerceAtMost(if(precisionMode)20f else 18f)
                     },label={Text(if(precisionMode)"精确模式·开" else "精确模式")})
                     Text(if(precisionMode)"放大上限 20 级；超出地图原始细节时可能只是放大现有数据" else "普通模式：最高 18 级",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary,modifier=Modifier.align(Alignment.CenterVertically))
+                }
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected=useOsmOffline,onClick={useOsmOffline=!useOsmOffline},label={Text("OSM 原生18级离线")})
+                    Text(if(useOsmOffline) "雨崩本地矢量数据 · 无需网络" else "切换可查看本地建筑、道路和兴趣点",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary,modifier=Modifier.align(Alignment.CenterVertically))
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected=mapOrientation=="north",onClick={mapOrientation="north";prefs.edit().putString("orientation_$projectId","north").apply()},label={Text("北向上")})

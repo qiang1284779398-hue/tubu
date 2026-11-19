@@ -268,10 +268,13 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 Column(
                     Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                         .navigationBarsPadding().imePadding()
+                        // Keep the HUD visibly above the physical screen edge even when immersive
+                        // mode reports zero navigation-bar inset on some Android devices.
+                        .padding(bottom = 24.dp)
                         .heightIn(max = 300.dp)
                         .verticalScroll(rememberScrollState())
-                        .background(Color.Black.copy(alpha = .94f))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .background(Color.Black.copy(alpha = .96f))
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -287,15 +290,47 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                             if (match != null) {
                                 val turn = upcomingTurn
                                 if (turn != null && turn.distanceMeters <= 85.0) {
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                        Text("↑", modifier = Modifier.rotate(turn.angleDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 26.sp)
-                                        Text((if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后", modifier = Modifier.weight(1f), color = Color(0xFFFFC857), fontSize = 13.sp, maxLines = 3)
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = Color(0xFF332600),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD54F).copy(alpha = .75f))
+                                    ) {
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Text("↑", modifier = Modifier.rotate(turn.angleDegrees.toFloat()), color = Color(0xFFFFE082), fontSize = 30.sp)
+                                            Text(
+                                                (if (turn.isLeft) "左转 " else "右转 ") + kotlin.math.abs(turn.angleDegrees).roundToInt() + "° · " + turn.distanceMeters.roundToInt() + " m 后",
+                                                modifier = Modifier.weight(1f),
+                                                color = Color(0xFFFFE082),
+                                                fontSize = 18.sp,
+                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                                maxLines = 2
+                                            )
+                                        }
                                     }
                                 } else {
-                                    Text(turnGuidance(heading, match.bearingDegrees.toFloat()), color = Color(0xFFFFC857), fontSize = 12.sp, maxLines = 2)
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = Color(0xFF332600),
+                                        shape = RoundedCornerShape(12.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD54F).copy(alpha = .75f))
+                                    ) {
+                                        Text(
+                                            turnGuidance(heading, match.bearingDegrees.toFloat()),
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                                            color = Color(0xFFFFE082),
+                                            fontSize = 18.sp,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                            maxLines = 2
+                                        )
+                                    }
                                 }
                             } else {
-                                Text("等待 GPS 定位", color = Color(0xFFFFC857), fontSize = 12.sp)
+                                Text("等待 GPS 定位", color = Color(0xFFFFE082), fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                             }
                         }
                         IconButton(onClick = onClose) {

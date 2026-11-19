@@ -21,7 +21,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
 <div id="map"></div>
 <div id="legend">雨崩 · DEM 真实三维地形<br>Esri 卫星影像 · GPX 轨迹</div>
 <button id="gltest-toggle" type="button">WebGL 立方体自检</button>
-<canvas id="gltest-canvas"></canvas>
+<canvas id="gltest-canvas"></canvas><div id="gltest-diagnostic" style="display:none;position:fixed;z-index:30;left:50%;top:50%;transform:translate(-50%,-50%);max-width:92%;padding:12px 16px;border-radius:10px;color:#fff;font-size:12px;line-height:1.5;pointer-events:none;box-shadow:0 3px 16px #0008"></div>
 <div id="status">网页正在启动…</div>
 <script src="maplibre-gl.js" onload="window.__mapLibreScriptLoaded=true;" onerror="document.getElementById('status').textContent='本地地图引擎文件加载失败：maplibre-gl.js';document.getElementById('status').className='error';try{TrailKitBridge.report('本地 maplibre-gl.js 加载失败');}catch(e){}"></script>
 <script>
@@ -149,50 +149,91 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221
 <script>
 (function(){
  const button=document.getElementById('gltest-toggle');
- const canvas=document.getElementById('gltest-canvas');
- let gl=null, raf=0, started=false, render=null;
+ const glCanvas=document.getElementById('gltest-canvas');
+ const diagnostic=document.getElementById('gltest-diagnostic');
+ let gl=null, raf=0, started=false, angleLoc=null;
  const vertices=[
-  // front
   -1,-1,1, 1,-1,1, 1,1,1, -1,-1,1, 1,1,1, -1,1,1,
-  // back
   -1,-1,-1, -1,1,-1, 1,1,-1, -1,-1,-1, 1,1,-1, 1,-1,-1,
-  // left
   -1,-1,-1, -1,-1,1, -1,1,1, -1,-1,-1, -1,1,1, -1,1,-1,
-  // right
   1,-1,-1, 1,1,-1, 1,1,1, 1,-1,-1, 1,1,1, 1,-1,1,
-  // top
   -1,1,-1, -1,1,1, 1,1,1, -1,1,-1, 1,1,1, 1,1,-1,
-  // bottom
   -1,-1,-1, 1,-1,-1, 1,-1,1, -1,-1,-1, 1,-1,1, -1,-1,1
  ];
- const vertexSource='attribute vec3 p; uniform float a; varying vec3 c; void main(){float x=p.x*cos(a)-p.z*sin(a);float z=p.x*sin(a)+p.z*cos(a);float y=p.y*cos(a*0.73)-z*sin(a*0.73);z=p.y*sin(a*0.73)+z*cos(a*0.73);gl_Position=vec4(x*0.62,y*0.62,z*0.25+0.45,1.0);c=abs(p)*0.55+vec3(0.2,0.25,0.15);}';
+ const vertexSource='attribute vec3 p; uniform float a; varying vec3 c; void main(){float x=p.x*cos(a)-p.z*sin(a);float z=p.x*sin(a)+p.z*cos(a);float y=p.y*cos(a*0.73)-z*sin(a*0.73);z=p.y*sin(a*0.73)+z*cos(a*0.73);gl_Position=vec4(x*0.65,y*0.65,z*0.22,1.0);c=abs(p)*0.55+vec3(0.2,0.25,0.15);}';
  const fragmentSource='precision mediump float; varying vec3 c; void main(){gl_FragColor=vec4(c,1.0);}';
- function shader(type,src){const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;}
+ function report(msg,error){
+  diagnostic.textContent=msg;
+  diagnostic.style.display='block';
+  diagnostic.style.background=error?'rgba(105,27,23,.96)':'rgba(12,48,34,.96)';
+  try{if(window.TrailKitBridge)TrailKitBridge.report(msg);}catch(_){}
+ }
+ function shader(type,src){
+  const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error('Shader 编译失败：'+gl.getShaderInfoLog(s));
+  return s;
+ }
+ function draw(t){
+  if(glCanvas.style.display==='none'||!gl)return;
+  const w=Math.max(1,glCanvas.clientWidth),h=Math.max(1,glCanvas.clientHeight);
+  const dpr=Math.min(window.devicePixelRatio||1,1.5);
+  const pw=Math.max(1,Math.floor(w*dpr)),ph=Math.max(1,Math.floor(h*dpr));
+  if(glCanvas.width!==pw||glCanvas.height!==ph){glCanvas.width=pw;glCanvas.height=ph;}
+  gl.viewport(0,0,pw,ph);
+  gl.clearColor(0.035,0.16,0.105,1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.uniform1f(angleLoc,t*0.0007);
+  gl.drawArrays(gl.TRIANGLES,0,36);
+  if(gl.getError()!==gl.NO_ERROR){report('WebGL 已创建，但 GPU 绘制返回错误。请把这条提示发给我。',true);cancelAnimationFrame(raf);return;}
+  raf=requestAnimationFrame(draw);
+ }
  function start(){
-  if(started)return; started=true;
+  if(started)return;started=true;
   try{
-   gl=canvas.getContext('webgl',{alpha:true,antialias:true,depth:true})||canvas.getContext('experimental-webgl',{alpha:true,antialias:true});
-   if(!gl)throw Error('WebGL 上下文创建失败');
-   const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vertexSource));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragmentSource));gl.linkProgram(program);
-   if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));
-   gl.useProgram(program);
-   const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.STATIC_DRAW);
-   const loc=gl.getAttribLocation(program,'p');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);
-   const angle=gl.getUniformLocation(program,'a');gl.enable(gl.DEPTH_TEST);
-   render=function frame(t){
-    if(canvas.style.display==='none')return;
-    const w=canvas.clientWidth,h=canvas.clientHeight,dpr=Math.min(window.devicePixelRatio||1,2);
-    if(canvas.width!==Math.floor(w*dpr)||canvas.height!==Math.floor(h*dpr)){canvas.width=Math.floor(w*dpr);canvas.height=Math.floor(h*dpr);}
-    gl.viewport(0,0,canvas.width,canvas.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-    gl.uniform1f(angle,t*0.0007);gl.drawArrays(gl.TRIANGLES,0,36);raf=requestAnimationFrame(render);
-   }
-   raf=requestAnimationFrame(render);
-   try{TrailKitBridge.report('WebGL 自检成功：旋转立方体正在由手机 GPU 实时绘制。');}catch(_){}
-  }catch(e){try{TrailKitBridge.report('WebGL 立方体自检失败：'+e.message);}catch(_){}button.textContent='WebGL 自检失败';}
+   glCanvas.style.display='block';
+   glCanvas.width=Math.max(1,glCanvas.clientWidth||window.innerWidth);
+   glCanvas.height=Math.max(1,glCanvas.clientHeight||window.innerHeight);
+   gl=glCanvas.getContext('webgl2',{alpha:false,antialias:false,depth:true,preserveDrawingBuffer:true})
+     ||glCanvas.getContext('webgl',{alpha:false,antialias:false,depth:true,preserveDrawingBuffer:true})
+     ||glCanvas.getContext('experimental-webgl',{alpha:false,antialias:false,depth:true,preserveDrawingBuffer:true});
+   if(!gl)throw Error('WebGL 上下文创建失败（WebGL1/2 都返回 null）');
+   const version=gl.getParameter(gl.VERSION);
+   const renderer=gl.getParameter(gl.RENDERER);
+   const prog=gl.createProgram();
+   gl.attachShader(prog,shader(gl.VERTEX_SHADER,vertexSource));
+   gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,fragmentSource));
+   gl.linkProgram(prog);
+   if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error('Shader 链接失败：'+gl.getProgramInfoLog(prog));
+   gl.useProgram(prog);
+   const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.STATIC_DRAW);
+   const loc=gl.getAttribLocation(prog,'p');
+   if(loc<0)throw Error('GPU 没有找到立方体顶点属性');
+   gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);
+   angleLoc=gl.getUniformLocation(prog,'a');
+   if(!angleLoc)throw Error('GPU 没有找到旋转参数');
+   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
+   gl.clearColor(0.035,0.16,0.105,1.0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+   gl.uniform1f(angleLoc,0.35);gl.drawArrays(gl.TRIANGLES,0,36);gl.finish();
+   const pixels=new Uint8Array(4*64*64);
+   gl.readPixels(Math.max(0,Math.floor(glCanvas.width/2)-32),Math.max(0,Math.floor(glCanvas.height/2)-32),64,64,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+   let colored=0;
+   for(let i=0;i<pixels.length;i+=4){if(pixels[i]>35||pixels[i+1]>65||pixels[i+2]>35)colored++;}
+   report('WebGL 已创建：'+version+'；GPU像素检测 '+colored+'/4096；渲染器 '+renderer+'。若仍看不到绿色底色，问题在 WebView 合成输出。',false);
+   raf=requestAnimationFrame(draw);
+  }catch(e){
+   report('WebGL 自检失败：'+(e&&e.message?e.message:String(e)),true);
+   button.textContent='自检失败 · 查看诊断';
+  }
  }
  button.addEventListener('click',function(){
-  if(canvas.style.display==='block'){canvas.style.display='none';cancelAnimationFrame(raf);button.textContent='WebGL 立方体自检';}
-  else{canvas.style.display='block';button.textContent='关闭立方体';start();if(gl&&render)raf=requestAnimationFrame(render);}
+  if(glCanvas.style.display==='block'){
+   glCanvas.style.display='none';cancelAnimationFrame(raf);button.textContent='WebGL 立方体自检';
+   report('已关闭 WebGL 自检画面。',false);
+  }else{
+   button.textContent='关闭自检画面';start();
+   if(gl&&angleLoc)raf=requestAnimationFrame(draw);
+  }
  });
 })();
 </script>

@@ -382,7 +382,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.second)}
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
     var mapProjector by remember(projectId,path) { mutableStateOf<((Double,Double)->android.graphics.PointF)?>(null) }
-    var mapLayer by remember(projectId) { mutableStateOf("standard") }
+    var mapLayer by remember(projectId) { mutableStateOf(prefs.getString("map_layer_$projectId","standard") ?: "standard") }
     var useOsmOffline by remember(projectId) { mutableStateOf(false) }
     val activeMapStyle = if (useOsmOffline) {
         LocalMbtilesVectorServer.start(context) ?: TRAILKIT_MAP_STYLE
@@ -750,7 +750,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 }
                 else if(db!=null && mapCoverage==null) Text("离线地图没有有效 bounds 元数据，无法自动核验是否覆盖整条 GPX 路线。",fontSize=10.sp,color=Color(0xFF9A6A25))
                 if (navigationPoints.size >= 2) {
-                    RouteOfflineDownloadCard(navigationPoints, projectId, mapLayer, { mapLayer = it })
+                    RouteOfflineDownloadCard(navigationPoints, projectId, mapLayer, { selected -> mapLayer=selected; useOsmOffline=false; prefs.edit().putString("map_layer_$projectId",selected).apply() })
                 } else {
                     Text("导入 GPX 轨迹后，可按路线范围下载离线地图。", fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
                 }
@@ -1194,6 +1194,34 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                     Surface(modifier=Modifier.align(Alignment.TopEnd).padding(12.dp).size(48.dp).clickable{mapFullscreen=!mapFullscreen},shape=RoundedCornerShape(24.dp),color=Color.White.copy(alpha=0.96f),shadowElevation=5.dp) {
                         Box(contentAlignment=Alignment.Center) { Text(if(mapFullscreen)"×" else "⛶",fontSize=if(mapFullscreen)30.sp else 27.sp,fontWeight=FontWeight.Bold,color=Color(0xFF183C32)) }
+                    }
+                    Surface(
+                        modifier=Modifier.align(Alignment.TopStart).padding(12.dp),
+                        shape=RoundedCornerShape(14.dp),
+                        color=Color.White.copy(alpha=0.97f),
+                        shadowElevation=5.dp
+                    ) {
+                        Row(Modifier.padding(horizontal=6.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(4.dp),verticalAlignment=Alignment.CenterVertically) {
+                            FilterChip(
+                                selected=mapLayer=="esri" && !useOsmOffline,
+                                onClick={
+                                    mapLayer="esri"
+                                    useOsmOffline=false
+                                    prefs.edit().putString("map_layer_$projectId","esri").apply()
+                                },
+                                label={Text("Esri 高清卫星",fontSize=12.sp)},
+                                colors=FilterChipDefaults.filterChipColors(selectedContainerColor=Color(0xFF183C32),selectedLabelColor=Color.White)
+                            )
+                            FilterChip(
+                                selected=mapLayer!="esri" || useOsmOffline,
+                                onClick={
+                                    mapLayer="standard"
+                                    useOsmOffline=false
+                                    prefs.edit().putString("map_layer_$projectId","standard").apply()
+                                },
+                                label={Text("标准地图",fontSize=12.sp)}
+                            )
+                        }
                     }
                 }
                 if(!mapFullscreen) {

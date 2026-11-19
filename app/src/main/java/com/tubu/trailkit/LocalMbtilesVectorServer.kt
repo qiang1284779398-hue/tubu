@@ -2,12 +2,17 @@ package com.tubu.trailkit
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.util.LruCache
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import java.nio.charset.StandardCharsets
 import kotlin.concurrent.thread
 
@@ -19,6 +24,11 @@ internal object LocalMbtilesVectorServer {
     @Volatile private var server: ServerSocket? = null
     @Volatile private var database: SQLiteDatabase? = null
     @Volatile private var styleUrl: String? = null
+    private val tilePathRegex = Regex("^/(\\d{1,2})/(\\d+)/(\\d+)\\.pbf$")
+    private val requestExecutor = ThreadPoolExecutor(4, 4, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(96))
+    private val tileCache = object : LruCache<String, ByteArray>(8 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: ByteArray): Int = value.size
+    }
 
     @Synchronized
     fun start(context: Context): String? {
@@ -45,7 +55,11 @@ internal object LocalMbtilesVectorServer {
                 while (!listener.isClosed) {
                     try {
                         val client = listener.accept()
-                        thread(name = "TrailKit-MBTiles-request", isDaemon = true) { handle(client, base) }
+                        try {
+                            requestExecutor.execute { handle(client, base) }
+                        } catch (_: RejectedExecutionException) {
+                            try { client.close() } catch (_: Exception) {}
+                        }
                     } catch (_: Exception) {
                         if (!listener.isClosed) Thread.sleep(100)
                     }
@@ -73,7 +87,7 @@ internal object LocalMbtilesVectorServer {
                     write(client, 200, "application/json", body, false)
                     return
                 }
-                val match = Regex("^/(\\d{1,2})/(\\d+)/(\\d+)\\.pbf$").matchEntire(path) ?: run {
+                val match = tilePathRegex.matchEntire(path) ?: run {
                     write(client, 404, "text/plain", ByteArray(0), false); return
                 }
                 val z = match.groupValues[1].toInt()
@@ -83,7 +97,15 @@ internal object LocalMbtilesVectorServer {
                     write(client, 404, "text/plain", ByteArray(0), false); return
                 }
                 val tmsY = (1 shl z) - 1 - y
-                val bytes = database?.let { db ->
+                val cacheKey = "$z/$x/$y"
+                val bytes = tileCache.get(cacheKey) ?: database?.let { db ->
+                    synchronized(db) {
+                        db.rawQuery(
+                            "SELECT images.tile_data FROM map JOIN images USING(tile_id) WHERE map.zoom_level=? AND map.tile_column=? AND map.tile_row=? LIMIT 1",
+                            arrayOf(z.toString(), x.toString(), tmsY.toString())
+                        ).use { cursor -> if (cursor.moveToFirst()) cursor.getBlob(0) else null }
+                    }?.also { tileCache.put(cacheKey, it) }
+                }
                     synchronized(db) {
                         db.rawQuery(
                             "SELECT images.tile_data FROM map JOIN images USING(tile_id) WHERE map.zoom_level=? AND map.tile_column=? AND map.tile_row=? LIMIT 1",

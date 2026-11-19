@@ -11,6 +11,9 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.UUID
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -180,6 +183,32 @@ private fun loadWithBundledYubeng(context:Context):List<Project> {
         current
     }
 }
+private suspend fun uploadTrailPhotoToGithub(context: Context, uri: Uri, token: String): String = withContext(Dispatchers.IO) {
+    val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if(c.moveToFirst()) c.getString(0) else null } ?: "photo.jpg"
+    val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").take(100).ifBlank { "photo.jpg" }
+    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("读取照片失败")
+    if(bytes.size > 20 * 1024 * 1024) error("${safeName} 超过20MB，暂不上传")
+    val remoteName = "${System.currentTimeMillis()}_${UUID.randomUUID().toString().take(8)}_${safeName}"
+    val endpoint = URL("https://api.github.com/repos/qiang1284779398-hue/tubu/contents/test/${remoteName}")
+    val connection = (endpoint.openConnection() as HttpURLConnection).apply {
+        requestMethod = "PUT"; connectTimeout = 20000; readTimeout = 30000; doOutput = true
+        setRequestProperty("Accept", "application/vnd.github+json")
+        setRequestProperty("Authorization", "Bearer ${token}")
+        setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+    }
+    val payload = JSONObject().put("message", "Upload photo from TrailKit").put("content", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)).toString()
+    connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+    val code = connection.responseCode
+    val response = (if(code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+    connection.disconnect()
+    if(code !in 200..299) {
+        val message = try { JSONObject(response).optString("message") } catch(_:Exception) { response.take(160) }
+        error("GitHub上传失败 (${code})：${message}")
+    }
+    remoteName
+}
+
 private fun yuan(v:Double)="¥"+String.format(Locale.CHINA,"%.2f",v)
 
 private fun deleteProjectNavigationData(context:Context,project:Project) {
@@ -239,6 +268,11 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     var terrain3dOpen by remember { mutableStateOf(autoOpen3D) }
     var arCameraOpen by remember { mutableStateOf(false) }
     var mapTargetProjectId by remember { mutableStateOf<String?>(null) }
+    var githubPhotoDialog by remember { mutableStateOf(false) }
+    var githubToken by remember { mutableStateOf("") }
+    var githubPhotoUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var githubUploading by remember { mutableStateOf(false) }
+    var githubUploadStatus by remember { mutableStateOf("") }
 
     LaunchedEffect(sharedGpxUri) {
         if (sharedGpxUri != null) {
@@ -322,6 +356,10 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
         } catch(e:Exception) { Toast.makeText(context,"恢复失败：文件格式不正确",Toast.LENGTH_LONG).show() }
     }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if(uri!=null) chosenPhoto=uri.toString() }
+    val githubPhotoPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        githubPhotoUris=uris
+        githubUploadStatus=if(uris.isEmpty()) "" else "已选择 ${uris.size} 张照片"
+    }
     fun takeGearPhoto() {
         try {
             val dir = context.getExternalFilesDir(android.os.Environment.DIRECTORY_PICTURES) ?: context.cacheDir
@@ -390,6 +428,19 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                             Text("我的徒步项目  /  ${projects.size}",color=androidx.compose.ui.graphics.Color.White,fontWeight=FontWeight.SemiBold)
                             Spacer(Modifier.height(10.dp))
                             Text("数据备份：右上角导出 / 恢复",color=androidx.compose.ui.graphics.Color(0xFFD8E2D7),fontSize=11.sp)
+                        }
+                    }
+                    item {
+                        Card(Modifier.fillMaxWidth().clickable { githubPhotoDialog=true },shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA))) {
+                            Row(Modifier.fillMaxWidth().padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
+                                Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center) { Icon(Icons.Default.Image,null,tint=forest,modifier=Modifier.size(28.dp)) }
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("照片云上传",fontWeight=FontWeight.Bold,fontSize=16.sp,color=forest)
+                                    Text("备份手机照片到 GitHub · test/",fontSize=12.sp,color=muted)
+                                }
+                                Icon(Icons.Default.Add,null,tint=forest)
+                            }
                         }
                     }
                     if(projects.isEmpty()) item { Empty("还没有徒步项目","点击右下角 + 创建你的第一个计划") }
@@ -837,6 +888,52 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
         val updated=if(editing==null) project.copy(gear=project.gear+g) else project.copy(gear=project.gear.map{if(it.id==g.id)g else it})
         save(projects.map{if(it.id==project.id)updated else it});gearDialog=false
     }
+    if(githubPhotoDialog) {
+        AlertDialog(
+            onDismissRequest={ if(!githubUploading) githubPhotoDialog=false },
+            title={ Text("上传照片到 GitHub") },
+            text={
+                Column(Modifier.heightIn(max=440.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                    Text("照片将保存到仓库：tubu / test/",fontSize=13.sp,color=forest,fontWeight=FontWeight.Bold)
+                    OutlinedTextField(
+                        value=githubToken,onValueChange={githubToken=it.trim()},
+                        label={Text("GitHub Token (需 Contents: write 权限)")},
+                        placeholder={Text("粘贴 ghp_ 或 github_pat_ Token")},
+                        modifier=Modifier.fillMaxWidth(),singleLine=true,
+                        visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation()
+                    )
+                    OutlinedButton(onClick={githubPhotoPicker.launch(arrayOf("image/*"))},modifier=Modifier.fillMaxWidth(),enabled=!githubUploading) {
+                        Icon(Icons.Default.Image,null); Spacer(Modifier.width(8.dp)); Text(if(githubPhotoUris.isEmpty()) "从手机相册选择照片" else "重新选择照片 (${githubPhotoUris.size})")
+                    }
+                    if(githubPhotoUris.isNotEmpty()) Text("已选 ${githubPhotoUris.size} 张，逐张上传到 test/ 文件夹",fontSize=12.sp,color=muted)
+                    if(githubUploadStatus.isNotBlank()) Text(githubUploadStatus,fontSize=12.sp,color=forest)
+                    Text("Token 只在当前运行期间使用，不保存到本地。建议使用仅限此仓库的细粒度 Token，并授予 Contents 写入权限。",fontSize=11.sp,color=muted)
+                }
+            },
+            confirmButton={
+                TextButton(enabled=!githubUploading && githubToken.isNotBlank() && githubPhotoUris.isNotEmpty(),onClick={
+                    githubUploading=true
+                    githubUploadStatus="上传准备中…"
+                    coroutineScope.launch {
+                        var success=0
+                        var failed=""
+                        for(uri in githubPhotoUris) {
+                            try {
+                                val uploaded=uploadTrailPhotoToGithub(context,uri,githubToken)
+                                success++
+                                githubUploadStatus="上传中：${success}/${githubPhotoUris.size} · ${uploaded}"
+                            } catch(e:Exception) { failed=e.message ?: "未知错误"; break }
+                        }
+                        githubUploading=false
+                        githubUploadStatus=if(failed.isBlank()) "完成！已上传 ${success} 张照片到 test/" else "已成功上传 ${success} 张；失败：${failed}"
+                        Toast.makeText(context,githubUploadStatus,Toast.LENGTH_LONG).show()
+                    }
+                }) { Text(if(githubUploading) "正在上传…" else "开始上传") }
+            },
+            dismissButton={TextButton(onClick={if(!githubUploading) githubPhotoDialog=false}){Text("关闭")}}
+        )
+    }
+
 }
 
 @Composable private fun Empty(title:String,sub:String) {

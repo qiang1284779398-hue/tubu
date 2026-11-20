@@ -282,42 +282,72 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, vi
                 )
                 Canvas(Modifier.fillMaxSize()) {
                     val cx = size.width / 2f
-                    val horizonY = size.height * .34f + (pitch * size.height / 110f).coerceIn(-size.height * .22f, size.height * .22f)
+                    val horizonY = size.height * .34f + (pitch * size.height / 110f).coerceIn(-size.height * .18f, size.height * .18f)
                     val focalLength = size.height * .92f
-                    drawLine(ArLime.copy(alpha = .32f), androidx.compose.ui.geometry.Offset(0f, horizonY), androidx.compose.ui.geometry.Offset(size.width, horizonY), 1.2f)
                     val fix = location
                     val match = routeMatch
                     if (fix != null && match != null && gpsReliable && routePoints.size > 1) {
-                        var previous: androidx.compose.ui.geometry.Offset? = null
-                        var previousDistance = 0.0
+                        // Automotive-style route ribbon: projected into a stable road corridor,
+                        // with near-field width, distant convergence, glow and forward arrows.
+                        val projected = mutableListOf<Pair<androidx.compose.ui.geometry.Offset, Double>>()
                         val from = match.segmentIndex
-                        val to = (from + 120).coerceAtMost(routePoints.lastIndex)
+                        val to = (from + 140).coerceAtMost(routePoints.lastIndex)
                         for (i in from..to) {
                             val p = routePoints[i]
                             val distance = haversineForAr(p.first, p.second, fix.latitude, fix.longitude)
-                            if (distance > 450.0) break
+                            if (distance > 160.0) break
                             val bearing = bearingToPoint(fix.latitude to fix.longitude, p)
                             val delta = Math.toRadians(((bearing - heading + 540.0) % 360.0) - 180.0)
                             val forward = distance * kotlin.math.cos(delta)
                             val lateral = distance * kotlin.math.sin(delta)
-                            if (forward <= 1.0) { previous = null; continue }
-                            // Ground-plane perspective: distant route points converge toward the horizon.
-                            val x = cx + (focalLength * lateral / forward).toFloat()
-                            val y = horizonY + (focalLength * 1.55 / forward).toFloat()
+                            if (forward < 2.0) continue
+                            val perspective = (forward + 8.0)
+                            val x = cx + (focalLength * lateral / perspective).toFloat()
+                            // Near route is anchored low in the camera view; distant route
+                            // converges smoothly to the horizon instead of appearing airborne.
+                            val y = horizonY + (size.height * .48f * (12.0 / (forward + 12.0))).toFloat()
                             val point = androidx.compose.ui.geometry.Offset(x, y)
-                            if (previous != null && x in -size.width * .15f..size.width * 1.15f && y in horizonY..size.height * 1.08f) {
-                                val distanceForStyle = (distance + previousDistance) * .5
-                                val width = (13.0 * 5.0 / (distanceForStyle + 5.0)).toFloat().coerceIn(1.4f, 10f)
-                                val alpha = (1.0 - distanceForStyle / 520.0).toFloat().coerceIn(.16f, .96f)
-                                drawLine(Color(0xFFFFC857).copy(alpha = alpha), previous!!, point, strokeWidth = width,
-                                    cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            if (x in -size.width * .25f..size.width * 1.25f && y in horizonY..size.height * .96f) {
+                                projected.add(point to (route?.prefixMeters?.getOrNull(i)?.minus(match.progressMeters) ?: distance))
                             }
-                            previous = if (x in -size.width * .15f..size.width * 1.15f && y in horizonY..size.height * 1.08f) point else null
-                            previousDistance = distance
                         }
-                        drawCircle(Color(0xFFFFC857), 7f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f))
+                        for (i in 1 until projected.size) {
+                            val a = projected[i - 1].first
+                            val b = projected[i].first
+                            val routeDistance = (projected[i - 1].second + projected[i].second) * .5
+                            val yAverage = (a.y + b.y) * .5f
+                            val width = (5f + 28f * (yAverage / size.height).coerceIn(.25f, .85f)).coerceIn(8f, 27f)
+                            val alpha = (1.0 - routeDistance / 170.0).toFloat().coerceIn(.28f, 1f)
+                            drawLine(Color(0xFF052A43).copy(alpha = .78f * alpha), a, b, width + 12f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            drawLine(Color(0xFF12B8FF).copy(alpha = .34f * alpha), a, b, width + 8f, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            drawLine(Color(0xFF168CFF).copy(alpha = .96f * alpha), a, b, width, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            drawLine(Color(0xFFBDEEFF).copy(alpha = .96f * alpha), a, b, (width * .24f).coerceAtLeast(2f), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+                            // A forward arrow on the ribbon roughly every 35 route meters.
+                            val d0 = projected[i - 1].second
+                            val d1 = projected[i].second
+                            if ((d0 / 35.0).toInt() != (d1 / 35.0).toInt()) {
+                                val dx = b.x - a.x
+                                val dy = b.y - a.y
+                                val length = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                                val ux = dx / length
+                                val uy = dy / length
+                                val mid = androidx.compose.ui.geometry.Offset((a.x + b.x) * .5f, (a.y + b.y) * .5f)
+                                val arrowLen = (width * 1.25f).coerceIn(12f, 24f)
+                                val tip = androidx.compose.ui.geometry.Offset(mid.x + ux * arrowLen, mid.y + uy * arrowLen)
+                                val base = androidx.compose.ui.geometry.Offset(mid.x - ux * arrowLen * .55f, mid.y - uy * arrowLen * .55f)
+                                val perpX = -uy * arrowLen * .48f
+                                val perpY = ux * arrowLen * .48f
+                                val arrow = Path().apply {
+                                    moveTo(tip.x, tip.y)
+                                    lineTo(base.x + perpX, base.y + perpY)
+                                    lineTo(base.x - perpX, base.y - perpY)
+                                    close()
+                                }
+                                drawPath(arrow, Color.White.copy(alpha = .94f * alpha))
+                            }
+                        }
                     }
-                    // Larger field reticle with four clear cardinal ticks.
+                                        // Larger field reticle with four clear cardinal ticks.
                     drawCircle(ArLime.copy(alpha = .96f), 30f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f), style = Stroke(3f))
                     drawCircle(Color.White.copy(alpha = .9f), 4f, androidx.compose.ui.geometry.Offset(cx, size.height * .5f))
                     drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx - 42f, size.height * .5f), androidx.compose.ui.geometry.Offset(cx - 25f, size.height * .5f), 3f)

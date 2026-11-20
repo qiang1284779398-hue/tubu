@@ -952,7 +952,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             val metersPerPixel=156543.03392*cos(Math.toRadians(centerLat)).coerceAtLeast(0.01)/2.0.pow(zoom.toDouble())
                             val arrowSpacing=minOf((metersPerPixel*75.0).coerceIn(90.0,1600.0),(routeLength/3.0).coerceAtLeast(1.0))
                             val arrowFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(0,104,235);style=Paint.Style.FILL}
-                            val arrowOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=7f;strokeJoin=Paint.Join.ROUND;strokeCap=Paint.Cap.ROUND}
+                            val arrowOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=10f;strokeJoin=Paint.Join.ROUND;strokeCap=Paint.Cap.ROUND}
                             val arrowShape=AndroidPath().apply {
                                 moveTo(0f,-22f)
                                 lineTo(-16f,12f)
@@ -1090,14 +1090,14 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             canvas.rotate(screenArrowHeading,x,y)
 
                             val fan=AndroidPath().apply {
-                                moveTo(x,y-76f)
-                                lineTo(x-17f,y+5f)
-                                quadTo(x,y+1f,x+17f,y+5f)
+                                moveTo(x,y-100f)
+                                lineTo(x-24f,y+9f)
+                                quadTo(x,y+3f,x+24f,y+9f)
                                 close()
                             }
                             val fanPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                                color=if(stale) android.graphics.Color.argb(18,105,119,132)
-                                else android.graphics.Color.argb(42,35,126,245)
+                                color=if(stale) android.graphics.Color.argb(30,105,119,132)
+                                else android.graphics.Color.argb(70,35,126,245)
                                 style=Paint.Style.FILL
                             }
                             canvas.drawPath(fan,fanPaint)
@@ -1105,10 +1105,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             // A small inner highlight keeps the pointer readable on
                             // both satellite imagery and detailed topographic maps.
                             val pointerShadow=AndroidPath().apply {
-                                moveTo(x,y-27f)
-                                lineTo(x-16f,y+16f)
-                                lineTo(x,y+8f)
-                                lineTo(x+16f,y+16f)
+                                moveTo(x,y-48f)
+                                lineTo(x-26f,y+27f)
+                                lineTo(x,y+14f)
+                                lineTo(x+26f,y+27f)
                                 close()
                             }
                             val pointerOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1125,10 +1125,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             canvas.drawPath(pointerShadow,pointerFill)
 
                             val pointerHighlight=AndroidPath().apply {
-                                moveTo(x,y-19f)
-                                lineTo(x-5f,y+5f)
-                                lineTo(x,y+1f)
-                                lineTo(x+5f,y+5f)
+                                moveTo(x,y-35f)
+                                lineTo(x-8f,y+10f)
+                                lineTo(x,y+4f)
+                                lineTo(x+8f,y+10f)
                                 close()
                             }
                             val highlightPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1158,16 +1158,16 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             style=Paint.Style.STROKE
                             strokeWidth=1.5f
                         }
-                        canvas.drawCircle(x,y,22f,outerGlow)
-                        canvas.drawCircle(x,y,19f,whiteRim)
-                        canvas.drawCircle(x,y,15.5f,core)
-                        canvas.drawCircle(x,y,15.5f,coreRim)
+                        canvas.drawCircle(x,y,28f,outerGlow)
+                        canvas.drawCircle(x,y,24f,whiteRim)
+                        canvas.drawCircle(x,y,19.5f,core)
+                        canvas.drawCircle(x,y,19.5f,coreRim)
                         if(!arrowCanDraw) {
                             val center=Paint(Paint.ANTI_ALIAS_FLAG).apply {
                                 color=android.graphics.Color.WHITE
                                 style=Paint.Style.FILL
                             }
-                            canvas.drawCircle(x,y,4.5f,center)
+                            canvas.drawCircle(x,y,6.5f,center)
                         }
                     }
                     // North-up compass marker and a ground-distance scale bar.

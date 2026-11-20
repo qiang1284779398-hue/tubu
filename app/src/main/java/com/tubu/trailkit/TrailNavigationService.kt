@@ -88,11 +88,14 @@ class TrailNavigationService : Service(), LocationListener {
         try {
             val writer=trackWriter
             if(writer!=null) {
-                if(age in 0L..20000L && location.accuracy<=100f) {
+                // The saved GPX comes from this service stream: record accurate fresh GPS only.
+                if(age in 0L..8000L && location.provider==LocationManager.GPS_PROVIDER && location.accuracy<=35f) {
                     val previous=lastTrackLocation
                     val distance=previous?.distanceTo(location)?.toDouble() ?: Double.POSITIVE_INFINITY
-                    val elapsed=previous?.let { location.time-it.time } ?: Long.MAX_VALUE
-                    if(previous==null || distance>=1.5 || (elapsed>=4000L && distance>=1.0)) {
+                    val elapsed=previous?.let { (location.time-it.time).coerceAtLeast(0L)/1000.0 } ?: Double.POSITIVE_INFINITY
+                    val speed=if(location.hasSpeed())location.speed.coerceIn(0f,8f) else 0f
+                    val plausible=previous==null || elapsed>45.0 || distance<=maxOf(25.0,speed*elapsed+previous.accuracy+location.accuracy)
+                    if(plausible && (previous==null || (distance>=3.0 && elapsed>=2.5))) {
                         val elevation=if(location.hasAltitude()) String.format(Locale.US,"<ele>%.1f</ele>",location.altitude) else ""
                         writer.write(String.format(Locale.US,"<trkpt lat=\"%.7f\" lon=\"%.7f\">%s<time>%s</time></trkpt>\n",location.latitude,location.longitude,elevation,Instant.ofEpochMilli(location.time)))
                         writer.flush()

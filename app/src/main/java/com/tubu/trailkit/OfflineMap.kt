@@ -464,7 +464,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
                     val age=System.currentTimeMillis()-location.time
-                    if(age !in 0L..120000L || location.accuracy>5000f) return
+                    if(age !in 0L..30000L || location.accuracy>1000f) return
                     val existing=current
                     if(existing!=null) {
                         if(location.time<existing.time) return
@@ -485,25 +485,26 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             val jump=mapDistance(previous.latitude to previous.longitude,location.latitude to location.longitude)
                             val oldSpeed=if(previous.hasSpeed())previous.speed else 0f
                             val newSpeed=if(location.hasSpeed())location.speed else 0f
-                            val expected=maxOf(oldSpeed,newSpeed)*elapsed
-                            val allowed=maxOf(250.0,expected+previous.accuracy+location.accuracy+50.0)
-                            if(elapsed in 0.0..8.0 && jump>allowed) { gpsError="定位出现异常跳变，已忽略本次位置";return }
+                            val expected=maxOf(oldSpeed,newSpeed).coerceAtMost(8f)*elapsed
+                            val accuracyAllowance=(previous.accuracy+location.accuracy).coerceAtMost(45f)
+                            val allowed=maxOf(35.0,expected+accuracyAllowance+15.0)
+                            if(elapsed in 0.0..45.0 && jump>allowed) { gpsError="GPS 异常跳点已过滤，等待稳定定位";return }
                         }
                         previousAccepted=Location(location)
                     }
                     val filteredLocation=TrailLocationFilter.apply(location)
                     current=filteredLocation
                     gpsError=if(location.accuracy<=75f) "" else "当前定位精度 ±${location.accuracy.roundToInt()} 米；精度较低，仍显示实时位置"
-                    if(isRecording && age in 0L..20000L && location.accuracy<=100f) {
+                    // Save only fresh, precise satellite fixes; ignore small GPS jitter and impossible jumps.
+                    if(isRecording && age in 0L..8000L && location.provider==LocationManager.GPS_PROVIDER && location.accuracy<=35f) {
                         val previousRecorded=recordedPoints.lastOrNull()
                         val movedMeters=previousRecorded?.let {
                             mapDistance(it.latitude to it.longitude,location.latitude to location.longitude)
                         } ?: Double.POSITIVE_INFINITY
-                        val elapsedSincePrevious=previousRecorded?.let { location.time-it.time } ?: Long.MAX_VALUE
-                        if(previousRecorded==null || movedMeters>=1.5 ||
-                            (elapsedSincePrevious>=4000L && movedMeters>=1.0)) {
-                            recordedPoints.add(Location(location))
-                        }
+                        val elapsedSincePrevious=previousRecorded?.let { (location.time-it.time).coerceAtLeast(0L)/1000.0 } ?: Double.POSITIVE_INFINITY
+                        val plausibleJump=previousRecorded==null || elapsedSincePrevious>45.0 ||
+                            movedMeters<=maxOf(25.0,elapsedSincePrevious*5.5+previousRecorded.accuracy+location.accuracy)
+                        if(plausibleJump && (previousRecorded==null || (movedMeters>=3.0 && elapsedSincePrevious>=2.5))) recordedPoints.add(Location(location))
                     }
                     if(followGps) { centerLat=location.latitude;centerLon=location.longitude }
                 }
@@ -522,7 +523,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         providers.forEach { provider ->
                             manager.getLastKnownLocation(provider)?.let { last ->
                                 val age=System.currentTimeMillis()-last.time
-                                if(age in 0L..120000L && last.accuracy<=2500f && (current==null || last.time>current!!.time)) current=Location(last)
+                                if(age in 0L..30000L && last.accuracy<=1000f && (current==null || last.time>current!!.time)) current=Location(last)
                             }
                         }
                     } catch(_:SecurityException) {}
@@ -949,14 +950,16 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val routeLength=routeCumulative.lastOrNull()?:0.0
                         if(routeLength>30.0 && navigationPoints.size>=2) {
                             val metersPerPixel=156543.03392*cos(Math.toRadians(centerLat)).coerceAtLeast(0.01)/2.0.pow(zoom.toDouble())
-                            val arrowSpacing=minOf((metersPerPixel*115.0).coerceIn(160.0,3000.0),(routeLength/2.0).coerceAtLeast(1.0))
-                            val arrowFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(24,58,48);style=Paint.Style.FILL}
-                            val arrowOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=4.5f;strokeJoin=Paint.Join.ROUND;strokeCap=Paint.Cap.ROUND}
+                            val arrowSpacing=minOf((metersPerPixel*75.0).coerceIn(90.0,1600.0),(routeLength/3.0).coerceAtLeast(1.0))
+                            val arrowFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(0,104,235);style=Paint.Style.FILL}
+                            val arrowOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=7f;strokeJoin=Paint.Join.ROUND;strokeCap=Paint.Cap.ROUND}
                             val arrowShape=AndroidPath().apply {
-                                moveTo(0f,-11f)
-                                lineTo(-7f,7f)
-                                lineTo(0f,3f)
-                                lineTo(7f,7f)
+                                moveTo(0f,-22f)
+                                lineTo(-16f,12f)
+                                lineTo(-7f,8f)
+                                lineTo(0f,2f)
+                                lineTo(7f,8f)
+                                lineTo(16f,12f)
                                 close()
                             }
                             var segmentIndex=0

@@ -303,7 +303,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
     var busy by remember(projectId){mutableStateOf(false)}
     var complete by remember(projectId){mutableStateOf(false)}
     var paused by remember(projectId){mutableStateOf(false)}
-    var message by remember(projectId){mutableStateOf("按路线两侧缓冲区下载：8–12 级覆盖较宽范围，13–16 级只下载路线近邻。下载任务会保存在本机，可暂停后继续。")}
+    var message by remember(projectId){mutableStateOf("按路线走廊分级下载：9–11 级覆盖路线附近，12–15 级提供细节；缩小范围以减少流量。已保存区域可恢复。")}
     var activeRegion by remember(projectId){mutableStateOf<OfflineRegion?>(null)}
 
     LaunchedEffect(projectId,points) {
@@ -351,7 +351,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             batchTotal=plan.regions.size;downloaded=0L;required=0L;bytes=0L
             estimatedTiles=plan.estimatedTileCount
             activeRegion=null
-            message="正在准备$label：路线总长约 ${"%.1f".format(java.util.Locale.US,plan.routeLengthMeters/1000.0)} km，分为 ${plan.regions.size} 个走廊区域；预估约 ${plan.estimatedTileCount} 张地图瓦片。"
+            message="正在准备$label：路线总长约 ${"%.1f".format(java.util.Locale.US,plan.routeLengthMeters/1000.0)} km，分为 ${plan.regions.size} 个走廊区域；预估约 ${plan.estimatedTileCount} 张地图瓦片（9–15 级）。"
             var completedBytes=0L
             var completedResources=0L
             var completedRegions=0
@@ -517,7 +517,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
         Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
             Text("离线地图下载",style=MaterialTheme.typography.titleSmall)
             Text(message,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("下载范围：路线两侧约 1.6 km 的低级别底图（8–12 级）+ 两侧约 450 m 的高细节地图（13–16 级）。分段区域有重叠，减少折返和转弯处的漏图。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("下载范围：路线两侧约 900 m 的低级别地图（9–11 级）+ 两侧约 220 m 的高细节地图（12–15 级）。相比旧方案减少低级别覆盖宽度和高一级缩放层，优先保留徒步路线附近。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图",false)},

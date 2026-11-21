@@ -37,8 +37,8 @@ internal object OfflineDownloadPlanner {
         val sampled=resample(points,SAMPLE_SPACING_METERS)
         val chunks=splitIntoChunks(sampled,CHUNK_LENGTH_METERS,CHUNK_OVERLAP_METERS)
         val regions=mutableListOf<OfflineDownloadRegionPlan>()
-        // Broad low-zoom coverage, then narrow high-detail coverage around the trail.
-        val tiers=listOf(1600.0 to (8 to 12),450.0 to (13 to 16))
+        // Smaller low-zoom buffer with fewer zooms, then a narrow detail corridor.\n        // This avoids paying for zoom 8 and zoom 16 across long route sections.
+        val tiers=listOf(900.0 to (9 to 11),220.0 to (12 to 15))
         for((buffer,zooms) in tiers) {
             for(chunk in chunks) {
                 if(chunk.size<2) continue

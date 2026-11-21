@@ -230,7 +230,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val fix = location
         val candidate = routeMatchCandidate
         if (!offRoute || navigationFinished || fix == null || candidate == null ||
-            candidate.distanceMeters > 250.0 || !gpsQualityOk
+            candidate.distanceMeters > 20.0 || !gpsQualityOk
         ) {
             rejoinGroundElevations = null
         } else {
@@ -568,7 +568,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     // position to the continuity-matched point on the correct forward route leg.
                     val reconnectTarget = routeMatchCandidate
                     if (offRoute && fix != null && reconnectTarget != null &&
-                        reconnectTarget.distanceMeters <= 250.0 && projectionReady && pose != null
+                        reconnectTarget.distanceMeters <= 20.0 && projectionReady && pose != null
                     ) {
                         val reconnectFocalPixels = cameraIntrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
                         val ground = rejoinGroundElevations
@@ -697,8 +697,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF8A65))
                         ) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(if (routeMatchCandidate!!.distanceMeters <= 250.0) "已生成临时接入指引" else "当前位置远离 GPX 轨迹，暂无法安全接入", color = Color(0xFFFFAB91), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                                Text(if (routeMatchCandidate!!.distanceMeters <= 250.0) "橙色虚线从当前位置指向前方最近的正确轨迹点；接入后自动恢复蓝色主路线" else "距轨迹约 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m；请先靠近路线后再接入", color = Color(0xFFFFCCBC), fontSize = 12.sp)
+                                Text(if (routeMatchCandidate!!.distanceMeters <= 20.0) "已生成临时接入指引" else "当前位置远离 GPX 轨迹，暂无法安全接入", color = Color(0xFFFFAB91), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Text(if (routeMatchCandidate!!.distanceMeters <= 20.0) "橙色虚线从当前位置指向前方最近的正确轨迹点；接入后自动恢复蓝色主路线" else "距轨迹约 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m；请先靠近路线后再接入", color = Color(0xFFFFCCBC), fontSize = 12.sp)
                             }
                         }
                     } else if (match != null && !gpsReliable) {
@@ -751,7 +751,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                 locationError.isNotBlank() -> locationError
                                 location == null -> "等待 GPS 卫星定位"
                                 !gpsQualityOk -> "GPS 精度/新鲜度不足 · ${location!!.accuracy.roundToInt()} m"
-                                offRoute -> "距 GPX 轨迹 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m · ${if (routeMatchCandidate!!.distanceMeters <= 250.0) "临时接入指引" else "等待靠近路线"}"
+                                offRoute -> "距 GPX 轨迹 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m · ${if (routeMatchCandidate!!.distanceMeters <= 20.0) "临时接入指引" else "等待靠近路线"}"
                                 gpsReliable -> "GPS 稳定 · ±${location!!.accuracy.roundToInt()} m · ${if (terrainSnapshot != null) "DEM 地形贴合" else if (routeElevations.size == routePoints.size && routeElevations.any { it != null }) "平滑高程辅助" else "地面高度近似"}"
                                 else -> "正在连续匹配路线…"
                             },

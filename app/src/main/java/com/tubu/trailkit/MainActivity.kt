@@ -583,7 +583,8 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                                         val image by produceState<Bitmap?>(initialValue=null,key1=g.photo) {
                                             value=withContext(Dispatchers.IO){decodeGearPhoto(context,g.photo,360)}
                                         }
-                                        if(image!=null) Image(image.asImageBitmap(),null,Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop)
+                                        val thumbnail=image
+                                        if(thumbnail!=null) Image(thumbnail.asImageBitmap(),null,Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop)
                                         else Box(Modifier.size(68.dp).clip(RoundedCornerShape(16.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center){Icon(Icons.Default.PhotoCamera,null,tint=forest)}
                                         Spacer(Modifier.width(12.dp))
                                         Column(Modifier.weight(1f)) { Text(g.name,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis); Text("${g.category} · 数量 ${g.quantity}",fontSize=11.sp,color=muted); Text(yuan(g.price)+" / 件 · ${g.weightGrams.toInt()} g/件",fontSize=12.sp,color=forest,fontWeight=FontWeight.SemiBold); if(g.warrantyUntil.isNotBlank()) Text("保修至 "+g.warrantyUntil,fontSize=10.sp,color=muted); if(g.maintenanceLog.isNotBlank()) Text("维护记录："+g.maintenanceLog.take(42),fontSize=10.sp,color=muted,maxLines=1,overflow=TextOverflow.Ellipsis)
@@ -841,14 +842,16 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
             confirmButton = {
                 TextButton(onClick = {
                     val id = deleteProjectId
-                    projects.firstOrNull { it.id == id }?.let { projectToDelete ->
-                        deleteProjectNavigationData(context, projectToDelete)
-                        projectToDelete.mapPath.takeIf { it.isNotBlank() }?.let { path -> runCatching { File(path).delete() } }
-                        deleteUnreferencedProjectPhotos(context, projectToDelete, projects.filterNot { it.id == id })
-                        deleteOfflineRegionsForProject(context, id)
+                    if(id!=null) {
+                        projects.firstOrNull { it.id == id }?.let { projectToDelete ->
+                            deleteProjectNavigationData(context, projectToDelete)
+                            projectToDelete.mapPath.takeIf { it.isNotBlank() }?.let { path -> runCatching { File(path).delete() } }
+                            deleteUnreferencedProjectPhotos(context, projectToDelete, projects.filterNot { it.id == id })
+                            deleteOfflineRegionsForProject(context, id)
+                        }
+                        save(projects.filterNot { it.id == id })
+                        if (selected == id) selected = null
                     }
-                    save(projects.filterNot { it.id == id })
-                    if (selected == id) selected = null
                     deleteProjectId = null
                 }) { Text("确认删除", color = androidx.compose.ui.graphics.Color(0xFFB34D43)) }
             },
@@ -919,16 +922,17 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     }
 
     if(gearDialog && project!=null) GearDialog(editing,chosenPhoto,{picker.launch("image/*")},{takeGearPhoto()},{gearDialog=false}) { g ->
-        val updated=if(editing==null) project.copy(gear=project.gear+g) else project.copy(gear=project.gear.map{if(it.id==g.id)g else it})
+        val editingGear=editing
+        val updated=if(editingGear==null) project.copy(gear=project.gear+g) else project.copy(gear=project.gear.map{if(it.id==g.id)g else it})
         val allUpdated=projects.map{if(it.id==project.id)updated else it}
-        if(editing!=null && editing.photo.isNotBlank() && editing.photo!=g.photo) {
-            deleteUnreferencedProjectPhotos(context,project.copy(gear=listOf(editing)),allUpdated)
+        if(editingGear!=null && editingGear.photo.isNotBlank() && editingGear.photo!=g.photo) {
+            deleteUnreferencedProjectPhotos(context,project.copy(gear=listOf(editingGear)),allUpdated)
         }
         save(allUpdated);gearDialog=false
     }
     if(githubPhotoDialog) {
         AlertDialog(
-            onDismissRequest={ if(!githubUploading) githubPhotoDialog=false },
+            onDismissRequest={ if(!githubUploading) { githubPhotoDialog=false; githubPublicAcknowledged=false } },
             title={ Text("上传照片到 GitHub") },
             text={
                 Column(Modifier.heightIn(max=440.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -1014,7 +1018,8 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                 val bitmap by produceState<Bitmap?>(initialValue=null,key1=photo) {
                     value=withContext(Dispatchers.IO){decodeGearPhoto(ctx,photo,800)}
                 }
-                if(bitmap!=null) Image(bitmap.asImageBitmap(),null,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
+                val previewBitmap=bitmap
+                if(previewBitmap!=null) Image(previewBitmap.asImageBitmap(),null,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
                 else Column(horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.PhotoCamera,null,tint=forest);Text("还没有装备照片",fontSize=12.sp,color=forest)}
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(10.dp)) {

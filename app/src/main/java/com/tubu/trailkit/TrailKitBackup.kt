@@ -275,7 +275,7 @@ internal fun deleteUnreferencedProjectPhotos(context: Context, removed: Project,
         runCatching {
             val uri = Uri.parse(value)
             if (uri.authority == context.packageName + ".fileprovider" &&
-                uri.path.orEmpty().contains("/gear_photos/")) {
+                uri.path.orEmpty().contains("/gear_media/")) {
                 val name = uri.lastPathSegment ?: return@runCatching
                 val file = File(directory, name)
                 if (file.canonicalFile.parentFile == directory.canonicalFile) file.delete()

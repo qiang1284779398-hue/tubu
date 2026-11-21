@@ -45,10 +45,17 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 private val ArLime = Color(0xFFB8D5A8)
 
+private data class ArTerrainSnapshot(
+    val progressMeters: Double,
+    val routeElevations: List<Double?>,
+    val currentGroundElevationMeters: Double
+)
 private data class CameraRibbonPoint(
     val center: ArScreenPoint,
     val left: ArScreenPoint,
@@ -105,6 +112,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
     var lastStableRouteMatch by remember(route) { mutableStateOf<RouteMatch?>(null) }
     var routeMatchCandidate by remember(route) { mutableStateOf<RouteMatch?>(null) }
     var routeMatch by remember(route) { mutableStateOf<RouteMatch?>(null) }
+    var terrainSnapshot by remember(route) { mutableStateOf<ArTerrainSnapshot?>(null) }
 
     var ageRefresh by remember { mutableLongStateOf(0L) }
     LaunchedEffect(location) {
@@ -178,6 +186,26 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
         }
     }
 
+    // Prefer ground DEM heights over GPX altitude, which is the height of the recording phone/watch.
+    LaunchedEffect(location, routeMatch, route) {
+        val fix = location
+        val match = routeMatch
+        if (fix == null || match == null || route == null || !gpsReliable) {
+            terrainSnapshot = null
+        } else {
+            val requestedProgress = match.progressMeters
+            val samples = sampleArRouteAhead(route, emptyList(), requestedProgress, 120.0, 4.0)
+            val coordinates = samples.map { it.latitude to it.longitude }
+            val dem = withContext(Dispatchers.IO) {
+                ArTerrainDem.elevations(coordinates) to ArTerrainDem.elevation(fix.latitude, fix.longitude)
+            }
+            terrainSnapshot = if (dem.second != null && dem.first.size == samples.size && dem.first.all { it != null }) {
+                ArTerrainSnapshot(requestedProgress, dem.first, dem.second!!)
+            } else {
+                null
+            }
+        }
+    }
     val upcomingTurn = remember(routeMatch, route) {
         val activeMatch = routeMatch
         if (activeMatch != null && route != null) findUpcomingCameraTurn(route, activeMatch) else null
@@ -397,10 +425,22 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
                     if (fix != null && match != null && gpsReliable && projectionReady &&
                         pose != null && route != null && routePoints.size > 1
                     ) {
-                        val samples = sampleArRouteAhead(route, routeElevations, match.progressMeters, 120.0, 4.0)
-                        val referenceElevation = sampleArRouteAhead(
-                            route, routeElevations, match.progressMeters, 0.0, 4.0
-                        ).firstOrNull()?.elevationMeters
+                        val activeTerrain = terrainSnapshot?.takeIf {
+                            kotlin.math.abs(it.progressMeters - match.progressMeters) <= 8.0
+                        }
+                        val smoothedGpxElevations = smoothArRouteElevations(routeElevations)
+                        val fallbackSamples = sampleArRouteAhead(
+                            route, smoothedGpxElevations, match.progressMeters, 120.0, 4.0
+                        )
+                        val samples = if (activeTerrain != null && activeTerrain.routeElevations.size == fallbackSamples.size) {
+                            fallbackSamples.mapIndexed { index, sample ->
+                                sample.copy(elevationMeters = activeTerrain.routeElevations[index])
+                            }
+                        } else fallbackSamples
+                        val referenceElevation = activeTerrain?.currentGroundElevationMeters
+                            ?: sampleArRouteAhead(
+                                route, smoothedGpxElevations, match.progressMeters, 0.0, 4.0
+                            ).firstOrNull()?.elevationMeters
                         val focalPixels = cameraIntrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
                         val ribbonPoints = samples.mapIndexedNotNull { index, sample ->
                             val previous = samples[(index - 1).coerceAtLeast(0)]
@@ -617,7 +657,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
                                 location == null -> "等待 GPS 卫星定位"
                                 !gpsQualityOk -> "GPS 精度/新鲜度不足 · ${location!!.accuracy.roundToInt()} m"
                                 offRoute -> "距 GPX 轨迹 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m · 暂停贴合"
-                                gpsReliable -> "GPS 稳定 · ±${location!!.accuracy.roundToInt()} m · ${if (routeElevations.size == routePoints.size && routeElevations.any { it != null }) "高程辅助投影" else "地面高度近似"}"
+                                gpsReliable -> "GPS 稳定 · ±${location!!.accuracy.roundToInt()} m · ${if (terrainSnapshot != null) "DEM 地形贴合" else if (routeElevations.size == routePoints.size && routeElevations.any { it != null }) "平滑高程辅助" else "地面高度近似"}"
                                 else -> "正在连续匹配路线…"
                             },
                             color = if (gpsReliable) Color(0xFFB9D8A8) else Color(0xFFFFCC80),

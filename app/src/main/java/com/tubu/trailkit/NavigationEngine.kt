@@ -225,6 +225,29 @@ fun matchRoute(route:PreparedRoute,location:Pair<Double,Double>,lastSegmentIndex
 }
 
 
+/** Reconstruct a stable route position from saved progress after the app is reopened. */
+fun routeMatchAtProgress(route: PreparedRoute, progressMeters: Double): RouteMatch? {
+    if (route.points.size < 2 || !progressMeters.isFinite()) return null
+    val progress = progressMeters.coerceIn(0.0, route.totalMeters)
+    val prefix = route.prefixMeters
+    var low = 0
+    var high = prefix.lastIndex
+    while (low < high) {
+        val middle = (low + high + 1) ushr 1
+        if (prefix[middle] <= progress) low = middle else high = middle - 1
+    }
+    val index = low.coerceAtMost(route.points.lastIndex - 1)
+    val a = route.points[index]
+    val b = route.points[index + 1]
+    val length = prefix[index + 1] - prefix[index]
+    val fraction = if (length <= 0.001) 0.0 else ((progress - prefix[index]) / length).coerceIn(0.0, 1.0)
+    return RouteMatch(
+        index, fraction, 0.0, progress, route.totalMeters,
+        a.first + (b.first - a.first) * fraction,
+        a.second + (b.second - a.second) * fraction,
+        bearingDegrees(a, b)
+    )
+}
 /**
  * Stateful-friendly map matching for live AR navigation.
  * Search is bounded by travelled route distance rather than raw GPX point count,

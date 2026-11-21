@@ -160,7 +160,9 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
         } ?: 0.0
         val speed = if (fix.hasSpeed()) fix.speed.toDouble().coerceIn(0.0, 5.5) else 1.8
         val allowedAdvance = if (previousFix == null) route.totalMeters else {
-            (speed * elapsedSeconds + fix.accuracy + (previousFix.accuracy) + 12.0).coerceIn(18.0, 120.0)
+            routeProgressAdvanceLimitMeters(
+                speed, elapsedSeconds, fix.accuracy.toDouble(), previousFix.accuracy.toDouble()
+            )
         }
         val course = if (fix.hasBearing() && fix.hasSpeed() && fix.speed >= 1.2f) fix.bearing.toDouble() else null
         val candidate = matchRouteContinuously(

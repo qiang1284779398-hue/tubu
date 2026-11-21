@@ -33,8 +33,10 @@ import org.maplibre.android.offline.OfflineManager
 import org.maplibre.android.offline.OfflineRegion
 import org.maplibre.android.offline.OfflineRegionError
 import org.maplibre.android.offline.OfflineRegionStatus
-import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
+import org.maplibre.geojson.Geometry
+import org.maplibre.android.offline.OfflineGeometryRegionDefinition
 import java.util.concurrent.TimeUnit
+import java.util.UUID
 import kotlin.math.*
 
 internal const val TRAILKIT_MAP_STYLE = "https://styles.maptoolkit.org/street.json"
@@ -279,145 +281,262 @@ internal fun MapLibreBaseMap(
     }
 }
 
-private fun lonTile(lon: Double, z: Int): Double = (lon + 180.0) / 360.0 * (1 shl z)
-private fun latTile(lat: Double, z: Int): Double {
-    val r = Math.toRadians(lat.coerceIn(-85.0511, 85.0511))
-    return (1.0 - ln(tan(r) + 1.0 / cos(r)) / Math.PI) / 2.0 * (1 shl z)
-}
-private fun estimatedTileCount(west: Double, south: Double, east: Double, north: Double, minZoom: Int, maxZoom: Int): Int {
-    var total = 0
-    for (z in minZoom..maxZoom) {
-        val x1 = floor(lonTile(west, z)).toInt()
-        val x2 = floor(lonTile(east, z)).toInt()
-        val y1 = floor(latTile(north, z)).toInt()
-        val y2 = floor(latTile(south, z)).toInt()
-        total += (x2 - x1 + 1).coerceAtLeast(1) * (y2 - y1 + 1).coerceAtLeast(1)
-    }
-    return total
-}
-
-private data class OfflineBatchBounds(val west:Double,val south:Double,val east:Double,val north:Double)
-
-private fun splitOfflineBounds(west:Double,south:Double,east:Double,north:Double,minZoom:Int,maxZoom:Int,targetTiles:Int=250):List<OfflineBatchBounds> {
-    val result=mutableListOf<OfflineBatchBounds>()
-    fun split(box:OfflineBatchBounds,depth:Int) {
-        val count=estimatedTileCount(box.west,box.south,box.east,box.north,minZoom,maxZoom)
-        if(count<=targetTiles || depth>=18) { result.add(box); return }
-        val spanX=abs(lonTile(box.east,maxZoom)-lonTile(box.west,maxZoom))
-        val spanY=abs(latTile(box.south,maxZoom)-latTile(box.north,maxZoom))
-        if(spanX>=spanY && box.east-box.west>0.00001) {
-            val mid=(box.west+box.east)/2.0
-            split(OfflineBatchBounds(box.west,box.south,mid,box.north),depth+1)
-            split(OfflineBatchBounds(mid,box.south,box.east,box.north),depth+1)
-        } else if(box.north-box.south>0.00001) {
-            val mid=(box.south+box.north)/2.0
-            split(OfflineBatchBounds(box.west,box.south,box.east,mid),depth+1)
-            split(OfflineBatchBounds(box.west,mid,box.east,box.north),depth+1)
-        } else result.add(box)
-    }
-    split(OfflineBatchBounds(west,south,east,north),0)
-    return result
-}
-
 internal const val TRAILKIT_TERRAIN_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-terrain.json"
 internal const val TRAILKIT_ESRI_SATELLITE_STYLE = "https://raw.githubusercontent.com/qiang1284779398-hue/tubu/main/map-styles/trailkit-esri-satellite.json"
 
 @Composable
 internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId:String,selectedStyle:String,onSelectStyle:(String)->Unit) {
     val context=LocalContext.current
+    val prefs=remember(context){context.getSharedPreferences("trailkit_offline_downloads",Context.MODE_PRIVATE)}
+    val vectorTaskKey="task_\${projectId}_vector"
+    val terrainTaskKey="task_\${projectId}_terrain"
+    val vectorRouteKey="route_\${projectId}_vector"
+    val terrainRouteKey="route_\${projectId}_terrain"
+
     var progress by remember(projectId){mutableFloatStateOf(0f)}
     var batchIndex by remember(projectId){mutableIntStateOf(0)}
     var batchTotal by remember(projectId){mutableIntStateOf(0)}
     var downloaded by remember(projectId){mutableLongStateOf(0L)}
     var required by remember(projectId){mutableLongStateOf(0L)}
     var bytes by remember(projectId){mutableLongStateOf(0L)}
+    var estimatedTiles by remember(projectId){mutableIntStateOf(0)}
     var busy by remember(projectId){mutableStateOf(false)}
     var complete by remember(projectId){mutableStateOf(false)}
-    var message by remember(projectId){mutableStateOf("Esri 卫星图使用 MapLibre 客户端缓存（上限 512 MB）。联网浏览过的区域在缓存仍保留且服务端允许缓存时，可能支持离线显示；不提供批量卫星图下载。")}
+    var paused by remember(projectId){mutableStateOf(false)}
+    var message by remember(projectId){mutableStateOf("按路线两侧缓冲区下载：8–12 级覆盖较宽范围，13–16 级只下载路线近邻。下载任务会保存在本机，可暂停后继续。")}
+    var activeRegion by remember(projectId){mutableStateOf<OfflineRegion?>(null)}
 
-    fun startDownload(styleUrl:String,label:String) {
+    LaunchedEffect(projectId,points) {
+        val hasVector=!prefs.getString(vectorTaskKey,null).isNullOrBlank()
+        val hasTerrain=!prefs.getString(terrainTaskKey,null).isNullOrBlank()
+        if(hasVector||hasTerrain) {
+            message="检测到之前的离线地图任务。再次点击对应图层按钮，会按已保存的区域记录继续下载，不会从头重建。"
+        }
+    }
+
+    DisposableEffect(projectId) {
+        onDispose {
+            try { activeRegion?.setDownloadState(OfflineRegion.STATE_INACTIVE) } catch (_:Exception) {}
+        }
+    }
+
+    fun pauseDownload() {
+        paused=true
+        busy=false
+        try { activeRegion?.setDownloadState(OfflineRegion.STATE_INACTIVE) } catch (_:Exception) {}
+        message="已暂停。当前区域和已下载的瓦片均保留；再次点击同一图层即可继续。"
+    }
+
+    fun startDownload(styleUrl:String,label:String,isTerrain:Boolean) {
         if(points.size<2 || busy)return
         try {
-            val minLat=points.minOf{it.first};val maxLat=points.maxOf{it.first}
-            val minLon=points.minOf{it.second};val maxLon=points.maxOf{it.second}
-            val midLat=(minLat+maxLat)/2.0
-            val latPad=2000.0/111320.0
-            val lonPad=2000.0/(111320.0*cos(Math.toRadians(midLat)).coerceAtLeast(0.15))
-            val south=(minLat-latPad).coerceAtLeast(-85.0)
-            val north=(maxLat+latPad).coerceAtMost(85.0)
-            val west=(minLon-lonPad).coerceAtLeast(-180.0)
-            val east=(maxLon+lonPad).coerceAtMost(180.0)
-            val minZoom=8;val maxZoom=16
-            val batches=splitOfflineBounds(west,south,east,north,minZoom,maxZoom,250)
-            if(batches.isEmpty()){message="没有计算出有效下载区域";return}
+            val plan=OfflineDownloadPlanner.createPlan(points)
+            if(plan.regions.isEmpty()) {
+                message="路线点不足或坐标无效，无法生成离线下载范围。"
+                return
+            }
+            val taskKey=if(isTerrain)terrainTaskKey else vectorTaskKey
+            val routeKey=if(isTerrain)terrainRouteKey else vectorRouteKey
+            val routeHash=points.hashCode().toString()
+            val storedId=prefs.getString(taskKey,null)
+            val storedHash=prefs.getString(routeKey,null)
+            val taskId=if(!storedId.isNullOrBlank() && storedHash==routeHash) storedId else UUID.randomUUID().toString()
+            prefs.edit().putString(taskKey,taskId).putString(routeKey,routeHash).apply()
+
             val manager=OfflineManager.getInstance(context)
-            manager.setOfflineMapboxTileCountLimit(3000L)
-            busy=true;complete=false;progress=0f;batchIndex=0;batchTotal=batches.size
-            downloaded=0L;required=0L;bytes=0L
-            message="正在准备$label：路线范围拆分为 ${batches.size} 个小区域…"
+            // Do not lower MapLibre's built-in device-wide offline tile limit to 3,000.
+            // MapLibre's documented default is 6,000; route-corridor planning reduces demand
+            // instead of bypassing the SDK's device storage guard.
+            busy=true;paused=false;complete=false;progress=0f;batchIndex=0
+            batchTotal=plan.regions.size;downloaded=0L;required=0L;bytes=0L
+            estimatedTiles=plan.estimatedTileCount
+            activeRegion=null
+            message="正在准备$label：路线总长约 \${"%.1f".format(java.util.Locale.US,plan.routeLengthMeters/1000.0)} km，分为 \${plan.regions.size} 个走廊区域；预估约 \${plan.estimatedTileCount} 张地图瓦片。"
+            var completedBytes=0L
+            var completedResources=0L
+            var completedRegions=0
+            var stopped=false
+
             lateinit var processNext:(Int)->Unit
-            processNext={index->
-                if(index>=batches.size) {
-                    busy=false;complete=true;progress=1f
-                    message="${label}全部下载完成，共 ${batches.size} 个离线小区域。可切换图层，断网查看已下载范围。"
+            lateinit var watchRegion:(OfflineRegion,Int,Int,Long,Long)->Unit
+
+            fun stopForRecoverableError(text:String) {
+                if(stopped)return
+                stopped=true
+                try { activeRegion?.setDownloadState(OfflineRegion.STATE_INACTIVE) } catch (_:Exception) {}
+                activeRegion=null
+                busy=false
+                paused=true
+                message=text+" 已有下载内容保留，点击同一图层按钮继续。"
+            }
+
+            watchRegion = watch@{ region,index,doneCount,doneBytes,doneResources ->
+                var terminal=false
+                activeRegion=region
+                region.setObserver(object:OfflineRegion.OfflineRegionObserver {
+                    override fun onStatusChanged(status:OfflineRegionStatus) {
+                        if(terminal || stopped || paused)return
+                        val local=status.requiredResourceCount.takeIf{it>0L}?.let{
+                            (status.completedResourceCount.toDouble()/it.toDouble()).toFloat()
+                        }?:0f
+                        progress=((doneCount+local)/plan.regions.size.toFloat()).coerceIn(0f,1f)
+                        downloaded=doneResources+status.completedResourceCount
+                        required=status.requiredResourceCount
+                        bytes=doneBytes+status.completedResourceSize
+                        message="$label 下载中：区域 \${index+1}/\${plan.regions.size}（\${plannedLabel(plan.regions[index])}），\${status.completedResourceCount}/\${status.requiredResourceCount} 项资源，累计 \${bytes/1024/1024} MB。"
+                        if(status.isComplete && status.requiredResourceCount>0L) {
+                            terminal=true
+                            region.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                            activeRegion=null
+                            completedRegions=doneCount+1
+                            completedBytes=doneBytes+status.completedResourceSize
+                            completedResources=doneResources+status.completedResourceCount
+                            processNext(index+1)
+                        }
+                    }
+                    override fun onError(error:OfflineRegionError) {
+                        if(terminal || stopped || paused)return
+                        // MapLibre retries recoverable resource errors with backoff and after connectivity returns.
+                        message="网络或地图源暂时不稳定，MapLibre 正在重试当前区域；不要删除任务。"
+                    }
+                    override fun mapboxTileCountLimitExceeded(limit:Long) {
+                        if(terminal || stopped || paused)return
+                        terminal=true
+                        region.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                        activeRegion=null
+                        stopForRecoverableError("本机离线瓦片总量达到 SDK 上限 $limit。请删除不再需要的旧离线区域或释放存储空间后继续。")
+                    }
+                })
+                region.setDownloadState(OfflineRegion.STATE_ACTIVE)
+            }
+
+            processNext = next@{ index ->
+                if(stopped || paused)return@next
+                if(index>=plan.regions.size) {
+                    busy=false;complete=true;paused=false;progress=1f
+                    activeRegion=null
+                    downloaded=completedResources
+                    bytes=completedBytes
+                    message="$label 下载完成：\${plan.regions.size} 个路线走廊区域，约 \${plan.estimatedTileCount} 张瓦片；实际资源 \${completedResources} 项、\${completedBytes/1024/1024} MB。"
                 } else {
                     batchIndex=index+1
-                    val b=batches[index]
-                    val bounds=LatLngBounds.Builder().include(LatLng(b.north,b.east)).include(LatLng(b.south,b.west)).build()
-                    val definition=OfflineTilePyramidRegionDefinition(styleUrl,bounds,minZoom.toDouble(),maxZoom.toDouble(),1.0f,true)
-                    val metadata=JSONObject().put("name","TrailKit-${label}-${projectId}-${index+1}").put("projectId",projectId).put("layer",label).put("batch",index+1).put("provider",if(label=="卫星图")"Esri World Imagery" else "EOX Terrain").toString().toByteArray(Charsets.UTF_8)
-                    manager.createOfflineRegion(definition,metadata,object:OfflineManager.CreateOfflineRegionCallback {
-                        override fun onCreate(offlineRegion:OfflineRegion) {
-                            var finished=false
-                            offlineRegion.setObserver(object:OfflineRegion.OfflineRegionObserver {
-                                override fun onStatusChanged(status:OfflineRegionStatus) {
-                                    if(finished)return
-                                    downloaded=status.completedResourceCount;required=status.requiredResourceCount;bytes=status.completedResourceSize
-                                    val local=status.requiredResourceCount.takeIf{it>0}?.let{status.completedResourceCount.toFloat()/it.toFloat()}?:0f
-                                    progress=((index+local)/batches.size.toFloat()).coerceIn(0f,1f)
-                                    if(status.completedResourceSize>=48L*1024L*1024L && !status.isComplete) {
-                                        finished=true;offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE);busy=false
-                                        message="第 ${index+1}/${batches.size} 个区域接近 48 MB 安全阈值，已暂停；已完成区域保留。请降低最高缩放级别后重试。"
-                                    } else if(status.isComplete) {
-                                        finished=true;offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
-                                        message="${label}下载中：已完成 ${index+1}/${batches.size} 个小区域…"
-                                        processNext(index+1)
-                                    } else message="${label}下载中：区域 ${index+1}/${batches.size}，${status.completedResourceCount}/${status.requiredResourceCount} 项资源…"
+                    val planned=plan.regions[index]
+                    manager.listOfflineRegions(object:OfflineManager.ListOfflineRegionsCallback {
+                        override fun onList(regions:Array<OfflineRegion>?) {
+                            if(stopped || paused)return
+                            val existing=regions.orEmpty().firstOrNull { region ->
+                                try {
+                                    val meta=JSONObject(String(region.metadata,Charsets.UTF_8))
+                                    meta.optString("app")=="TrailKit" &&
+                                        meta.optString("taskId")==taskId &&
+                                        meta.optInt("batch",-1)==index
+                                } catch (_:Exception) { false }
+                            }
+                            if(existing!=null) {
+                                existing.getStatus(object:OfflineRegion.OfflineRegionStatusCallback {
+                                    override fun onStatus(status:OfflineRegionStatus?) {
+                                        if(stopped || paused)return
+                                        if(status==null) {
+                                            stopForRecoverableError("无法读取第 \${index+1} 个区域状态。")
+                                            return
+                                        }
+                                        if(status.isComplete && status.requiredResourceCount>0L) {
+                                            completedRegions++
+                                            completedBytes+=status.completedResourceSize
+                                            completedResources+=status.completedResourceCount
+                                            bytes=completedBytes
+                                            downloaded=completedResources
+                                            progress=(completedRegions.toFloat()/plan.regions.size).coerceIn(0f,1f)
+                                            existing.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                                            processNext(index+1)
+                                        } else {
+                                            watchRegion(existing,index,completedRegions,completedBytes,completedResources)
+                                        }
+                                    }
+                                    override fun onError(error:String?) {
+                                        stopForRecoverableError("读取第 \${index+1} 个区域失败："+(error?: "未知错误"))
+                                    }
+                                })
+                            } else {
+                                val geometry=try { Geometry.fromJson(planned.geoJson) } catch(e:Exception) {
+                                    stopForRecoverableError("路线区域几何生成失败："+(e.message?:"未知错误"))
+                                    return
                                 }
-                                override fun onError(error:OfflineRegionError) {
-                                    if(finished)return
-                                    finished=true;busy=false;message="第 ${index+1} 个区域下载失败：${error.message}。已完成区域保留。"
-                                }
-                                override fun mapboxTileCountLimitExceeded(limit:Long) {
-                                    if(finished)return
-                                    finished=true;offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE);busy=false
-                                    message="服务端瓦片限制为 $limit；已完成区域保留。请降低最高缩放级别后重试。"
-                                }
-                            })
-                            offlineRegion.setDownloadState(OfflineRegion.STATE_ACTIVE)
+                                val definition=OfflineGeometryRegionDefinition(
+                                    styleUrl,geometry,planned.minZoom.toDouble(),planned.maxZoom.toDouble(),1.0f,true
+                                )
+                                val metadata=JSONObject()
+                                    .put("app","TrailKit")
+                                    .put("name","TrailKit-$label-$projectId-\${index+1}")
+                                    .put("taskId",taskId)
+                                    .put("projectId",projectId)
+                                    .put("layer",label)
+                                    .put("batch",index)
+                                    .put("batchTotal",plan.regions.size)
+                                    .put("minZoom",planned.minZoom)
+                                    .put("maxZoom",planned.maxZoom)
+                                    .put("bufferMeters",planned.bufferMeters)
+                                    .put("estimatedTiles",planned.estimatedTileCount)
+                                    .toString().toByteArray(Charsets.UTF_8)
+                                manager.createOfflineRegion(definition,metadata,object:OfflineManager.CreateOfflineRegionCallback {
+                                    override fun onCreate(offlineRegion:OfflineRegion) {
+                                        if(stopped || paused) {
+                                            offlineRegion.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                                            return
+                                        }
+                                        watchRegion(offlineRegion,index,completedRegions,completedBytes,completedResources)
+                                    }
+                                    override fun onError(error:String) {
+                                        stopForRecoverableError("创建第 \${index+1} 个离线区域失败：$error")
+                                    }
+                                })
+                            }
                         }
-                        override fun onError(error:String){busy=false;message="无法创建第 ${index+1} 个离线区域：$error"}
+                        override fun onError(error:String) {
+                            stopForRecoverableError("读取已下载区域失败：$error")
+                        }
                     })
                 }
             }
             processNext(0)
-        } catch(e:Exception){busy=false;message="启动离线下载失败："+(e.message ?: "未知错误")}
+        } catch(e:Exception) {
+            busy=false
+            message="启动离线下载失败："+(e.message ?: "未知错误")
+        }
     }
 
+    val hasVectorTask=!prefs.getString(vectorTaskKey,null).isNullOrBlank()
+    val hasTerrainTask=!prefs.getString(terrainTaskKey,null).isNullOrBlank()
     Card(modifier=Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
             Text("离线地图下载",style=MaterialTheme.typography.titleSmall)
             Text(message,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("下载范围：路线两侧约 1.6 km 的低级别底图（8–12 级）+ 两侧约 450 m 的高细节地图（13–16 级）。分段区域有重叠，减少折返和转弯处的漏图。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载矢量")}
-                OutlinedButton(onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图")},enabled=!busy&&points.size>=2,modifier=Modifier.weight(1f)){Text("下载地形")}
-                OutlinedButton(onClick={},enabled=false,modifier=Modifier.weight(1f)){Text("卫星自动缓存")}
+                OutlinedButton(
+                    onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图",false)},
+                    enabled=!busy&&points.size>=2,
+                    modifier=Modifier.weight(1f)
+                ){Text(if(hasVectorTask)"继续矢量" else "下载矢量")}
+                OutlinedButton(
+                    onClick={startDownload(TRAILKIT_TERRAIN_STYLE,"地形图",true)},
+                    enabled=!busy&&points.size>=2,
+                    modifier=Modifier.weight(1f)
+                ){Text(if(hasTerrainTask)"继续地形" else "下载地形")}
+                OutlinedButton(onClick={pauseDownload},enabled=busy,modifier=Modifier.weight(1f)){Text("暂停")}
             }
-            if(busy||complete) {
+            if(busy||complete||paused) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
-                Text("${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · $downloaded/$required 项 · ${bytes/1024/1024} MB（当前区域）",style=MaterialTheme.typography.labelSmall)
+                Text(
+                    "\${(progress*100).toInt()}% · 区域 \${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · 已完成 $downloaded 项 · 当前区域需 $required 项 · 累计 \${bytes/1024/1024} MB",
+                    style=MaterialTheme.typography.labelSmall
+                )
             }
-            Text("卫星底图使用 Esri World Imagery。MapLibre 客户端缓存上限为 512 MB；这不是整条路线的离线下载，未浏览过的区域不能保证断网显示。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("预估瓦片数仅作下载前规划参考，实际资源量取决于地图样式、文字字体和服务端瓦片；MapLibre 不提供可靠的下载前 MB 估算。暂停、网络中断或退出页面后，已下载区域会保留，可继续同一任务。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("卫星底图仍使用 Esri World Imagery 的浏览缓存（上限 512 MB），当前不提供批量离线卫星下载。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
+
+private fun plannedLabel(plan:OfflineDownloadRegionPlan):String =
+    "\${plan.minZoom}–\${plan.maxZoom} 级 · \${plan.bufferMeters.toInt()} m 缓冲"

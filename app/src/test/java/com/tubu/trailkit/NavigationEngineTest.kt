@@ -101,6 +101,27 @@ class NavigationEngineTest {
         assertTrue(next.distanceMeters in 13.0..17.0)
     }
 
+    @Test fun savedProgressAnchorDisambiguatesOutAndBackOverlappingSegments() {
+        val route = prepareRoute(listOf(0.0 to 0.0, 0.0 to 0.001, 0.0 to 0.0))
+        val outwardAnchor = routeMatchAtProgress(route, 55.0) ?: error("outward anchor missing")
+        val returnAnchor = routeMatchAtProgress(route, 170.0) ?: error("return anchor missing")
+        val outward = matchRouteContinuously(route, 0.0 to 0.0005, outwardAnchor, 25.0)
+            ?: error("outward match missing")
+        val returning = matchRouteContinuously(route, 0.0 to 0.0005, returnAnchor, 25.0)
+            ?: error("return match missing")
+        assertEquals(0, outward.segmentIndex)
+        assertEquals(1, returning.segmentIndex)
+        assertTrue(outward.progressMeters < 100.0)
+        assertTrue(returning.progressMeters > 110.0)
+    }
+
+    @Test fun savedProgressAnchorClampsToRouteAndReconstructsEndpoint() {
+        val route = prepareRoute(listOf(0.0 to 0.0, 0.0 to 0.001, 0.001 to 0.001))
+        val end = routeMatchAtProgress(route, route.totalMeters + 500.0) ?: error("end anchor missing")
+        assertEquals(route.totalMeters, end.progressMeters, 0.001)
+        assertEquals(route.points.last().first, end.snappedLat, 0.000001)
+        assertEquals(route.points.last().second, end.snappedLon, 0.000001)
+    }
     @Test fun continuousMatcherCanAdvanceWhenAllowedDistanceIncreases() {
         val route = prepareRoute(listOf(0.0 to 0.0, 0.0 to 0.001, 0.001 to 0.001))
         val previous = matchRoute(route, 0.0 to 0.0004) ?: error("initial match missing")

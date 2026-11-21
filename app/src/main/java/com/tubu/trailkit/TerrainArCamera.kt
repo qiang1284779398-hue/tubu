@@ -95,7 +95,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
     var sensorReady by remember { mutableStateOf(false) }
     var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM) }
     var magneticCameraPose by remember { mutableStateOf<ArCameraPose?>(null) }
-    var cameraIntrinsics by remember { mutableStateOf(ArCameraIntrinsics(5.6, 4.2, 4.2, false)) }
+    var cameraIntrinsics by remember { mutableStateOf(ArCameraIntrinsics(4.2, 5.6, 4.2, false)) }
     var cameraError by remember { mutableStateOf("") }
     var locationError by remember { mutableStateOf("") }
     val routePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
@@ -359,7 +359,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
                         future.addListener({
                             try {
                                 val provider = future.get()
-                                cameraIntrinsics = ArCameraIntrinsics(5.6, 4.2, 4.2, false)
+                                cameraIntrinsics = ArCameraIntrinsics(4.2, 5.6, 4.2, false)
                                 val targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
                                 val preview = Preview.Builder().setTargetRotation(targetRotation).build().also {
                                     it.setSurfaceProvider(previewView.surfaceProvider)

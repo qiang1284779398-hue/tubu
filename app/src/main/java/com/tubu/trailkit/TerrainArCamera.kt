@@ -44,6 +44,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 private val ArLime = Color(0xFFB8D5A8)
@@ -101,10 +102,19 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
     val route = remember(routePoints) { if (routePoints.size >= 2) prepareRoute(routePoints) else null }
     val routeElevations = remember(encodedElevations) { decodeGpxElevations(encodedElevations) }
     var lastMatchedFix by remember(route) { mutableStateOf<Location?>(null) }
+    var lastStableRouteMatch by remember(route) { mutableStateOf<RouteMatch?>(null) }
     var routeMatchCandidate by remember(route) { mutableStateOf<RouteMatch?>(null) }
     var routeMatch by remember(route) { mutableStateOf<RouteMatch?>(null) }
 
+    var ageRefresh by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(location) {
+        while (true) {
+            delay(1_000L)
+            ageRefresh += 1L
+        }
+    }
     val gpsAgeMillis = location?.let {
+        ageRefresh
         ((SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos).coerceAtLeast(0L) / 1_000_000L)
     } ?: Long.MAX_VALUE
     val gpsQualityOk = location != null &&
@@ -133,7 +143,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
     val roll = (cameraPose?.rollDegrees ?: Double.NaN).toFloat()
     val projectionReady = sensorReady && sensorAccuracy != SensorManager.SENSOR_STATUS_UNRELIABLE && cameraPose != null
 
-    LaunchedEffect(location, route) {
+    LaunchedEffect(location, route, ageRefresh) {
         val fix = location
         if (fix == null || route == null || !fix.hasAccuracy() ||
             fix.provider != android.location.LocationManager.GPS_PROVIDER ||
@@ -144,7 +154,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
             return@LaunchedEffect
         }
         val previousFix = lastMatchedFix
-        val previousMatch = routeMatch
+        val previousMatch = lastStableRouteMatch
         val elapsedSeconds = previousFix?.let {
             ((fix.elapsedRealtimeNanos - it.elapsedRealtimeNanos).coerceAtLeast(0L) / 1_000_000_000.0)
         } ?: 0.0
@@ -160,6 +170,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
         if (candidate != null && candidate.distanceMeters <= routeSnapLimitMeters) {
             routeMatch = candidate
             lastMatchedFix = Location(fix)
+            lastStableRouteMatch = candidate
         } else {
             routeMatch = null
         }
@@ -561,7 +572,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
                         ) {
                             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Text("GPS 精度不足，暂停精确转向", color = Color(0xFFFFCC80), fontSize = 16.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                                Text("当前精度 ±${location?.accuracy?.roundToInt() ?: 0} m · 等待更稳定的定位（建议 ≤35 m）",
+                                Text("当前精度 ±${location?.accuracy?.roundToInt() ?: 0} m · 等待更稳定的定位（建议 ≤25 m）",
                                     color = Color(0xFFFFE0B2), fontSize = 12.sp)
                             }
                         }

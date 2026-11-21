@@ -88,7 +88,7 @@ private fun findUpcomingCameraTurn(route: PreparedRoute, match: RouteMatch): Cam
 
 @OptIn(ExperimentalCamera2Interop::class)
 @Composable
-internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, encodedElevations: String = "[]", visible: Boolean, onClose: () -> Unit, onJumpToMap: () -> Unit) {
+internal fun TerrainArCameraDialog(projectId: String, projectName: String, encodedTrack: String, encodedElevations: String = "[]", visible: Boolean, onClose: () -> Unit, onJumpToMap: () -> Unit) {
     if (!visible) return
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -105,11 +105,20 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
     var cameraIntrinsics by remember { mutableStateOf(ArCameraIntrinsics(4.2, 5.6, 4.2, false)) }
     var cameraError by remember { mutableStateOf("") }
     var locationError by remember { mutableStateOf("") }
-    val routePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
+    val navigationPrefs = remember(projectId) { context.getSharedPreferences("trailkit_navigation", Context.MODE_PRIVATE) }
+    val reverseRoute = remember(projectId) { navigationPrefs.getBoolean("reverse_$projectId", false) }
+    val baseRoutePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
+    val routePoints = remember(baseRoutePoints, reverseRoute) { if (reverseRoute) baseRoutePoints.asReversed() else baseRoutePoints }
     val route = remember(routePoints) { if (routePoints.size >= 2) prepareRoute(routePoints) else null }
-    val routeElevations = remember(encodedElevations) { decodeGpxElevations(encodedElevations) }
+    val routeProgressKey = "progress_${projectId}_${encodedTrack.hashCode()}_${if (reverseRoute) "rev" else "fwd"}"
+    val routeSegmentKey = "segment_${projectId}_${encodedTrack.hashCode()}_${if (reverseRoute) "rev" else "fwd"}"
+    var confirmedProgress by remember(projectId, encodedTrack, reverseRoute) { mutableDoubleStateOf(navigationPrefs.getFloat(routeProgressKey, 0f).toDouble()) }
+    var destinationPromptVisible by remember(projectId, encodedTrack, reverseRoute) { mutableStateOf(false) }
+    var destinationPromptHandled by remember(projectId, encodedTrack, reverseRoute) { mutableStateOf(false) }
+    var navigationFinished by remember(projectId, encodedTrack, reverseRoute) { mutableStateOf(false) }
+    val routeElevations = remember(encodedElevations, reverseRoute) { decodeGpxElevations(encodedElevations).let { if (reverseRoute) it.asReversed() else it } }
     var lastMatchedFix by remember(route) { mutableStateOf<Location?>(null) }
-    var lastStableRouteMatch by remember(route) { mutableStateOf<RouteMatch?>(null) }
+    var lastStableRouteMatch by remember(route) { mutableStateOf(route?.let { routeMatchAtProgress(it, confirmedProgress) }) }
     var routeMatchCandidate by remember(route) { mutableStateOf<RouteMatch?>(null) }
     var routeMatch by remember(route) { mutableStateOf<RouteMatch?>(null) }
     var terrainSnapshot by remember(route) { mutableStateOf<ArTerrainSnapshot?>(null) }
@@ -151,9 +160,9 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
     val roll = (cameraPose?.rollDegrees ?: Double.NaN).toFloat()
     val projectionReady = sensorReady && sensorAccuracy != SensorManager.SENSOR_STATUS_UNRELIABLE && cameraPose != null
 
-    LaunchedEffect(location, route, ageRefresh) {
+    LaunchedEffect(location, route, ageRefresh, navigationFinished) {
         val fix = location
-        if (fix == null || route == null || !fix.hasAccuracy() ||
+        if (navigationFinished || fix == null || route == null || !fix.hasAccuracy() ||
             fix.provider != android.location.LocationManager.GPS_PROVIDER ||
             fix.accuracy > 25f || gpsAgeMillis > 10_000L
         ) {
@@ -162,12 +171,14 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
             return@LaunchedEffect
         }
         val previousFix = lastMatchedFix
-        val previousMatch = lastStableRouteMatch
+        val previousMatch = lastStableRouteMatch ?: routeMatchAtProgress(route, confirmedProgress)
         val elapsedSeconds = previousFix?.let {
             ((fix.elapsedRealtimeNanos - it.elapsedRealtimeNanos).coerceAtLeast(0L) / 1_000_000_000.0)
         } ?: 0.0
         val speed = if (fix.hasSpeed()) fix.speed.toDouble().coerceIn(0.0, 5.5) else 1.8
-        val allowedAdvance = if (previousFix == null) route.totalMeters else {
+        // Reacquire only near the saved progress after reopening. Never search the full
+        // route on the first fix, or a coincident out-and-back leg can steal the match.
+        val allowedAdvance = if (previousFix == null) 150.0 else {
             routeProgressAdvanceLimitMeters(
                 speed, elapsedSeconds, fix.accuracy.toDouble(), previousFix.accuracy.toDouble()
             )
@@ -181,6 +192,11 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
             routeMatch = candidate
             lastMatchedFix = Location(fix)
             lastStableRouteMatch = candidate
+            confirmedProgress = maxOf(confirmedProgress, candidate.progressMeters)
+            navigationPrefs.edit()
+                .putFloat(routeProgressKey, confirmedProgress.toFloat())
+                .putInt(routeSegmentKey, candidate.segmentIndex)
+                .apply()
         } else {
             routeMatch = null
         }
@@ -206,6 +222,20 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
             }
         }
     }
+    LaunchedEffect(routeMatch, location, gpsReliable, navigationFinished) {
+        val match = routeMatch
+        val fix = location
+        if (!navigationFinished && !destinationPromptHandled && match != null && fix != null && gpsReliable &&
+            gpsAgeMillis <= 10_000L && fix.accuracy <= 25f && match.remainingMeters <= 35.0 &&
+            haversineForAr(fix.latitude, fix.longitude, routePoints.last().first, routePoints.last().second) <= maxOf(25.0, fix.accuracy * 1.5f)
+        ) {
+            destinationPromptHandled = true
+            destinationPromptVisible = true
+        } else if (match != null && match.remainingMeters > 100.0) {
+            destinationPromptHandled = false
+        }
+    }
+
     val upcomingTurn = remember(routeMatch, route) {
         val activeMatch = routeMatch
         if (activeMatch != null && route != null) findUpcomingCameraTurn(route, activeMatch) else null
@@ -222,7 +252,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
         val age = fix?.let {
             ((SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos).coerceAtLeast(0L) / 1_000_000L)
         } ?: Long.MAX_VALUE
-        if (!startMapPromptHandled && fix != null && routePoints.size >= 2 &&
+        if (confirmedProgress <= 20.0 && !startMapPromptHandled && fix != null && routePoints.size >= 2 &&
             fix.provider == android.location.LocationManager.GPS_PROVIDER &&
             fix.hasAccuracy() && fix.accuracy <= 25f && age <= 10_000L
         ) {
@@ -705,6 +735,24 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
                 }
             )
         }
+    }
+    if (destinationPromptVisible) {
+        AlertDialog(
+            onDismissRequest = { destinationPromptVisible = false },
+            title = { Text("目的地就在附近") },
+            text = { Text("已到达 GPX 终点附近。结束本次导航后，下次打开这条路线会从起点重新开始。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    destinationPromptVisible = false
+                    navigationFinished = true
+                    confirmedProgress = 0.0
+                    lastStableRouteMatch = route?.let { routeMatchAtProgress(it, 0.0) }
+                    navigationPrefs.edit().putFloat(routeProgressKey, 0f).putInt(routeSegmentKey, 0).apply()
+                    android.widget.Toast.makeText(context, "本次导航已结束，下次将从起点重新开始", android.widget.Toast.LENGTH_LONG).show()
+                }) { Text("结束导航") }
+            },
+            dismissButton = { TextButton(onClick = { destinationPromptVisible = false }) { Text("继续导航") } }
+        )
     }
 }
 

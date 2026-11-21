@@ -1799,7 +1799,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     } else {
                         requestNavigationStart()
                     }
-                },modifier=Modifier.fillMaxWidth(),enabled=navigationPoints.size>=2){Text(if(active)"暂停导航定位" else "开始导航 / 开启 GPS")}
+                },modifier=Modifier.fillMaxWidth(),enabled=navigationPoints.size>=2){Text(if(active)"暂停导航定位" else if(confirmedProgress>0.0)"继续导航 / 开启 GPS" else "开始导航 / 开启 GPS")}
                 Text("地图位置可使用 GPS、Wi-Fi 和基站辅助估算；只有新鲜且精度达标的 GPS 才参与路线进度、偏航判断和轨迹记录。山区请结合指北针、纸质地图和现场判断。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
                 editingCustomWaypoint?.let { target ->
                     AlertDialog(

@@ -130,6 +130,103 @@ fun matchRoute(route:PreparedRoute,location:Pair<Double,Double>,lastSegmentIndex
     return RouteMatch(bestIndex,bestFraction,bestDistance,prefix[bestIndex]+segmentLength*bestFraction,total,bestLat,bestLon,bestBearing)
 }
 
+
+/**
+ * Stateful-friendly map matching for live AR navigation.
+ * Search is bounded by travelled route distance rather than raw GPX point count,
+ * preventing nearby switchbacks or loop crossings from stealing the active segment.
+ */
+fun matchRouteContinuously(
+    route: PreparedRoute,
+    location: Pair<Double, Double>,
+    previous: RouteMatch?,
+    maxForwardProgressMeters: Double,
+    courseBearingDegrees: Double? = null
+): RouteMatch? {
+    val points = route.points
+    if (points.size < 2) return null
+    val prefix = route.prefixMeters
+    val latitudeRadians = Math.toRadians(location.first)
+    val cosLatitude = cos(latitudeRadians).coerceAtLeast(0.01)
+    val minProgress = previous?.let { (it.progressMeters - 12.0).coerceAtLeast(0.0) } ?: 0.0
+    val maxProgress = previous?.let {
+        min(route.totalMeters, it.progressMeters + maxForwardProgressMeters.coerceAtLeast(8.0))
+    } ?: route.totalMeters
+
+    fun segmentAtProgress(value: Double): Int {
+        var low = 0
+        var high = prefix.lastIndex
+        while (low < high) {
+            val middle = (low + high + 1) ushr 1
+            if (prefix[middle] <= value) low = middle else high = middle - 1
+        }
+        return low.coerceAtMost(points.lastIndex - 1)
+    }
+
+    val firstSegment = if (previous == null) 0 else segmentAtProgress(minProgress)
+    val lastSegment = if (previous == null) points.lastIndex - 1 else segmentAtProgress(maxProgress)
+    if (firstSegment > lastSegment) return null
+
+    var bestScore = Double.POSITIVE_INFINITY
+    var bestDistance = Double.POSITIVE_INFINITY
+    var bestIndex = -1
+    var bestFraction = 0.0
+    var bestLat = 0.0
+    var bestLon = 0.0
+    var bestBearing = 0.0
+
+    for (i in firstSegment..lastSegment) {
+        val a = points[i]
+        val b = points[i + 1]
+        val ax = Math.toRadians(a.second - location.second) * 6371000.0 * cosLatitude
+        val ay = Math.toRadians(a.first - location.first) * 6371000.0
+        val bx = Math.toRadians(b.second - location.second) * 6371000.0 * cosLatitude
+        val by = Math.toRadians(b.first - location.first) * 6371000.0
+        val dx = bx - ax
+        val dy = by - ay
+        val denominator = dx * dx + dy * dy
+        val fraction = if (denominator < 0.0001) 0.0 else {
+            (-(ax * dx + ay * dy) / denominator).coerceIn(0.0, 1.0)
+        }
+        val px = ax + fraction * dx
+        val py = ay + fraction * dy
+        val distance = hypot(px, py)
+        val segmentLength = prefix[i + 1] - prefix[i]
+        val progress = prefix[i] + segmentLength * fraction
+
+        var score = distance
+        if (previous != null) {
+            val progressDelta = progress - previous.progressMeters
+            if (progressDelta < -3.0) score += (-progressDelta - 3.0) * 2.5
+            if (progressDelta > maxForwardProgressMeters * 0.75) {
+                score += (progressDelta - maxForwardProgressMeters * 0.75) * 0.35
+            }
+        }
+        if (courseBearingDegrees != null) {
+            val directionError = kotlin.math.abs(signedTurnAngle(courseBearingDegrees, bearingDegrees(a, b)))
+            if (directionError > 35.0) score += (directionError - 35.0) * 0.22
+        }
+
+        if (score < bestScore) {
+            bestScore = score
+            bestDistance = distance
+            bestIndex = i
+            bestFraction = fraction
+            bestLat = a.first + (b.first - a.first) * fraction
+            bestLon = a.second + (b.second - a.second) * fraction
+            bestBearing = bearingDegrees(a, b)
+        }
+    }
+
+    if (bestIndex < 0) return null
+    val segmentLength = prefix[bestIndex + 1] - prefix[bestIndex]
+    val progress = prefix[bestIndex] + segmentLength * bestFraction
+    return RouteMatch(
+        bestIndex, bestFraction, bestDistance, progress, route.totalMeters,
+        bestLat, bestLon, bestBearing
+    )
+}
+
 fun formatNavDistance(meters:Double):String = if(meters>=1000) String.format(java.util.Locale.CHINA,"%.2f km",meters/1000.0) else "${meters.roundToInt()} m"
 fun formatDms(value:Double,isLatitude:Boolean):String {
     val absolute=abs(value)

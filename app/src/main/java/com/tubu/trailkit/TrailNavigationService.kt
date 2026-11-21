@@ -90,7 +90,12 @@ class TrailNavigationService : Service(), LocationListener {
             }
             // Passive provider is supplementary only; it cannot prove that a live
             // location source is available by itself.
-            try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,3000L,0f,this,android.os.Looper.getMainLooper()) } catch(_:Exception) {}
+            try {
+                if(manager.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)) {
+                    manager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)?.let(::onLocationChanged)
+                    manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,3000L,0f,this,android.os.Looper.getMainLooper())
+                }
+            } catch(_:Exception) {}
             if(activeProvidersRequested==0) updateNotification("没有主动定位源：检查精确位置权限和系统定位开关")
         } catch(_:SecurityException) {
             updateNotification("定位权限不足")
@@ -102,6 +107,9 @@ class TrailNavigationService : Service(), LocationListener {
     }
 
     override fun onLocationChanged(location:Location) {
+        // This service is the only owner of location requests. Fan each fix out to
+        // the map/recording UI so the app never registers a second GPS listener.
+        TrailLocationHub.publish(location)
         val age=(SystemClock.elapsedRealtimeNanos()-location.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000L
         val source=when(location.provider) { LocationManager.GPS_PROVIDER -> "GPS"; LocationManager.NETWORK_PROVIDER -> "网络"; LocationManager.PASSIVE_PROVIDER -> "被动"; else -> location.provider ?: "定位" }
         val text=(if(trackWriter!=null)"记录中 · " else "")+"$source · ${String.format(Locale.US,"%.5f, %.5f",location.latitude,location.longitude)} · 精度 ±${location.accuracy.toInt()} m · ${if(age<=15000L)"实时" else "延迟 ${age/1000}s"}"
@@ -178,8 +186,14 @@ class TrailNavigationService : Service(), LocationListener {
 
     @Deprecated("Deprecated in Java")
     override fun onStatusChanged(provider:String?,status:Int,extras:Bundle?) {}
-    override fun onProviderEnabled(provider:String) { updateNotification("GPS 已开启，正在获取定位") }
-    override fun onProviderDisabled(provider:String) { updateNotification("GPS 已关闭，请开启手机定位") }
+    override fun onProviderEnabled(provider:String) {
+        TrailLocationHub.providerEnabled(provider)
+        updateNotification("GPS 已开启，正在获取定位")
+    }
+    override fun onProviderDisabled(provider:String) {
+        TrailLocationHub.providerDisabled(provider)
+        updateNotification("GPS 已关闭，请开启手机定位")
+    }
 
     override fun onDestroy() {
         finishRecording()

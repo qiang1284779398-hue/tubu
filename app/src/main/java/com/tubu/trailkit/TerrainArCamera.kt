@@ -16,6 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -77,6 +78,7 @@ private fun findUpcomingCameraTurn(route: PreparedRoute, match: RouteMatch): Cam
     return null
 }
 
+@OptIn(ExperimentalCamera2Interop::class)
 @Composable
 internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, encodedElevations: String = "[]", visible: Boolean, onClose: () -> Unit, onJumpToMap: () -> Unit) {
     if (!visible) return

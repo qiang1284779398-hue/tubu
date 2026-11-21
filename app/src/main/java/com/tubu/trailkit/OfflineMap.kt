@@ -299,19 +299,17 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var confirmedProgress by remember(projectId,encoded,reverseRoute) { mutableDoubleStateOf(prefs.getFloat(progressKey,0f).toDouble()) }
     var lastMatchedSegment by remember(projectId,encoded,reverseRoute) { mutableIntStateOf(prefs.getInt(segmentKey,0)) }
     var offRouteWas by remember(projectId,encoded,reverseRoute) { mutableStateOf(false) }
-    var navigationSessionInitialized by remember(projectId,encoded,reverseRoute) { mutableStateOf(false) }
+    var destinationPromptVisible by remember(projectId,encoded,reverseRoute) { mutableStateOf(false) }
+    var destinationPromptHandled by remember(projectId,encoded,reverseRoute) { mutableStateOf(false) }
     fun prepareNavigationStart() {
-        if(!navigationSessionInitialized) {
-            confirmedProgress=0.0
-            lastMatchedSegment=0
-            offRouteWas=false
-            prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()
-            navigationSessionInitialized=true
-        }
+        // Keep the saved progress when resuming after closing/reopening the map.
+        // Only the explicit reset control or confirmed arrival starts a fresh run.
         current=null
         stableGpsFixCount=0
         lastGpsFixElapsedRealtimeNanos=0L
         gpsStaleWas=false
+        destinationPromptVisible=false
+        destinationPromptHandled=false
         followGps=true
         gpsError="正在等待新的 GPS 定位…"
     }
@@ -637,11 +635,18 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
 
     // Do not advance route progress from coarse/network positions. Require two
     // consecutive, fresh, accurate satellite fixes before trusting a route match.
+    val savedProgressAnchor=remember(preparedRoute,confirmedProgress) { routeMatchAtProgress(preparedRoute,confirmedProgress) }
     val routeMatch=cp?.takeIf {
         current?.provider==LocationManager.GPS_PROVIDER &&
             current?.accuracy?.let{accuracy->accuracy<=50f}==true &&
             stableGpsFixCount>=2 && (gpsFixAgeSeconds?:999L)<=15L
-    }?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
+    }?.let { fix ->
+        val advanceLimit=if(stableGpsFixCount<=2) 150.0 else routeProgressAdvanceLimitMeters(
+            current?.takeIf{it.hasSpeed()}?.speed?.toDouble() ?: 1.2, 3.0,
+            current?.accuracy?.toDouble() ?: 25.0, current?.accuracy?.toDouble() ?: 25.0
+        )
+        matchRouteContinuously(preparedRoute,fix,savedProgressAnchor,advanceLimit,gpsCourse?.toDouble())
+    }
     var cameraReturnPromptShown by remember(projectId,fromCamera) { mutableStateOf(false) }
     var cameraReturnPromptVisible by remember(projectId,fromCamera) { mutableStateOf(false) }
     val progressMatch=routeMatch?.takeIf {
@@ -650,6 +655,20 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             it.distanceMeters<=threshold.toDouble()+(current?.accuracy?:0f).toDouble()
     }
 
+    LaunchedEffect(active,progressMatch,current?.accuracy,gpsFixAgeSeconds) {
+        val match=progressMatch
+        val fix=current
+        if(active && !destinationPromptHandled && match!=null && fix!=null &&
+            (gpsFixAgeSeconds?:999L)<=15L && fix.accuracy<=25f &&
+            match.remainingMeters<=35.0 &&
+            mapDistance(fix.latitude to fix.longitude,navigationPoints.last())<=maxOf(25.0,fix.accuracy*1.5f)
+        ) {
+            destinationPromptHandled=true
+            destinationPromptVisible=true
+        } else if(match!=null && match.remainingMeters>100.0) {
+            destinationPromptHandled=false
+        }
+    }
     LaunchedEffect(fromCamera, progressMatch, gpsFixAgeSeconds, current?.accuracy) {
         if (fromCamera && !cameraReturnPromptShown && progressMatch != null &&
             (gpsFixAgeSeconds ?: 999L) <= 15L && (current?.accuracy ?: 999f) <= 35f &&
@@ -840,6 +859,23 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         }
         if(visible && sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_GAME)
         onDispose { manager.unregisterListener(listener) }
+    }
+    if(destinationPromptVisible) {
+        AlertDialog(
+            onDismissRequest={destinationPromptVisible=false},
+            title={Text("目的地就在附近")},
+            text={Text("已到达 GPX 终点附近（剩余约 ${progressMatch?.remainingMeters?.roundToInt() ?: 0} 米）。结束本次导航后，下一次打开将从起点重新开始。")},
+            confirmButton={TextButton(onClick={
+                destinationPromptVisible=false
+                active=false
+                confirmedProgress=0.0
+                lastMatchedSegment=0
+                offRouteWas=false
+                prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()
+                android.widget.Toast.makeText(context,"本次导航已结束，下次将从起点重新开始",android.widget.Toast.LENGTH_LONG).show()
+            }){Text("结束导航")}},
+            dismissButton={TextButton(onClick={destinationPromptVisible=false}){Text("继续导航")}}
+        )
     }
     if (cameraReturnPromptVisible) {
         AlertDialog(
@@ -1734,7 +1770,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat());mapCameraRequestId++},modifier=Modifier.weight(1f)){Text("− 缩小")}
                     OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost(zoomLimit);mapCameraRequestId++},modifier=Modifier.weight(1f)){Text("+ 放大")}
-                    OutlinedButton(onClick={confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear();announcedApproaches.clear();announcedTurns.clear();lastTurnAnnouncementProgress=-1000.0;prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()},modifier=Modifier.weight(1f)){Text("重置进度")}
+                    OutlinedButton(onClick={confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;destinationPromptVisible=false;destinationPromptHandled=false;announcedWaypoints.clear();announcedApproaches.clear();announcedTurns.clear();lastTurnAnnouncementProgress=-1000.0;prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()},modifier=Modifier.weight(1f)){Text("重置进度")}
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={

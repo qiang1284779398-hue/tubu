@@ -914,6 +914,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         Text(if(active)"轨迹跟随导航" else info?.name?:"离线地图导航",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
                         Text(if(info!=null)"离线地形 · ${info.format.uppercase()} · ${info.tileCount} 瓦片 · 缩放 ${info.minZoom}–${info.maxZoom}" else "轨迹导航模式 · 尚未导入离线地图",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.secondary)
                     }
+                    TextButton(onClick={mapCanvasFullscreen=true}){Text("全屏")}
                     TextButton(onClick={onClose}){Text("关闭")}
                 }
                 if(db==null || info==null) {
@@ -965,7 +966,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 }
                 Text(when(mapOrientation) { "north" -> "北向上：地图始终保持北方朝上" ; "heading" -> if(arrowHeading.isNaN()) "航向朝上：等待可靠电子罗盘或 GPS 行进方向" else "航向朝上：根据手机朝向旋转地图" ; else -> if(routeMatch==null) "轨迹朝上：等待高精度 GPS 匹配路线，暂用罗盘方向" else "轨迹朝上：根据前方路线方向旋转地图" },fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
                 }
-                Box(if(mapCanvasFullscreen)Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(360.dp)) {
+                Box(if(mapCanvasFullscreen)Modifier.fillMaxSize() else Modifier.fillMaxWidth().height(420.dp)) {
                     MapLibreBaseMap(
                         centerLat = centerLat,
                         centerLon = centerLon,

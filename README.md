@@ -3,7 +3,7 @@
 TrailKit 是一款面向徒步行程准备、装备管理与离线轨迹导航的 Android 应用。
 
 ## 当前版本
-- Version: 1.6.0
+- Version: 1.6.1
 - Application ID: `com.tubu.trailkit`
 - Minimum Android: 8.0 (API 26)
 
@@ -16,6 +16,7 @@ TrailKit 是一款面向徒步行程准备、装备管理与离线轨迹导航�
 - 电子罗盘、地图朝向、海拔剖面、坐标网格和自定义标记
 - MapLibre 矢量/地形离线区域下载，分区域暂停与继续
 - 栅格 MBTiles 导入、路线覆盖核验和缺失瓦片提示
+- 天气预报本地缓存、失败自动重试和离线参考提示
 - 原生 OpenGL ES 3D 地形浏览与 GPX 轨迹叠加
 - 实景相机路线辅助、目的地天气和安全求助资料
 

@@ -75,12 +75,8 @@ private fun worldY(lat:Double,z:Int):Double {
     val r=lat.coerceIn(-85.0511,85.0511)*Math.PI/180.0
     return (1.0-ln(tan(r)+1.0/cos(r))/Math.PI)/2.0*(256.0*(1 shl z))
 }
-private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
-    val r=6371000.0;val p1=Math.toRadians(a.first);val p2=Math.toRadians(b.first)
-    val dp=Math.toRadians(b.first-a.first);val dl=Math.toRadians(b.second-a.second)
-    val h=sin(dp/2).pow(2)+cos(p1)*cos(p2)*sin(dl/2).pow(2)
-    return 2*r*asin(sqrt(h.coerceIn(0.0,1.0)))
-}
+private fun mapDistance(a:Pair<Double,Double>,b:Pair<Double,Double>):Double =
+    geodesicDistanceMeters(a,b)
 
 // Convert WGS84 GPS coordinates to GCJ-02 for Amap's coordinate display in China.
 private fun wgs84ToGcj02(latitude:Double,longitude:Double):Pair<Double,Double> {
@@ -529,12 +525,12 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     current=filteredLocation
                     gpsError=if(location.accuracy<=75f) "" else "当前定位精度 ±${location.accuracy.roundToInt()} 米；精度较低，仍显示实时位置"
                     // Save only fresh, precise satellite fixes; ignore small GPS jitter and impossible jumps.
-                    if(isRecording && age in 0L..8000L && location.provider==LocationManager.GPS_PROVIDER && location.accuracy<=35f) {
+                    if(isRecording && age in 0L..8000L && location.provider==LocationManager.GPS_PROVIDER && location.hasAccuracy() && location.accuracy<=35f) {
                         val previousRecorded=recordedPoints.lastOrNull()
                         val movedMeters=previousRecorded?.let {
                             mapDistance(it.latitude to it.longitude,location.latitude to location.longitude)
                         } ?: Double.POSITIVE_INFINITY
-                        val elapsedSincePrevious=previousRecorded?.let { (location.time-it.time).coerceAtLeast(0L)/1000.0 } ?: Double.POSITIVE_INFINITY
+                        val elapsedSincePrevious=previousRecorded?.let { (location.elapsedRealtimeNanos-it.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000_000.0 } ?: Double.POSITIVE_INFINITY
                         val plausibleJump=previousRecorded==null || elapsedSincePrevious>45.0 ||
                             movedMeters<=maxOf(25.0,elapsedSincePrevious*5.5+previousRecorded.accuracy+location.accuracy)
                         if(plausibleJump && (previousRecorded==null || (movedMeters>=3.0 && elapsedSincePrevious>=2.5))) recordedPoints.add(Location(location))
@@ -1345,7 +1341,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     OutlinedButton(onClick={measurePoints.clear()},modifier=Modifier.weight(1f),enabled=measurePoints.isNotEmpty()){Text("清除测距点")}
                     MapStat("测量距离",formatNavDistance(measureDistance))
                 }
-                if(measureMode) Text("测距模式：点击地图依次添加测量点；蓝线为测量路线。",fontSize=10.sp,color=Color(0xFF2469BE))
+                if(measureMode) Text("测距模式：沿路线弯道多点点击。按 WGS84 椭球计算水平折线距离，不含坡度和自动道路吸附。",fontSize=10.sp,color=Color(0xFF2469BE))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     MapStat("速度",if(current?.hasSpeed()==true) String.format(Locale.CHINA,"%.1f km/h",gpsSpeed*3.6) else "--")
                     MapStat("${currentElevationSource} 海拔",currentElevation?.let{"${it.roundToInt()} m"}?:"--")

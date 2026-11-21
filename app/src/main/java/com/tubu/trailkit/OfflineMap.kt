@@ -20,6 +20,8 @@ import android.hardware.SensorManager
 import android.hardware.GeomagneticField
 import android.os.Build
 import android.os.BatteryManager
+import android.os.PowerManager
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.speech.tts.TextToSpeech
@@ -262,9 +264,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var gpsStatusTick by remember(projectId) { mutableLongStateOf(0L) }
     var locationUpdateCount by remember(projectId) { mutableIntStateOf(0) }
     var lastLocationProvider by remember(projectId) { mutableStateOf("等待定位源") }
+    var stableGpsFixCount by remember(projectId) { mutableIntStateOf(0) }
+    var lastGpsFixElapsedRealtimeNanos by remember(projectId) { mutableLongStateOf(0L) }
 
-    val gpsClockMillis = remember(gpsStatusTick) { System.currentTimeMillis() }
-    val gpsFixAgeSeconds=current?.let{((gpsClockMillis-it.time).coerceAtLeast(0L)/1000L)}
+    val gpsClockNanos = remember(gpsStatusTick) { SystemClock.elapsedRealtimeNanos() }
+    val gpsFixAgeSeconds=current?.let{((gpsClockNanos-it.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000_000L)}
     var gpsError by remember(projectId) { mutableStateOf("") }
     var showLocationPermissionHelp by remember(projectId) { mutableStateOf(false) }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
@@ -290,6 +294,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             navigationSessionInitialized=true
         }
         current=null
+        stableGpsFixCount=0
+        lastGpsFixElapsedRealtimeNanos=0L
         gpsStaleWas=false
         followGps=true
         gpsError="正在等待新的 GPS 定位…"
@@ -477,13 +483,24 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             var previousAccepted:Location?=null
             val listener=object:LocationListener {
                 override fun onLocationChanged(location:Location) {
-                    val age=System.currentTimeMillis()-location.time
+                    // Android's elapsed-realtime timestamp is monotonic and remains
+                    // reliable across wall-clock/time-zone changes.
+                    val age=(SystemClock.elapsedRealtimeNanos()-location.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000L
                     if(age !in 0L..30000L || location.accuracy>1000f) return
                     val existing=current
                     if(existing!=null) {
-                        if(location.time<existing.time) return
-                        val existingAge=System.currentTimeMillis()-existing.time
-                        if(existingAge in 0L..15000L && existing.accuracy<=75f && location.accuracy>existing.accuracy && location.provider!=LocationManager.GPS_PROVIDER) return
+                        if(location.elapsedRealtimeNanos<existing.elapsedRealtimeNanos) return
+                        val existingAge=(SystemClock.elapsedRealtimeNanos()-existing.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000L
+                        if(existingAge in 0L..20000L && existing.accuracy<=75f && location.accuracy>existing.accuracy && location.provider!=LocationManager.GPS_PROVIDER) return
+                    }
+                    if(location.provider==LocationManager.GPS_PROVIDER) {
+                        if(location.accuracy<=50f && location.elapsedRealtimeNanos>lastGpsFixElapsedRealtimeNanos) {
+                            stableGpsFixCount=(stableGpsFixCount+1).coerceAtMost(10)
+                            lastGpsFixElapsedRealtimeNanos=location.elapsedRealtimeNanos
+                        } else if(location.accuracy>50f) {
+                            stableGpsFixCount=0
+                            lastGpsFixElapsedRealtimeNanos=0L
+                        }
                     }
                     locationUpdateCount++
                     lastLocationProvider=when(location.provider) {
@@ -536,8 +553,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     try {
                         lastKnownProviders.filter { it in enabledProviders }.forEach { provider ->
                             manager.getLastKnownLocation(provider)?.let { last ->
-                                val age=System.currentTimeMillis()-last.time
-                                if(age in 0L..30000L && last.accuracy<=1000f && (current==null || last.time>current!!.time)) current=Location(last)
+                                val age=(SystemClock.elapsedRealtimeNanos()-last.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000L
+                                if(age in 0L..30000L && last.accuracy<=1000f && (current==null || last.elapsedRealtimeNanos>current!!.elapsedRealtimeNanos)) current=Location(last)
                             }
                         }
                     } catch(_:SecurityException) {}
@@ -597,12 +614,18 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     val arrowHeading=if(compassHeadingAvailable) reliableTrueHeading else gpsCourse ?: Float.NaN
     val arrowCanDraw=compassHeadingAvailable || gpsCourse!=null
 
-    val routeMatch=cp?.takeIf { current?.accuracy?.let{accuracy->accuracy<=50f}==true && (gpsFixAgeSeconds?:999L)<=15L }
-        ?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
+    // Do not advance route progress from coarse/network positions. Require two
+    // consecutive, fresh, accurate satellite fixes before trusting a route match.
+    val routeMatch=cp?.takeIf {
+        current?.provider==LocationManager.GPS_PROVIDER &&
+            current?.accuracy?.let{accuracy->accuracy<=50f}==true &&
+            stableGpsFixCount>=2 && (gpsFixAgeSeconds?:999L)<=15L
+    }?.let { matchRoute(preparedRoute,it,lastMatchedSegment) }
     var cameraReturnPromptShown by remember(projectId,fromCamera) { mutableStateOf(false) }
     var cameraReturnPromptVisible by remember(projectId,fromCamera) { mutableStateOf(false) }
     val progressMatch=routeMatch?.takeIf {
-        active && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f &&
+        active && stableGpsFixCount>=2 && current?.provider==LocationManager.GPS_PROVIDER &&
+            (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f &&
             it.distanceMeters<=threshold.toDouble()+(current?.accuracy?:0f).toDouble()
     }
 
@@ -665,8 +688,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             }
         }
     }
-    LaunchedEffect(active, closestWaypoint, current?.accuracy, gpsStatusTick, voiceReady.value) {
-        if(active && cp!=null && closestWaypoint!=null && (current?.accuracy ?: 999f)<=25f && (gpsFixAgeSeconds?:999L)<=15L) {
+    LaunchedEffect(active, closestWaypoint, current?.accuracy, current?.provider, stableGpsFixCount, gpsStatusTick, voiceReady.value) {
+        if(active && cp!=null && closestWaypoint!=null &&
+            current?.provider==LocationManager.GPS_PROVIDER && stableGpsFixCount>=2 &&
+            (current?.accuracy ?: 999f)<=25f && (gpsFixAgeSeconds?:999L)<=15L) {
             val index=allWaypoints.indexOf(closestWaypoint)
             val distance=mapDistance(cp,closestWaypoint.lat to closestWaypoint.lon)
             if(index>=0 && distance<=100.0 && distance>30.0 && index !in announcedApproaches) {
@@ -703,6 +728,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         val stale=active && current!=null && (gpsFixAgeSeconds?:999L)>15L
         if(stale && !gpsStaleWas) {
             gpsStaleWas=true
+            stableGpsFixCount=0
+            lastGpsFixElapsedRealtimeNanos=0L
             speakNavigation("GPS定位已中断，偏航判断暂停，请检查手机定位",true)
         } else if(!stale && gpsStaleWas) {
             gpsStaleWas=false
@@ -710,6 +737,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         }
     }
     val batteryLevel=(context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf{it in 0..100}
+    val powerManager=remember(context) { context.getSystemService(Context.POWER_SERVICE) as PowerManager }
     val gpsSpeed=current?.takeIf{it.hasSpeed() && it.accuracy<=50f && (gpsFixAgeSeconds?:999L)<=15L}?.speed?.toDouble()?.coerceAtLeast(0.0) ?: 0.0
     val remainingAscent=remember(progressMatch?.segmentIndex,navigationElevations) {
         progressMatch?.let { match ->
@@ -730,13 +758,15 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         if(a!=null&&b!=null) a+(b-a)*match.fraction else current?.takeIf{it.hasAltitude()}?.altitude
     } ?: current?.takeIf{it.hasAltitude()}?.altitude
     val currentElevationSource=if(progressMatch!=null && navigationElevations.getOrNull(progressMatch.segmentIndex)!=null && navigationElevations.getOrNull(progressMatch.segmentIndex+1)!=null)"GPX" else "GPS"
-    LaunchedEffect(routeMatch,progressMatch,active,reverseRoute) {
+    LaunchedEffect(routeMatch,progressMatch,active,reverseRoute,stableGpsFixCount) {
         if(progressMatch!=null) {
             confirmedProgress=maxOf(confirmedProgress,progressMatch.progressMeters)
             lastMatchedSegment=progressMatch.segmentIndex
             prefs.edit().putFloat(progressKey,confirmedProgress.toFloat()).putInt(segmentKey,lastMatchedSegment).apply()
         }
-        val off=active && routeMatch!=null && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f && routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
+        val off=active && stableGpsFixCount>=3 && current?.provider==LocationManager.GPS_PROVIDER &&
+            routeMatch!=null && (gpsFixAgeSeconds?:999L)<=15L && (current?.accuracy?:999f)<=50f &&
+            routeMatch.distanceMeters>threshold+(current?.accuracy?:0f)
         if(off && !offRouteWas && System.currentTimeMillis()-lastVibrationAt>15000L) {
             try {
                 val vibrator=context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
@@ -1445,6 +1475,21 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("20 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary);Text("300 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)}
                 } else Text("当前项目没有有效 GPX 轨迹，请先导入 GPX 文件。",fontSize=12.sp,color=MaterialTheme.colorScheme.error)
                 if(gpsError.isNotBlank())Text(gpsError,fontSize=12.sp,color=MaterialTheme.colorScheme.error)
+                if(ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED) {
+                    Text("精确位置权限未开启：当前只能使用大致定位，无法保证徒步导航的实时位置和偏航判断。",fontSize=12.sp,color=Color(0xFF9A6A25),fontWeight=FontWeight.SemiBold)
+                    TextButton(onClick={
+                        try {
+                            context.startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch(_:Exception) { gpsError="无法打开应用权限设置，请在系统设置中手动开启精确位置" }
+                    }) { Text("开启精确位置权限") }
+                }
+                if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.M && !powerManager.isIgnoringBatteryOptimizations(context.packageName)) {
+                    Text("系统电池优化可能限制锁屏后的定位回调。徒步导航时建议将 TrailKit 设为不受电池优化限制。",fontSize=11.sp,color=Color(0xFF9A6A25))
+                    TextButton(onClick={
+                        try { context.startActivity(Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        catch(_:Exception) { gpsError="无法打开电池优化设置，请在系统设置中调整 TrailKit 的后台耗电策略" }
+                    }) { Text("打开电池优化设置") }
+                }
                 if(gpsError.contains("没有可用的主动定位源") || gpsError.contains("系统定位")) {
                     TextButton(onClick={
                         try { context.startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }

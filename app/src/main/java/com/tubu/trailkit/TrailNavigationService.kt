@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
+import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import java.util.Locale
 import java.io.BufferedWriter
@@ -32,6 +33,27 @@ class TrailNavigationService : Service(), LocationListener {
     private var trackWriter:BufferedWriter?=null
     private var lastTrackLocation:Location?=null
     private var lastLocationNotificationMs=0L
+    private var navigationWakeLock:PowerManager.WakeLock?=null
+
+    private fun acquireNavigationWakeLock() {
+        val existing=navigationWakeLock
+        if(existing?.isHeld==true) return
+        try {
+            val powerManager=getSystemService(Context.POWER_SERVICE) as PowerManager
+            navigationWakeLock=powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"TrailKit:Navigation").apply {
+                setReferenceCounted(false)
+                // Safety timeout: release automatically if the service is unexpectedly stranded.
+                acquire(6L*60L*60L*1000L)
+            }
+        } catch(_:Exception) {
+            navigationWakeLock=null
+        }
+    }
+
+    private fun releaseNavigationWakeLock() {
+        try { navigationWakeLock?.takeIf{it.isHeld}?.release() } catch(_:Exception) {}
+        navigationWakeLock=null
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -45,6 +67,7 @@ class TrailNavigationService : Service(), LocationListener {
             ACTION_START_RECORDING -> beginRecording(intent?.getStringExtra(EXTRA_PROJECT_ID) ?: "default")
         }
         startForeground(notificationId,buildNotification("正在启动 GPS 定位…"))
+        acquireNavigationWakeLock()
         try { manager.removeUpdates(this) } catch(_:Exception) {}
         val fine=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
         val coarse=ContextCompat.checkSelfPermission(this,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
@@ -54,19 +77,21 @@ class TrailNavigationService : Service(), LocationListener {
             return START_NOT_STICKY
         }
         try {
-            var providersRequested=0
+            var activeProvidersRequested=0
             if(fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,500L,0f,this,android.os.Looper.getMainLooper())
+                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,0f,this,android.os.Looper.getMainLooper())
                 manager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let(::onLocationChanged)
-                providersRequested++
+                activeProvidersRequested++
             }
             if(manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,1500L,0f,this,android.os.Looper.getMainLooper())
+                manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,2000L,0f,this,android.os.Looper.getMainLooper())
                 manager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)?.let(::onLocationChanged)
-                providersRequested++
+                activeProvidersRequested++
             }
-            try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,3000L,0f,this,android.os.Looper.getMainLooper()); providersRequested++ } catch(_:Exception) {}
-            if(providersRequested==0) updateNotification("定位源未启用，请打开手机系统定位")
+            // Passive provider is supplementary only; it cannot prove that a live
+            // location source is available by itself.
+            try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,3000L,0f,this,android.os.Looper.getMainLooper()) } catch(_:Exception) {}
+            if(activeProvidersRequested==0) updateNotification("没有主动定位源：检查精确位置权限和系统定位开关")
         } catch(_:SecurityException) {
             updateNotification("定位权限不足")
             stopSelf()
@@ -77,7 +102,7 @@ class TrailNavigationService : Service(), LocationListener {
     }
 
     override fun onLocationChanged(location:Location) {
-        val age=System.currentTimeMillis()-location.time
+        val age=(SystemClock.elapsedRealtimeNanos()-location.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000L
         val source=when(location.provider) { LocationManager.GPS_PROVIDER -> "GPS"; LocationManager.NETWORK_PROVIDER -> "网络"; LocationManager.PASSIVE_PROVIDER -> "被动"; else -> location.provider ?: "定位" }
         val text=(if(trackWriter!=null)"记录中 · " else "")+"$source · ${String.format(Locale.US,"%.5f, %.5f",location.latitude,location.longitude)} · 精度 ±${location.accuracy.toInt()} m · ${if(age<=15000L)"实时" else "延迟 ${age/1000}s"}"
         val nowElapsed=SystemClock.elapsedRealtime()
@@ -92,7 +117,7 @@ class TrailNavigationService : Service(), LocationListener {
                 if(age in 0L..8000L && location.provider==LocationManager.GPS_PROVIDER && location.accuracy<=35f) {
                     val previous=lastTrackLocation
                     val distance=previous?.distanceTo(location)?.toDouble() ?: Double.POSITIVE_INFINITY
-                    val elapsed=previous?.let { (location.time-it.time).coerceAtLeast(0L)/1000.0 } ?: Double.POSITIVE_INFINITY
+                    val elapsed=previous?.let { (location.elapsedRealtimeNanos-it.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000_000.0 } ?: Double.POSITIVE_INFINITY
                     val speed=if(location.hasSpeed())location.speed.coerceIn(0f,8f) else 0f
                     val plausible=previous==null || elapsed>45.0 || distance<=maxOf(25.0,speed*elapsed+previous.accuracy+location.accuracy)
                     if(plausible && (previous==null || (distance>=3.0 && elapsed>=2.5))) {
@@ -159,6 +184,7 @@ class TrailNavigationService : Service(), LocationListener {
     override fun onDestroy() {
         finishRecording()
         try { manager.removeUpdates(this) } catch(_:Exception) {}
+        releaseNavigationWakeLock()
         if(Build.VERSION.SDK_INT>=24) stopForeground(STOP_FOREGROUND_REMOVE) else stopForeground(true)
         super.onDestroy()
     }

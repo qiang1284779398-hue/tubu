@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application android:icon="@drawable/ic_trailkit_launcher" android:roundIcon="@drawable/ic_trailkit_launcher" android:hardwareAccelerated="true" android:allowBackup="true" android:usesCleartextTraffic="true" android:label="TrailKit 徒步导航" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:supportsRtl="true">
         <service android:name=".TrailNavigationService" android:exported="false" android:foregroundServiceType="location" />

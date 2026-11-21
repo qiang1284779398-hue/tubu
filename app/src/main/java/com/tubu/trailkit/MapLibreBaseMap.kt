@@ -86,6 +86,7 @@ internal fun MapLibreBaseMap(
     centerLat: Double,
     centerLon: Double,
     zoom: Float,
+    cameraRequestId: Long,
     mapBearing: Float = 0f,
     styleUrl: String = TRAILKIT_MAP_STYLE,
     onCameraChanged: (Double, Double, Float) -> Unit,
@@ -125,6 +126,10 @@ internal fun MapLibreBaseMap(
     var map by remember(mapView) { mutableStateOf<MapLibreMap?>(null) }
     var ready by remember(mapView) { mutableStateOf(false) }
     var appliedStyleUrl by remember(mapView) { mutableStateOf("") }
+    var lastAppliedCameraRequestId by remember(mapView) { mutableLongStateOf(Long.MIN_VALUE) }
+    val latestCameraRequestId by rememberUpdatedState(cameraRequestId)
+    val latestMapBearing by rememberUpdatedState(mapBearing)
+    var lastAppliedBearing by remember(mapView) { mutableFloatStateOf(Float.NaN) }
 
     DisposableEffect(mapView, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -190,9 +195,11 @@ internal fun MapLibreBaseMap(
                     nativeMap.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(centerLat, centerLon))
                         .zoom(zoom.toDouble().coerceIn(2.0, 20.0))
-                        .bearing(mapBearing.toDouble())
+                        .bearing(latestMapBearing.toDouble())
                         .tilt(nativeMap.cameraPosition.tilt)
                         .build()
+                    lastAppliedCameraRequestId = latestCameraRequestId
+                    lastAppliedBearing = latestMapBearing
                     ready = true
                     appliedStyleUrl = styleUrl
                     projectionCallback { lat, lon -> nativeMap.projection.toScreenLocation(LatLng(lat, lon)) }
@@ -214,15 +221,28 @@ internal fun MapLibreBaseMap(
                     }
                 }
                 val p = nativeMap.cameraPosition
-                val target = p.target
-                if (target == null || abs(target.latitude - centerLat) > 0.00015 ||
-                    abs(target.longitude - centerLon) > 0.00015 ||
-                    abs(p.zoom - zoom.toDouble()) > 0.08 || abs(p.bearing - mapBearing.toDouble()) > 0.5) {
+                // Never echo the camera snapshot from an in-progress native gesture
+                // back into MapLibre. That feedback loop repeatedly resets pan/pinch
+                // mid-gesture and is perceived as map jitter rather than low FPS.
+                if (lastAppliedCameraRequestId != cameraRequestId) {
                     nativeMap.cameraPosition = CameraPosition.Builder()
                         .target(LatLng(centerLat, centerLon))
                         .zoom(zoom.toDouble().coerceIn(2.0, 20.0))
                         .bearing(mapBearing.toDouble())
+                        .tilt(p.tilt)
                         .build()
+                    lastAppliedCameraRequestId = cameraRequestId
+                    lastAppliedBearing = mapBearing
+                } else if (lastAppliedBearing.isNaN() || abs(p.bearing - mapBearing.toDouble()) > 0.5) {
+                    // Heading/track-up may change independently; preserve the native
+                    // gesture's current target and zoom while applying bearing only.
+                    nativeMap.cameraPosition = CameraPosition.Builder()
+                        .target(p.target ?: LatLng(centerLat, centerLon))
+                        .zoom(p.zoom)
+                        .bearing(mapBearing.toDouble())
+                        .tilt(p.tilt)
+                        .build()
+                    lastAppliedBearing = mapBearing
                 }
             }
         }

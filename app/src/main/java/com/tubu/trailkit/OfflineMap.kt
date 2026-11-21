@@ -41,6 +41,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LocationSearching
+import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -415,10 +418,15 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$viewKey",initialRouteZoom).coerceIn(2f,18f))}
     var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.second)}
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
+    var mapCameraRequestId by remember(projectId,path){mutableLongStateOf(0L)}
     fun setFollowGps(enabled:Boolean) {
         followGps=enabled
         prefs.edit().putBoolean("follow_gps_$projectId",enabled).apply()
-        if(enabled) current?.let { centerLat=it.latitude;centerLon=it.longitude }
+        if(enabled) current?.let {
+            centerLat=it.latitude
+            centerLon=it.longitude
+            mapCameraRequestId++
+        }
     }
     var mapProjector by remember(projectId,path) { mutableStateOf<((Double,Double)->android.graphics.PointF)?>(null) }
     var mapLayer by remember(projectId) { mutableStateOf((prefs.getString("map_layer_$projectId","standard") ?: "standard").let { if(it=="satellite") "esri" else it }) }
@@ -570,7 +578,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             movedMeters<=maxOf(25.0,elapsedSincePrevious*5.5+previousRecorded.accuracy+location.accuracy)
                         if(plausibleJump && (previousRecorded==null || (movedMeters>=3.0 && elapsedSincePrevious>=2.5))) recordedPoints.add(Location(location))
                     }
-                    if(followGps) { centerLat=location.latitude;centerLon=location.longitude }
+                    if(followGps) {
+                        centerLat=location.latitude
+                        centerLon=location.longitude
+                        mapCameraRequestId++
+                    }
                 }
                 override fun onProviderEnabled(provider:String) {}
                 override fun onProviderDisabled(provider:String) {
@@ -886,7 +898,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     FilterChip(selected=precisionMode,onClick={
                         precisionMode=!precisionMode
                         prefs.edit().putBoolean("precision_mode_$projectId",precisionMode).apply()
-                        zoom=zoom.coerceAtMost(if(precisionMode)20f else 18f)
+                        val limitedZoom=zoom.coerceAtMost(if(precisionMode)20f else 18f)
+                        if(limitedZoom!=zoom) { zoom=limitedZoom;mapCameraRequestId++ }
                     },label={Text(if(precisionMode)"精确模式·开" else "精确模式")})
                     Text(if(precisionMode)"放大上限 20 级；超出地图原始细节时可能只是放大现有数据" else "普通模式：最高 18 级",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary,modifier=Modifier.align(Alignment.CenterVertically))
                 }
@@ -906,6 +919,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         centerLat = centerLat,
                         centerLon = centerLon,
                         zoom = zoom,
+                        cameraRequestId = mapCameraRequestId,
                         mapBearing = mapBearing,
                         styleUrl = activeMapStyle,
                         onCameraChanged = { lat, lon, z ->
@@ -928,22 +942,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             android.widget.Toast.makeText(context, "坐标：$coords", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     )
-                    Surface(
-                        modifier=Modifier.align(Alignment.TopCenter).padding(top=12.dp).clickable {
-                            setFollowGps(!followGps)
-                        },
-                        shape=RoundedCornerShape(22.dp),
-                        color=if(followGps) Color(0xFF1769D2) else Color.White.copy(alpha=0.97f),
-                        shadowElevation=5.dp
-                    ) {
-                        Text(
-                            if(followGps) "◎ 跟随定位 · 已开启" else "自由浏览 · 点击回到定位",
-                            modifier=Modifier.padding(horizontal=15.dp,vertical=9.dp),
-                            color=if(followGps) Color.White else Color(0xFF183C32),
-                            fontSize=12.sp,
-                            fontWeight=FontWeight.Bold
-                        )
-                    }
                     Canvas(Modifier.matchParentSize().clipToBounds()) {
                     val canvas=drawContext.canvas.nativeCanvas
                     // Compose Canvas is already transparent; clearing its native layer can
@@ -1320,6 +1318,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                                     val fitScale=min((width-72.0)/dx,(height-72.0)/dy).coerceAtLeast(0.25)
                                     zoom=(ln(fitScale)/ln(2.0)).toFloat().coerceIn((info?.minZoom?:2).toFloat(),zoomLimit)
                                     followGps=false
+                                    mapCameraRequestId++
                                 }
                             },
                             shape=RoundedCornerShape(14.dp),color=Color.White.copy(alpha=0.96f),shadowElevation=5.dp
@@ -1330,6 +1329,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                                     centerLat=navigationPoints.first().first;centerLon=navigationPoints.first().second
                                     zoom=(info?.centerZoom?:15f).coerceIn((info?.minZoom?:2).toFloat(),zoomLimit)
                                     followGps=false
+                                    mapCameraRequestId++
                                 }
                             },
                             shape=RoundedCornerShape(14.dp),color=Color.White.copy(alpha=0.96f),shadowElevation=5.dp
@@ -1340,7 +1340,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                                 if(loc!=null) {
                                     centerLat=loc.latitude;centerLon=loc.longitude
                                     zoom=maxOf(zoom,info?.centerZoom?:15f).coerceIn((info?.minZoom?:2).toFloat(),zoomLimit)
-                                    followGps=true
+                                    setFollowGps(true)
                                 } else {
                                     android.widget.Toast.makeText(context,"尚未获取到有效定位，请先开启 GPS 导航",android.widget.Toast.LENGTH_SHORT).show()
                                 }
@@ -1360,6 +1360,21 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             shadowElevation=5.dp
                         ) {
                             Box(contentAlignment=Alignment.Center) { Text(if(mapCanvasFullscreen)"×" else "⛶",fontSize=if(mapCanvasFullscreen)30.sp else 27.sp,fontWeight=FontWeight.Bold,color=Color(0xFF183C32)) }
+                        }
+                        Surface(
+                            modifier=Modifier.size(48.dp).clickable { setFollowGps(!followGps) },
+                            shape=RoundedCornerShape(14.dp),
+                            color=if(followGps) Color(0xFFE9F1FF) else Color.White.copy(alpha=0.96f),
+                            shadowElevation=5.dp
+                        ) {
+                            Box(contentAlignment=Alignment.Center) {
+                                Icon(
+                                    imageVector=if(followGps) Icons.Default.MyLocation else Icons.Default.LocationSearching,
+                                    contentDescription=if(followGps) "关闭定位跟随" else "回到当前位置并开启跟随",
+                                    tint=if(followGps) Color(0xFF1769D2) else Color(0xFF183C32),
+                                    modifier=Modifier.size(24.dp)
+                                )
+                            }
                         }
                         Box {
                             Surface(
@@ -1664,7 +1679,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val coordinateText=String.format(Locale.US,"%.5f, %.5f",wp.lat,wp.lon)
                         val arrived=announcedWaypoints.contains(index)
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                            OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false},modifier=Modifier.weight(1f)) {
+                            OutlinedButton(onClick={centerLat=wp.lat;centerLon=wp.lon;followGps=false;mapCameraRequestId++},modifier=Modifier.weight(1f)) {
                                 Text("${if(arrived)"✓ " else ""}${index+1}. ${wp.name}  ·  $coordinateText",fontSize=11.sp)
                             }
                             OutlinedButton(onClick={
@@ -1693,7 +1708,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             .putBoolean("reverse_$projectId",nextReverse).putFloat(nextProgressKey,0f).putInt(nextSegmentKey,0).apply()
                         reverseRoute=nextReverse;confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear();announcedApproaches.clear();announcedTurns.clear();lastTurnAnnouncementProgress=-1000.0
                     },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
-                    OutlinedButton(onClick={setFollowGps(!followGps)},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
+
                 }
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                     Checkbox(checked=voiceGuidance,onCheckedChange={
@@ -1717,8 +1732,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
-                    OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat())},modifier=Modifier.weight(1f)){Text("− 缩小")}
-                    OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost(zoomLimit)},modifier=Modifier.weight(1f)){Text("+ 放大")}
+                    OutlinedButton(onClick={zoom=(zoom-1f).coerceAtLeast((info?.minZoom?:3).toFloat());mapCameraRequestId++},modifier=Modifier.weight(1f)){Text("− 缩小")}
+                    OutlinedButton(onClick={zoom=(zoom+1f).coerceAtMost(zoomLimit);mapCameraRequestId++},modifier=Modifier.weight(1f)){Text("+ 放大")}
                     OutlinedButton(onClick={confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear();announcedApproaches.clear();announcedTurns.clear();lastTurnAnnouncementProgress=-1000.0;prefs.edit().putFloat(progressKey,0f).putInt(segmentKey,0).apply()},modifier=Modifier.weight(1f)){Text("重置进度")}
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {

@@ -52,7 +52,7 @@ fun geodesicDistanceMeters(a: Pair<Double, Double>, b: Pair<Double, Double>): Do
     var cosTwoSigmaM = 0.0
     var converged = false
 
-    repeat(100) {
+    for (iteration in 0 until 100) {
         val sinLambda = sin(lambda)
         val cosLambda = cos(lambda)
         val term1 = cosU2 * sinLambda
@@ -73,7 +73,7 @@ fun geodesicDistanceMeters(a: Pair<Double, Double>, b: Pair<Double, Double>): Do
                 coefficient * cosSigma * (-1.0 + 2.0 * cosTwoSigmaM * cosTwoSigmaM)))
         if (abs(lambda - previousLambda) < 1e-12) {
             converged = true
-            return@repeat
+            break
         }
     }
     if (!converged) return sphericalFallbackDistanceMeters(a, b)

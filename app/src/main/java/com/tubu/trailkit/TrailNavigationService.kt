@@ -122,7 +122,7 @@ class TrailNavigationService : Service(), LocationListener {
             val writer=trackWriter
             if(writer!=null) {
                 // The saved GPX comes from this service stream: record accurate fresh GPS only.
-                if(age in 0L..8000L && location.provider==LocationManager.GPS_PROVIDER && location.accuracy<=35f) {
+                if(age in 0L..8000L && location.provider==LocationManager.GPS_PROVIDER && location.hasAccuracy() && location.accuracy<=35f) {
                     val previous=lastTrackLocation
                     val distance=previous?.distanceTo(location)?.toDouble() ?: Double.POSITIVE_INFINITY
                     val elapsed=previous?.let { (location.elapsedRealtimeNanos-it.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000_000.0 } ?: Double.POSITIVE_INFINITY

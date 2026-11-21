@@ -263,8 +263,10 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var locationUpdateCount by remember(projectId) { mutableIntStateOf(0) }
     var lastLocationProvider by remember(projectId) { mutableStateOf("等待定位源") }
 
-    val gpsFixAgeSeconds=current?.let{((System.currentTimeMillis()-it.time).coerceAtLeast(0L)/1000L)}
+    val gpsClockMillis = remember(gpsStatusTick) { System.currentTimeMillis() }
+    val gpsFixAgeSeconds=current?.let{((gpsClockMillis-it.time).coerceAtLeast(0L)/1000L)}
     var gpsError by remember(projectId) { mutableStateOf("") }
+    var showLocationPermissionHelp by remember(projectId) { mutableStateOf(false) }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
     var followGps by remember(projectId) { mutableStateOf(true) }
     var mapOrientation by remember(projectId) { mutableStateOf(prefs.getString("orientation_$projectId","north") ?: "north") }
@@ -304,7 +306,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var recordingClockTick by remember(projectId) { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
         while(active) {
-            kotlinx.coroutines.delay(5000L)
+            kotlinx.coroutines.delay(1000L)
             gpsStatusTick++
         }
     }
@@ -426,25 +428,37 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         } catch(_:Exception) { null }
     }
     val permissionLauncher=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if(result[Manifest.permission.ACCESS_FINE_LOCATION]==true || result[Manifest.permission.ACCESS_COARSE_LOCATION]==true) { prepareNavigationStart();active=true;gpsError="正在获取手机定位…" }
-        else gpsError="请允许 TrailKit 使用位置信息；仅允许大致位置也可以显示地图位置"
+        val fineGranted=result[Manifest.permission.ACCESS_FINE_LOCATION]==true
+        val coarseGranted=result[Manifest.permission.ACCESS_COARSE_LOCATION]==true
+        if(fineGranted || coarseGranted) {
+            prepareNavigationStart()
+            active=true
+            gpsError=if(fineGranted) "正在获取手机定位…" else "目前只有大致位置权限，正在尝试 Wi-Fi / 基站定位；徒步导航建议开启精确位置"
+            showLocationPermissionHelp=false
+        } else {
+            active=false
+            gpsError="定位权限未获准。请在系统应用权限中允许 TrailKit 使用位置信息"
+            showLocationPermissionHelp=true
+        }
+    }
+    fun requestNavigationStart() {
+        val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
+        if(fine) {
+            prepareNavigationStart()
+            active=true
+            gpsError="正在获取手机定位…"
+        } else {
+            // Re-request both permissions so Android can show the precise-location
+            // upgrade prompt when only approximate location was granted earlier.
+            permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
+        }
     }
     // Camera-origin map opens navigation automatically; ordinary map entry stays idle.
     var cameraAutoStartHandled by remember(projectId,fromCamera) { mutableStateOf(false) }
     LaunchedEffect(visible,fromCamera) {
         if(visible && fromCamera && !cameraAutoStartHandled) {
             cameraAutoStartHandled=true
-            if(!active) {
-                prepareNavigationStart()
-                val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
-                val coarse=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED
-                if(fine || coarse) {
-                    active=true
-                    gpsError="正在获取手机定位…"
-                } else {
-                    permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
-                }
-            }
+            if(!active) requestNavigationStart()
         }
     }
     DisposableEffect(active,projectId) {
@@ -516,28 +530,54 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             }
             try {
                 if(fine || coarse) {
-                    var requested=false
+                    val enabledProviders=manager.getProviders(true).toSet()
+                    val lastKnownProviders=if(fine) listOf(LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER,LocationManager.PASSIVE_PROVIDER)
+                        else listOf(LocationManager.NETWORK_PROVIDER,LocationManager.PASSIVE_PROVIDER)
                     try {
-                        val providers=if(fine) listOf(LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER,LocationManager.PASSIVE_PROVIDER)
-                            else listOf(LocationManager.NETWORK_PROVIDER,LocationManager.PASSIVE_PROVIDER)
-                        providers.forEach { provider ->
+                        lastKnownProviders.filter { it in enabledProviders }.forEach { provider ->
                             manager.getLastKnownLocation(provider)?.let { last ->
                                 val age=System.currentTimeMillis()-last.time
                                 if(age in 0L..30000L && last.accuracy<=1000f && (current==null || last.time>current!!.time)) current=Location(last)
                             }
                         }
                     } catch(_:SecurityException) {}
-                    if(fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                        try { manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,500L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:SecurityException) {}
+
+                    // Count only active providers. PASSIVE_PROVIDER merely relays
+                    // locations generated by other apps and must not be treated as
+                    // proof that this app can obtain a live fix.
+                    val activeProviders=mutableListOf<String>()
+                    if(fine && LocationManager.GPS_PROVIDER in enabledProviders) {
+                        try {
+                            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER,1000L,0f,listener,android.os.Looper.getMainLooper())
+                            activeProviders.add("GPS 卫星")
+                        } catch(_:SecurityException) {}
                     }
-                    if(manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                        try { manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,1500L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:SecurityException) {}
+                    if(LocationManager.NETWORK_PROVIDER in enabledProviders) {
+                        try {
+                            manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,2000L,0f,listener,android.os.Looper.getMainLooper())
+                            activeProviders.add("Wi-Fi / 基站")
+                        } catch(_:SecurityException) {}
                     }
-                    try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,3000L,0f,listener,android.os.Looper.getMainLooper());requested=true } catch(_:Exception) {}
-                    gpsError=if(requested) "定位已启动：卫星 GPS + Wi-Fi/基站辅助（按权限自动切换）" else "系统定位源未启动；检查定位开关、权限和系统定位服务"
-                    if(!fine) gpsError="仅获得大致位置权限：使用 Wi-Fi/基站定位；轨迹记录也允许此来源"
-                } else { active=false;gpsError="请允许 TrailKit 使用位置信息" }
-            } catch(e:Exception) { gpsError=e.message?.let{"定位启动失败：$it"}?:"定位启动失败，请检查定位设置";active=false }
+                    if(LocationManager.PASSIVE_PROVIDER in enabledProviders) {
+                        try { manager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER,3000L,0f,listener,android.os.Looper.getMainLooper()) }
+                        catch(_:Exception) {}
+                    }
+                    if(activeProviders.isEmpty()) {
+                        gpsError="没有可用的主动定位源。请打开手机系统定位；徒步导航还需要精确位置权限或可用的网络定位源"
+                        active=false
+                    } else {
+                        gpsError=if(fine) "定位监听已启动："+activeProviders.joinToString(" + ")
+                            else "仅获得大致位置权限：已启动网络辅助定位；请开启精确位置以获得徒步所需的 GPS 精度"
+                    }
+                } else {
+                    active=false
+                    gpsError="请允许 TrailKit 使用位置信息"
+                    showLocationPermissionHelp=true
+                }
+            } catch(e:Exception) {
+                gpsError=e.message?.let{"定位启动失败：$it"}?:"定位启动失败，请检查定位设置"
+                active=false
+            }
             onDispose { try{manager.removeUpdates(listener)}catch(_:Exception){} }
         } else onDispose { }
     }
@@ -1405,6 +1445,28 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("20 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary);Text("300 米",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)}
                 } else Text("当前项目没有有效 GPX 轨迹，请先导入 GPX 文件。",fontSize=12.sp,color=MaterialTheme.colorScheme.error)
                 if(gpsError.isNotBlank())Text(gpsError,fontSize=12.sp,color=MaterialTheme.colorScheme.error)
+                if(gpsError.contains("没有可用的主动定位源") || gpsError.contains("系统定位")) {
+                    TextButton(onClick={
+                        try { context.startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        catch(_:Exception) { gpsError="无法打开系统定位设置，请从手机设置中进入位置信息页面" }
+                    }) { Text("打开手机系统定位设置") }
+                }
+                if(showLocationPermissionHelp) {
+                    AlertDialog(
+                        onDismissRequest={showLocationPermissionHelp=false},
+                        title={Text("需要定位权限")},
+                        text={Text("系统没有向 TrailKit 授予定位权限，或此前已禁止权限弹窗。请在应用权限中允许“位置信息”；徒步导航建议选择“精确位置”。")},
+                        confirmButton={TextButton(onClick={
+                            showLocationPermissionHelp=false
+                            try {
+                                val settingsIntent=Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:${context.packageName}"))
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(settingsIntent)
+                            } catch(_:Exception) { gpsError="无法打开应用权限设置，请从系统设置中找到 TrailKit" }
+                        }) { Text("打开应用权限设置") }},
+                        dismissButton={TextButton(onClick={showLocationPermissionHelp=false}) { Text("稍后") }}
+                    )
+                }
                 if((gpsFixAgeSeconds?:0L)>15L) Text("定位过期，地图保留灰色最后位置；导航进度和偏航判断已暂停，收到新定位后自动恢复。",fontSize=11.sp,color=Color(0xFF9A6A25))
                 if(current!=null) {
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -1595,9 +1657,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         active=false
                         if(isRecording) { isRecording=false;hasSavedRecording=true }
                     } else {
-                        prepareNavigationStart()
-                        val fine=ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED
-                        if(fine || ContextCompat.checkSelfPermission(context,Manifest.permission.ACCESS_COARSE_LOCATION)==PackageManager.PERMISSION_GRANTED)active=true else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))
+                        requestNavigationStart()
                     }
                 },modifier=Modifier.fillMaxWidth(),enabled=navigationPoints.size>=2){Text(if(active)"暂停导航定位" else "开始导航 / 开启 GPS")}
                 Text("地图位置可使用 GPS、Wi-Fi 和基站辅助估算；只有新鲜且精度达标的 GPS 才参与路线进度、偏航判断和轨迹记录。山区请结合指北针、纸质地图和现场判断。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)

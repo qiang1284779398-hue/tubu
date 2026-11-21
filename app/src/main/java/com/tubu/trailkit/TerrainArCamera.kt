@@ -293,8 +293,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
 
     // The foreground navigation service owns the only GPS/network registration.
     // The camera page consumes the shared stream, so opening AR cannot add duplicate GPS requests.
-    DisposableEffect(context, locationGranted) {
-        if (!locationGranted) {
+    DisposableEffect(context, locationGranted, navigationFinished) {
+        if (!locationGranted || navigationFinished) {
             onDispose { }
         } else {
             val observer = object : TrailLocationObserver {

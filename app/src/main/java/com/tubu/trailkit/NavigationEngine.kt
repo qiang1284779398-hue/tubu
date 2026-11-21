@@ -142,6 +142,25 @@ fun toUtm(latitude:Double,longitude:Double):UtmCoordinate? {
     return UtmCoordinate(zone,if(latitude>=0)'N' else 'S',easting,northing)
 }
 
+/**
+ * Conservative physical progress window for consecutive live GPS fixes.
+ * Accuracy contributes uncertainty, but must not let a nearby switchback
+ * become a plausible route jump merely because both fixes are imprecise.
+ */
+fun routeProgressAdvanceLimitMeters(
+    speedMetersPerSecond: Double,
+    elapsedSeconds: Double,
+    currentAccuracyMeters: Double,
+    previousAccuracyMeters: Double
+): Double {
+    val speed = speedMetersPerSecond.takeIf { it.isFinite() }?.coerceIn(0.0, 5.5) ?: 0.0
+    val elapsed = elapsedSeconds.takeIf { it.isFinite() }?.coerceIn(0.0, 30.0) ?: 0.0
+    val currentAccuracy = currentAccuracyMeters.takeIf { it.isFinite() && it >= 0.0 } ?: 25.0
+    val previousAccuracy = previousAccuracyMeters.takeIf { it.isFinite() && it >= 0.0 } ?: 25.0
+    val uncertaintyAllowance = max(currentAccuracy, previousAccuracy).coerceIn(3.0, 25.0) * 0.75
+    return (speed * elapsed + uncertaintyAllowance + 4.0).coerceIn(8.0, 45.0)
+}
+
 data class PreparedRoute internal constructor(
     val points:List<Pair<Double,Double>>,
     val prefixMeters:DoubleArray,

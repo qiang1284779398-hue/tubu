@@ -62,4 +62,42 @@ class ArCameraProjectionTest {
         assertTrue(samples.first().elevationMeters!! > 100.0)
         assertTrue(samples.last().elevationMeters!! > samples.first().elevationMeters!!)
     }
+
+    @Test fun poseFilterSmoothsHeadingAcrossNorthWithoutA180DegreeJump() {
+        val filter = ArCameraPoseFilter(response = 0.25)
+        fun pose(headingDegrees: Double): ArCameraPose {
+            val angle = Math.toRadians(headingDegrees)
+            return ArCameraPose(
+                imageRight = ArVector3(kotlin.math.cos(angle), -kotlin.math.sin(angle), 0.0),
+                imageUp = ArVector3(0.0, 0.0, 1.0),
+                forward = ArVector3(kotlin.math.sin(angle), kotlin.math.cos(angle), 0.0)
+            )
+        }
+
+        filter.apply(pose(359.0))
+        val smoothed = filter.apply(pose(1.0))
+        assertTrue(kotlin.math.abs(signedTurnAngle(359.0, smoothed.headingDegrees)) < 1.0)
+        assertTrue(
+            kotlin.math.min(smoothed.headingDegrees, 360.0 - smoothed.headingDegrees) < 1.0
+        )
+    }
+
+    @Test fun poseFilterReducesSuddenRotationAndKeepsCameraBasisOrthogonal() {
+        val filter = ArCameraPoseFilter(response = 0.25)
+        fun pose(headingDegrees: Double): ArCameraPose {
+            val angle = Math.toRadians(headingDegrees)
+            return ArCameraPose(
+                imageRight = ArVector3(kotlin.math.cos(angle), -kotlin.math.sin(angle), 0.0),
+                imageUp = ArVector3(0.0, 0.0, 1.0),
+                forward = ArVector3(kotlin.math.sin(angle), kotlin.math.cos(angle), 0.0)
+            )
+        }
+
+        filter.apply(pose(0.0))
+        val smoothed = filter.apply(pose(80.0))
+        assertTrue(smoothed.headingDegrees in 15.0..25.0)
+        assertTrue(kotlin.math.abs(smoothed.imageRight.dot(smoothed.forward)) < 1e-6)
+        assertTrue(kotlin.math.abs(smoothed.imageRight.dot(smoothed.imageUp)) < 1e-6)
+        assertTrue(kotlin.math.abs(smoothed.forward.dot(smoothed.imageUp)) < 1e-6)
+    }
 }

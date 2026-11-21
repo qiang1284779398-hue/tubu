@@ -23,6 +23,50 @@ data class ArCameraPose(
 }
 
 /**
+ * Low-pass filters the fused rotation-vector pose before it drives the camera overlay.
+ * Filtering the 3D basis (rather than heading degrees) avoids a false 359° -> 0° jump.
+ */
+internal class ArCameraPoseFilter(private val response: Double = 0.22) {
+    private var filtered: ArCameraPose? = null
+    private val alpha = response.coerceIn(0.05, 0.8)
+
+    @Synchronized
+    fun apply(raw: ArCameraPose): ArCameraPose {
+        val previous = filtered
+        if (previous == null) {
+            filtered = raw
+            return raw
+        }
+
+        fun blend(from: ArVector3, to: ArVector3): ArVector3 =
+            from * (1.0 - alpha) + to * alpha
+
+        fun normalize(vector: ArVector3): ArVector3? {
+            val length = sqrt(vector.dot(vector))
+            return if (length.isFinite() && length > 1e-6) vector * (1.0 / length) else null
+        }
+
+        fun cross(a: ArVector3, b: ArVector3) = ArVector3(
+            a.north * b.up - a.up * b.north,
+            a.up * b.east - a.east * b.up,
+            a.east * b.north - a.north * b.east
+        )
+
+        val forward = normalize(blend(previous.forward, raw.forward)) ?: raw.forward
+        val blendedRight = blend(previous.imageRight, raw.imageRight)
+        val orthogonalRight = blendedRight - forward * blendedRight.dot(forward)
+        val right = normalize(orthogonalRight) ?: raw.imageRight
+        val up = normalize(cross(right, forward)) ?: raw.imageUp
+        return ArCameraPose(right, up, forward).also { filtered = it }
+    }
+
+    @Synchronized
+    fun reset() {
+        filtered = null
+    }
+}
+
+/**
  * Converts Android's device-to-world rotation matrix into the camera view basis.
  * The back camera looks along device -Z; display rotation remaps the image X/Y axes.
  */

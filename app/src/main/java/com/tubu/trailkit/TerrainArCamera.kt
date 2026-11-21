@@ -103,9 +103,12 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     var sensorReady by remember { mutableStateOf(false) }
     var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM) }
     var magneticCameraPose by remember { mutableStateOf<ArCameraPose?>(null) }
+    val cameraPoseFilter = remember { ArCameraPoseFilter() }
     var cameraIntrinsics by remember { mutableStateOf(ArCameraIntrinsics(4.2, 5.6, 4.2, false)) }
     var cameraError by remember { mutableStateOf("") }
     var locationError by remember { mutableStateOf("") }
+    var activeCameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var cameraSessionActive by remember { mutableStateOf(true) }
     val navigationPrefs = remember(projectId) { context.getSharedPreferences("trailkit_navigation", Context.MODE_PRIVATE) }
     val reverseRoute = remember(projectId) { navigationPrefs.getBoolean("reverse_$projectId", false) }
     val baseRoutePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
@@ -142,6 +145,14 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     val routeSnapLimitMeters = location?.let { (it.accuracy.toDouble() * 1.25).coerceIn(8.0, 28.0) } ?: 12.0
     val offRoute = gpsQualityOk && routeMatchCandidate != null && routeMatch == null
     val gpsReliable = gpsQualityOk && routeMatch != null
+    // Show a nearby route-joining guide even when the loose GPS snap tolerance
+    // currently considers the fix "on route".
+    val rejoinMinimumMeters = location?.let {
+        (it.accuracy.toDouble() * 0.55).coerceIn(4.0, 12.0)
+    } ?: 6.0
+    val rejoinConnectorVisible = gpsQualityOk && routeMatchCandidate?.let {
+        it.distanceMeters >= rejoinMinimumMeters && it.distanceMeters <= 20.0
+    } == true
 
     val magneticDeclination = remember(location) {
         location?.let {
@@ -161,6 +172,28 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     val pitch = (cameraPose?.pitchDegrees ?: Double.NaN).toFloat()
     val roll = (cameraPose?.rollDegrees ?: Double.NaN).toFloat()
     val projectionReady = sensorReady && sensorAccuracy != SensorManager.SENSOR_STATUS_UNRELIABLE && cameraPose != null
+    val reconnectDirectionText = remember(location, routeMatchCandidate, cameraPose) {
+        val fix = location
+        val target = routeMatchCandidate
+        val currentHeading = cameraPose?.headingDegrees
+        if (fix == null || target == null || currentHeading == null) {
+            "方向待定"
+        } else {
+            val bearing = bearingToPoint(
+                fix.latitude to fix.longitude,
+                target.snappedLat to target.snappedLon
+            )
+            val delta = signedTurnAngle(currentHeading, bearing)
+            when {
+                kotlin.math.abs(delta) < 15.0 -> "正前方"
+                kotlin.math.abs(delta) > 165.0 -> "正后方"
+                delta > 0.0 && delta < 90.0 -> "右前方 ${delta.roundToInt()}°"
+                delta > 0.0 -> "右后方 ${delta.roundToInt()}°"
+                delta > -90.0 -> "左前方 ${kotlin.math.abs(delta).roundToInt()}°"
+                else -> "左后方 ${kotlin.math.abs(delta).roundToInt()}°"
+            }
+        }
+    }
 
     LaunchedEffect(location, route, ageRefresh, navigationFinished) {
         val fix = location
@@ -226,12 +259,10 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     }
     // When the GPS fix is outside the snap tolerance, fetch ground heights for a
     // temporary connector from the user's position to the nearest forward route point.
-    LaunchedEffect(location, routeMatchCandidate, offRoute, navigationFinished) {
+    LaunchedEffect(location, routeMatchCandidate, rejoinConnectorVisible, navigationFinished) {
         val fix = location
         val candidate = routeMatchCandidate
-        if (!offRoute || navigationFinished || fix == null || candidate == null ||
-            candidate.distanceMeters > 20.0 || !gpsQualityOk
-        ) {
+        if (!rejoinConnectorVisible || navigationFinished || fix == null || candidate == null || !gpsQualityOk) {
             rejoinGroundElevations = null
         } else {
             rejoinGroundElevations = withContext(Dispatchers.IO) {
@@ -259,6 +290,37 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val activeMatch = routeMatch
         if (activeMatch != null && route != null) findUpcomingCameraTurn(route, activeMatch) else null
     }
+
+    // Resample and smooth the route only when route progress/elevation data changes.
+    // The camera pose may update ~50 times per second; it must not rebuild GPX geometry.
+    val smoothedGpxElevations = remember(routeElevations) { smoothArRouteElevations(routeElevations) }
+    val fallbackRouteSamples = remember(route, smoothedGpxElevations, routeMatch?.progressMeters) {
+        val activeRoute = route
+        val progress = routeMatch?.progressMeters
+        if (activeRoute != null && progress != null) {
+            sampleArRouteAhead(activeRoute, smoothedGpxElevations, progress, 120.0, 4.0)
+        } else {
+            emptyList()
+        }
+    }
+    val activeTerrainSnapshot = remember(terrainSnapshot, routeMatch?.progressMeters) {
+        val progress = routeMatch?.progressMeters
+        terrainSnapshot?.takeIf { progress != null && kotlin.math.abs(it.progressMeters - progress) <= 8.0 }
+    }
+    val arRouteSamples = remember(fallbackRouteSamples, activeTerrainSnapshot) {
+        if (activeTerrainSnapshot != null &&
+            activeTerrainSnapshot.routeElevations.size == fallbackRouteSamples.size
+        ) {
+            fallbackRouteSamples.mapIndexed { index, sample ->
+                sample.copy(elevationMeters = activeTerrainSnapshot.routeElevations[index])
+            }
+        } else {
+            fallbackRouteSamples
+        }
+    }
+    val arReferenceElevation = activeTerrainSnapshot?.currentGroundElevationMeters
+        ?: fallbackRouteSamples.firstOrNull()?.elevationMeters
+
     val displayProjectName = remember(projectName) {
         if (projectName.matches(Regex("""\d{4}-\d{2}-\d{2}.*\d{10,}.*"""))) "当前徒步项目" else projectName
     }
@@ -291,6 +353,14 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     }
 
     DisposableEffect(context) {
+        cameraSessionActive = true
+        onDispose {
+            cameraSessionActive = false
+            activeCameraProvider?.let { provider -> runCatching { provider.unbindAll() } }
+        }
+    }
+
+    DisposableEffect(context) {
         val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val sensor = manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -298,7 +368,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             private val rotation = FloatArray(9)
             override fun onSensorChanged(event: SensorEvent) {
                 SensorManager.getRotationMatrixFromVector(rotation, event.values)
-                magneticCameraPose = arCameraPoseFromRotationMatrix(rotation, windowManager.defaultDisplay.rotation)
+                val rawPose = arCameraPoseFromRotationMatrix(rotation, windowManager.defaultDisplay.rotation)
+                magneticCameraPose = rawPose?.let(cameraPoseFilter::apply)
                 sensorReady = magneticCameraPose != null
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -437,8 +508,10 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         }
                         val future = ProcessCameraProvider.getInstance(ctx)
                         future.addListener({
+                            if (!cameraSessionActive) return@addListener
                             try {
                                 val provider = future.get()
+                                activeCameraProvider = provider
                                 cameraIntrinsics = ArCameraIntrinsics(4.2, 5.6, 4.2, false)
                                 val targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
                                 val preview = Preview.Builder().setTargetRotation(targetRotation).build().also {
@@ -474,22 +547,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     if (fix != null && match != null && gpsReliable && projectionReady &&
                         pose != null && route != null && routePoints.size > 1
                     ) {
-                        val activeTerrain = terrainSnapshot?.takeIf {
-                            kotlin.math.abs(it.progressMeters - match.progressMeters) <= 8.0
-                        }
-                        val smoothedGpxElevations = smoothArRouteElevations(routeElevations)
-                        val fallbackSamples = sampleArRouteAhead(
-                            route, smoothedGpxElevations, match.progressMeters, 120.0, 4.0
-                        )
-                        val samples = if (activeTerrain != null && activeTerrain.routeElevations.size == fallbackSamples.size) {
-                            fallbackSamples.mapIndexed { index, sample ->
-                                sample.copy(elevationMeters = activeTerrain.routeElevations[index])
-                            }
-                        } else fallbackSamples
-                        val referenceElevation = activeTerrain?.currentGroundElevationMeters
-                            ?: sampleArRouteAhead(
-                                route, smoothedGpxElevations, match.progressMeters, 0.0, 4.0
-                            ).firstOrNull()?.elevationMeters
+                        val samples = arRouteSamples
+                        val referenceElevation = arReferenceElevation
                         val focalPixels = cameraIntrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
                         val ribbonPoints = samples.mapIndexedNotNull { index, sample ->
                             val previous = samples[(index - 1).coerceAtLeast(0)]
@@ -567,7 +626,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     // Off-route connector: draw a temporary dashed path from the live GPS
                     // position to the continuity-matched point on the correct forward route leg.
                     val reconnectTarget = routeMatchCandidate
-                    if (offRoute && fix != null && reconnectTarget != null &&
+                    if (rejoinConnectorVisible && fix != null && reconnectTarget != null &&
                         reconnectTarget.distanceMeters <= 20.0 && projectionReady && pose != null
                     ) {
                         val reconnectFocalPixels = cameraIntrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
@@ -651,6 +710,21 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         Text(if (projectionReady) { if (cameraIntrinsics.calibrated) "相机标定就绪" else "视角估算模式" } else if (sensorReady) "罗盘精度较低" else "读取姿态…", Modifier.padding(horizontal = 10.dp, vertical = 9.dp), color = ArLime, fontSize = 11.sp, maxLines = 1)
                     }
                 }
+                if (rejoinConnectorVisible && routeMatchCandidate != null) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 58.dp),
+                        color = Color(0xEE382414),
+                        shape = RoundedCornerShape(18.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB74D))
+                    ) {
+                        Text(
+                            "接入点 ${reconnectDirectionText} · ${routeMatchCandidate!!.distanceMeters.roundToInt()} m",
+                            Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                            color = Color(0xFFFFE0B2), fontSize = 12.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+                        )
+                    }
+                }
                 BoxWithConstraints(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                     Column(
                     Modifier.fillMaxWidth()
@@ -689,7 +763,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         Text(if (routePoints.size >= 2) "正在获取定位并匹配 GPX 路线…" else "当前项目没有可用 GPX 轨迹",
                             color = Color(0xFFFFE082), fontSize = 14.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     }
-                    if (offRoute) {
+                    if (rejoinConnectorVisible || offRoute) {
+                        val reconnectDistance = routeMatchCandidate?.distanceMeters ?: 0.0
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             color = Color(0xFF4A211B),
@@ -697,8 +772,20 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF8A65))
                         ) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(if (routeMatchCandidate!!.distanceMeters <= 20.0) "已生成临时接入指引" else "当前位置远离 GPX 轨迹，暂无法安全接入", color = Color(0xFFFFAB91), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                                Text(if (routeMatchCandidate!!.distanceMeters <= 20.0) "橙色虚线从当前位置指向前方最近的正确轨迹点；接入后自动恢复蓝色主路线" else "距轨迹约 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m；请先靠近路线后再接入", color = Color(0xFFFFCCBC), fontSize = 12.sp)
+                                Text(
+                                    if (rejoinConnectorVisible) "路线在附近 · 已显示接入辅助线"
+                                    else "当前位置远离 GPX 轨迹，暂无法安全接入",
+                                    color = Color(0xFFFFAB91), fontSize = 15.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                )
+                                Text(
+                                    if (rejoinConnectorVisible) {
+                                        "目标在${reconnectDirectionText} · 距离约 ${reconnectDistance.roundToInt()} m；橙色虚线标出接入方向，若路线在画面外，按方向提示转动手机"
+                                    } else {
+                                        "距轨迹约 ${reconnectDistance.roundToInt()} m；请先靠近路线后再接入"
+                                    },
+                                    color = Color(0xFFFFCCBC), fontSize = 12.sp
+                                )
                             }
                         }
                     } else if (match != null && !gpsReliable) {

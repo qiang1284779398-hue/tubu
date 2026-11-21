@@ -381,7 +381,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             }
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 val file=projectTrackFile(context,projectId)
-                val file=projectTrackFile(context,projectId)
                 val trackXml=if(file.exists()&&file.length()>80L)String(recoverRecordedGpx(file),Charsets.UTF_8) else body
                 output.write(appendGpxWaypoints(trackXml,allWaypoints).toByteArray(Charsets.UTF_8))
             }
@@ -389,7 +388,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     }
     val exportRouteGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
         if(uri!=null) try {
-            fun xml(value:String)=value.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&apos;")
             val body=buildString {
                 append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"TrailKit\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
                 append("<trk><name>TrailKit 导出路线</name><trkseg>\n")

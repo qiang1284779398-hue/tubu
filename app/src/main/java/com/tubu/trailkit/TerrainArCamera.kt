@@ -570,6 +570,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     if (offRoute && fix != null && reconnectTarget != null &&
                         reconnectTarget.distanceMeters <= 250.0 && projectionReady && pose != null
                     ) {
+                        val reconnectFocalPixels = cameraIntrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
                         val ground = rejoinGroundElevations
                         val referenceGround = ground?.first
                         val targetGround = ground?.second
@@ -583,7 +584,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             projectArRouteSample(
                                 fix.latitude, fix.longitude,
                                 ArRouteSample(latitude, longitude, 0.0, elevation),
-                                referenceGround, 1.4, pose, focalPixels,
+                                referenceGround, 1.4, pose, reconnectFocalPixels,
                                 size.width.toDouble(), size.height.toDouble()
                             )
                         }

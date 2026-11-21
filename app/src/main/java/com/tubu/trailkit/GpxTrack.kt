@@ -40,6 +40,21 @@ fun readGpxTrack(context:Context,uri:Uri):GpxTrackResult {
  val summary="GPX轨迹："+points.size+" 个轨迹点 · "+String.format(Locale.CHINA,"%.2f",meters/1000.0)+" km · 累计爬升约 "+ascent.roundToInt()+" m · "+waypoints.length()+" 个途经点"
  return GpxTrackResult(summary,json.toString(),waypoints.toString(),elevationJson.toString())
 }
+// Decode only recorded GPX track points (trkpt), not waypoints or route points.
+ // Each flushed trkpt can be recovered even if the GPX file was interrupted.
+fun decodeRecordedTrackPoints(xml:String):List<Pair<Double,Double>> {
+ val pointTag=Regex("""<trkpt\b([^>]*)>""",RegexOption.IGNORE_CASE)
+ fun attribute(attributes:String,name:String):Double? =
+  Regex("""(?:^|\s)$name\s*=\s*["']([^"']+)["']""",RegexOption.IGNORE_CASE)
+   .find(attributes)?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+ return pointTag.findAll(xml).mapNotNull { match ->
+  val attributes=match.groupValues[1]
+  val lat=attribute(attributes,"lat")
+  val lon=attribute(attributes,"lon")
+  if(lat!=null && lon!=null && lat in -90.0..90.0 && lon in -180.0..180.0) lat to lon else null
+ }.toList()
+}
+
 private fun decodePolylineDeltas(encoded:String):List<Int> {
  val values=mutableListOf<Int>()
  var index=0

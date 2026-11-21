@@ -116,6 +116,20 @@ private fun recoverRecordedGpx(file:File):ByteArray {
 }
 private fun projectTrackFile(context:Context,projectId:String)=File(context.filesDir,"trailkit_track_${projectId.hashCode()}.gpx")
 
+// Restore the actual GPS track from the project's flushed GPX file when the map
+// opens again. This also recovers complete <trkpt> records from an interrupted file.
+private fun loadRecordedTrackPoints(file:File):List<Location> {
+    if(!file.isFile || file.length()==0L) return emptyList()
+    val source=try { file.readText(Charsets.UTF_8) } catch(_:Exception) { return emptyList() }
+    return decodeRecordedTrackPoints(source).map { point ->
+        Location("gpx-recorded").apply {
+            latitude=point.first
+            longitude=point.second
+            accuracy=0f
+        }
+    }
+}
+
 private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:LruCache<String,Bitmap>):Bitmap? {
     val key="$z/$x/$y"
     cache.get(key)?.let{return it}
@@ -200,6 +214,8 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         Triple(pairs.sumOf{(a,b)->(b!!-a!!).coerceAtLeast(0.0)},pairs.sumOf{(a,b)->(a!!-b!!).coerceAtLeast(0.0)},navigationElevations.filterNotNull())
     }
     val prefs=remember(projectId){context.getSharedPreferences("trailkit_navigation",Context.MODE_PRIVATE)}
+    var showPlannedRoute by remember(projectId){mutableStateOf(prefs.getBoolean("show_planned_route_$projectId",true))}
+    var showRecordedTrack by remember(projectId){mutableStateOf(prefs.getBoolean("show_recorded_track_$projectId",true))}
     var voiceGuidance by remember(projectId){mutableStateOf(prefs.getBoolean("voice_$projectId",false))}
     val voiceReady=remember{mutableStateOf(false)}
     val voiceInitComplete=remember{mutableStateOf(false)}
@@ -304,7 +320,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var measureMode by remember(projectId) { mutableStateOf(false) }
     val measurePoints=remember(projectId){mutableStateListOf<Pair<Double,Double>>()}
     val measureDistance=remember(measurePoints.toList()){measurePoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
-    val recordedPoints = remember(projectId) { mutableStateListOf<Location>() }
+    val recordedPoints = remember(projectId) {
+        mutableStateListOf<Location>().apply { addAll(loadRecordedTrackPoints(projectTrackFile(context,projectId))) }
+    }
     var recordingClockTick by remember(projectId) { mutableLongStateOf(0L) }
     LaunchedEffect(active) {
         while(active) {
@@ -318,7 +336,19 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             recordingClockTick++
         }
     }
-    var hasSavedRecording by remember(projectId) { mutableStateOf(projectTrackFile(context,projectId).exists()) }
+    var hasSavedRecording by remember(projectId) { mutableStateOf(projectTrackFile(context,projectId).let{it.isFile && it.length()>80L}) }
+    LaunchedEffect(isRecording) {
+        if(!isRecording) {
+            // Let the foreground service flush its last point and closing tags.
+            delay(700L)
+            val restored=loadRecordedTrackPoints(projectTrackFile(context,projectId))
+            if(restored.isNotEmpty()) {
+                recordedPoints.clear()
+                recordedPoints.addAll(restored)
+                hasSavedRecording=true
+            }
+        }
+    }
     val tileCache = remember(path) { object : LruCache<String, android.graphics.Bitmap>(24 * 1024) { override fun sizeOf(key:String,value:android.graphics.Bitmap)=value.byteCount/1024 } }
     val exportGpx = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/gpx+xml")) { uri ->
         if(uri!=null) try {
@@ -976,28 +1006,36 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                     if(navigationPoints.isNotEmpty()) {
                         fun point(p:Pair<Double,Double>)=project(p.first,p.second)
-                        val rp=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=5f;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND}
-                        val snapped=progressMatch?.let { project(it.snappedLat,it.snappedLon) }
-                        val remainingPath=AndroidPath()
-                        val firstRemaining=snapped?:point(navigationPoints[nearest])
-                        remainingPath.moveTo(firstRemaining.x,firstRemaining.y)
-                        for(i in (nearest+1)..navigationPoints.lastIndex) { val q=point(navigationPoints[i]);remainingPath.lineTo(q.x,q.y) }
-                        rp.color=android.graphics.Color.rgb(218,145,54)
-                        if(nearest<navigationPoints.lastIndex)canvas.drawPath(remainingPath,rp)
-                        val passedPath=AndroidPath()
-                        navigationPoints.take(nearest+1).forEachIndexed{i,p->val q=point(p);if(i==0)passedPath.moveTo(q.x,q.y)else passedPath.lineTo(q.x,q.y)}
-                        if(snapped!=null)passedPath.lineTo(snapped.x,snapped.y)
-                        rp.color=android.graphics.Color.rgb(30,125,78)
-                        if(nearest>0 || snapped!=null)canvas.drawPath(passedPath,rp)
-                        // Direction chevrons are positioned by route distance, not point count.
-                        // navigationPoints already follows the selected navigation direction, so
-                        // reversing a route automatically reverses every arrow as well.
-                        val routeCumulative=DoubleArray(navigationPoints.size)
-                        for(i in 1 until navigationPoints.size) {
-                            routeCumulative[i]=routeCumulative[i-1]+mapDistance(navigationPoints[i-1],navigationPoints[i])
+                        // Imported GPX is the planned route: blue dashed, with a white halo.
+                        // The actual GPS recording is drawn later, above this line on overlaps.
+                        if(showPlannedRoute) {
+                            val plannedPath=AndroidPath()
+                            navigationPoints.forEachIndexed { index,p ->
+                                val q=point(p)
+                                if(index==0) plannedPath.moveTo(q.x,q.y) else plannedPath.lineTo(q.x,q.y)
+                            }
+                            val plannedHalo=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=android.graphics.Color.WHITE
+                                style=Paint.Style.STROKE
+                                strokeWidth=10f
+                                strokeCap=Paint.Cap.ROUND
+                                strokeJoin=Paint.Join.ROUND
+                            }
+                            val plannedStroke=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                                color=android.graphics.Color.rgb(35,105,190)
+                                style=Paint.Style.STROKE
+                                strokeWidth=5.5f
+                                strokeCap=Paint.Cap.ROUND
+                                strokeJoin=Paint.Join.ROUND
+                                pathEffect=android.graphics.DashPathEffect(floatArrayOf(18f,12f),0f)
+                            }
+                            canvas.drawPath(plannedPath,plannedHalo)
+                            canvas.drawPath(plannedPath,plannedStroke)
                         }
+                        // Cumulative route distances are precomputed and reused by arrow placement.
+                        val routeCumulative=elevationCumulative
                         val routeLength=routeCumulative.lastOrNull()?:0.0
-                        if(routeLength>30.0 && navigationPoints.size>=2) {
+                        if(showPlannedRoute && routeLength>30.0 && navigationPoints.size>=2) {
                             val metersPerPixel=156543.03392*cos(Math.toRadians(centerLat)).coerceAtLeast(0.01)/2.0.pow(zoom.toDouble())
                             val arrowSpacing=minOf((metersPerPixel*75.0).coerceIn(90.0,1600.0),(routeLength/3.0).coerceAtLeast(1.0))
                             val arrowFill=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(0,104,235);style=Paint.Style.FILL}
@@ -1037,6 +1075,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                                 targetDistance+=arrowSpacing
                             }
                         }
+                        if(showPlannedRoute) {
                         val start=point(navigationPoints.first());val end=point(navigationPoints.last())
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(30,130,75);style=Paint.Style.FILL}
                         canvas.drawCircle(start.x,start.y,7f,marker);marker.color=android.graphics.Color.rgb(205,78,58);canvas.drawCircle(end.x,end.y,7f,marker)
@@ -1044,6 +1083,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val endpointHalo=Paint(endpointText).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
                         canvas.drawText("起点",start.x+10f,start.y-10f,endpointHalo);canvas.drawText("起点",start.x+10f,start.y-10f,endpointText)
                         canvas.drawText("终点",end.x+10f,end.y-10f,endpointHalo);canvas.drawText("终点",end.x+10f,end.y-10f,endpointText)
+                        }
                     }
                     if(allWaypoints.isNotEmpty()) {
                         val marker=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=android.graphics.Color.rgb(235,151,47);style=Paint.Style.FILL}
@@ -1067,17 +1107,12 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                     // Live GPS track: draw the points collected during this recording session
                     // above the imported route so the hiker can see the path already walked.
-                    if(recordedPoints.isNotEmpty()) {
+                    if(showRecordedTrack && recordedPoints.isNotEmpty()) {
                         val livePath=AndroidPath()
                         recordedPoints.forEachIndexed { index,location ->
                             val q=project(location.latitude,location.longitude)
-                            if(index==0) livePath.moveTo(q.x,q.y) else {
-                                val previous=project(recordedPoints[index-1].latitude,recordedPoints[index-1].longitude)
-                                val midX=(previous.x+q.x)/2f;val midY=(previous.y+q.y)/2f
-                                livePath.quadTo(previous.x,previous.y,midX,midY)
-                            }
+                            if(index==0) livePath.moveTo(q.x,q.y) else livePath.lineTo(q.x,q.y)
                         }
-                        if(recordedPoints.size>=2) { val last=recordedPoints.last();val q=project(last.latitude,last.longitude);livePath.lineTo(q.x,q.y) }
                         if(recordedPoints.size>=2) {
                             val liveOutline=Paint(Paint.ANTI_ALIAS_FLAG).apply {
                                 color=android.graphics.Color.WHITE
@@ -1335,7 +1370,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     }
                 }
                 if(!mapCanvasFullscreen) {
-                Text("绿线：已走   橙线：剩余   蓝点：当前位置/精度范围   橙色箭头：手机朝向   橙点：GPX途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected=showPlannedRoute,onClick={showPlannedRoute=!showPlannedRoute;prefs.edit().putBoolean("show_planned_route_$projectId",showPlannedRoute).apply()},label={Text("计划路线 · 蓝色虚线")})
+                    FilterChip(selected=showRecordedTrack,onClick={showRecordedTrack=!showRecordedTrack;prefs.edit().putBoolean("show_recorded_track_$projectId",showRecordedTrack).apply()},label={Text("实际轨迹 · 橙红实线")},enabled=recordedPoints.isNotEmpty() || hasSavedRecording)
+                }
+                Text("蓝色虚线：导入的 GPX 计划路线   橙红实线：GPS 实际记录（重叠时优先显示实际轨迹）   蓝点：当前位置   橙点：GPX 途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={measureMode=!measureMode;if(!measureMode)measurePoints.clear()},modifier=Modifier.weight(1f)){Text(if(measureMode)"结束测距" else "地图测距")}
                     OutlinedButton(onClick={measurePoints.clear()},modifier=Modifier.weight(1f),enabled=measurePoints.isNotEmpty()){Text("清除测距点")}

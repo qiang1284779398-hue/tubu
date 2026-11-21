@@ -284,7 +284,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var gpsError by remember(projectId) { mutableStateOf("") }
     var showLocationPermissionHelp by remember(projectId) { mutableStateOf(false) }
     var gpsStaleWas by remember(projectId) { mutableStateOf(false) }
-    var followGps by remember(projectId) { mutableStateOf(true) }
+    var followGps by remember(projectId) { mutableStateOf(prefs.getBoolean("follow_gps_$projectId",true)) }
     var mapOrientation by remember(projectId) { mutableStateOf(prefs.getString("orientation_$projectId","north") ?: "north") }
     var mapBearing by remember(projectId) { mutableFloatStateOf(0f) }
     var mapCanvasFullscreen by remember(projectId) { mutableStateOf(false) }
@@ -415,6 +415,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var zoom by remember(projectId,path){mutableFloatStateOf(viewPrefs.getFloat("zoom_$viewKey",initialRouteZoom).coerceIn(2f,18f))}
     var centerLon by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lon_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.second)}
     var centerLat by remember(projectId,path){mutableDoubleStateOf(viewPrefs.getString("lat_$viewKey",null)?.toDoubleOrNull() ?: initialRouteCenter.first)}
+    fun setFollowGps(enabled:Boolean) {
+        followGps=enabled
+        prefs.edit().putBoolean("follow_gps_$projectId",enabled).apply()
+        if(enabled) current?.let { centerLat=it.latitude;centerLon=it.longitude }
+    }
     var mapProjector by remember(projectId,path) { mutableStateOf<((Double,Double)->android.graphics.PointF)?>(null) }
     var mapLayer by remember(projectId) { mutableStateOf((prefs.getString("map_layer_$projectId","standard") ?: "standard").let { if(it=="satellite") "esri" else it }) }
     var useOsmOffline by remember(projectId) { mutableStateOf(false) }
@@ -908,6 +913,11 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             centerLon = lon
                             zoom = z.coerceIn(2f, zoomLimit)
                         },
+                        onUserGesture = {
+                            // A deliberate drag or pinch switches to free browsing.
+                            // GPS and recording continue; only automatic re-centering stops.
+                            if(followGps) setFollowGps(false)
+                        },
                         onTap = { lat, lon -> if (measureMode) measurePoints.add(lat to lon) },
                         onProjectionChanged = { projector -> mapProjector = projector },
                         onLongPress = { lat, lon ->
@@ -918,6 +928,22 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             android.widget.Toast.makeText(context, "坐标：$coords", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     )
+                    Surface(
+                        modifier=Modifier.align(Alignment.TopCenter).padding(top=12.dp).clickable {
+                            setFollowGps(!followGps)
+                        },
+                        shape=RoundedCornerShape(22.dp),
+                        color=if(followGps) Color(0xFF1769D2) else Color.White.copy(alpha=0.97f),
+                        shadowElevation=5.dp
+                    ) {
+                        Text(
+                            if(followGps) "◎ 跟随定位 · 已开启" else "自由浏览 · 点击回到定位",
+                            modifier=Modifier.padding(horizontal=15.dp,vertical=9.dp),
+                            color=if(followGps) Color.White else Color(0xFF183C32),
+                            fontSize=12.sp,
+                            fontWeight=FontWeight.Bold
+                        )
+                    }
                     Canvas(Modifier.matchParentSize().clipToBounds()) {
                     val canvas=drawContext.canvas.nativeCanvas
                     // Compose Canvas is already transparent; clearing its native layer can
@@ -1667,7 +1693,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             .putBoolean("reverse_$projectId",nextReverse).putFloat(nextProgressKey,0f).putInt(nextSegmentKey,0).apply()
                         reverseRoute=nextReverse;confirmedProgress=0.0;lastMatchedSegment=0;offRouteWas=false;announcedWaypoints.clear();announcedApproaches.clear();announcedTurns.clear();lastTurnAnnouncementProgress=-1000.0
                     },modifier=Modifier.weight(1f),enabled=navigationPoints.size>=2){Text(if(reverseRoute)"反向路线：已开" else "反向导航")}
-                    OutlinedButton(onClick={followGps=!followGps},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
+                    OutlinedButton(onClick={setFollowGps(!followGps)},modifier=Modifier.weight(1f)){Text(if(followGps)"自动跟随：开" else "自动跟随：关")}
                 }
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                     Checkbox(checked=voiceGuidance,onCheckedChange={

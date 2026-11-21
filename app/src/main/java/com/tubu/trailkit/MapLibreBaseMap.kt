@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.graphics.PointF
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.os.SystemClock
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
@@ -42,12 +43,39 @@ internal const val TRAILKIT_OFFLINE_VECTOR_STYLE = "https://tiles.openfreemap.or
 
 // Prevent the surrounding Compose scroll container from stealing map drag gestures.
 private class GestureFriendlyMapView(context: Context) : MapView(context) {
+    var onUserGesture: (() -> Unit)? = null
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private var downX = 0f
+    private var downY = 0f
+    private var userGestureSent = false
+
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.x
+                downY = event.y
+                userGestureSent = false
                 parent?.requestDisallowInterceptTouchEvent(true)
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // Pinch/tilt/rotate gestures are also intentional map exploration.
+                if (!userGestureSent) {
+                    userGestureSent = true
+                    onUserGesture?.invoke()
+                }
+                parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
+                if (!userGestureSent && hypot((event.x-downX).toDouble(), (event.y-downY).toDouble()) >= touchSlop) {
+                    userGestureSent = true
+                    onUserGesture?.invoke()
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
+                userGestureSent = false
+            }
         }
         return super.dispatchTouchEvent(event)
     }
@@ -61,6 +89,7 @@ internal fun MapLibreBaseMap(
     mapBearing: Float = 0f,
     styleUrl: String = TRAILKIT_MAP_STYLE,
     onCameraChanged: (Double, Double, Float) -> Unit,
+    onUserGesture: () -> Unit,
     onTap: (Double, Double) -> Unit,
     onLongPress: (Double, Double) -> Unit,
     onProjectionChanged: (((Double, Double) -> PointF)?) -> Unit
@@ -68,6 +97,7 @@ internal fun MapLibreBaseMap(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraCallback by rememberUpdatedState(onCameraChanged)
+    val userGestureCallback by rememberUpdatedState(onUserGesture)
     val tapCallback by rememberUpdatedState(onTap)
     val longCallback by rememberUpdatedState(onLongPress)
     val projectionCallback by rememberUpdatedState(onProjectionChanged)
@@ -171,7 +201,8 @@ internal fun MapLibreBaseMap(
             mapView
         },
         modifier = Modifier.fillMaxSize(),
-        update = {
+        update = { view ->
+            (view as? GestureFriendlyMapView)?.onUserGesture = { userGestureCallback() }
             val nativeMap = map
             if (ready && nativeMap != null) {
                 if (appliedStyleUrl != styleUrl) {

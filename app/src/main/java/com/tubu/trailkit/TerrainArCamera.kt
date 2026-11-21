@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
@@ -122,6 +123,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     var routeMatchCandidate by remember(route) { mutableStateOf<RouteMatch?>(null) }
     var routeMatch by remember(route) { mutableStateOf<RouteMatch?>(null) }
     var terrainSnapshot by remember(route) { mutableStateOf<ArTerrainSnapshot?>(null) }
+    var rejoinGroundElevations by remember(route) { mutableStateOf<Pair<Double?, Double?>?>(null) }
 
     var ageRefresh by remember { mutableLongStateOf(0L) }
     LaunchedEffect(location) {
@@ -222,6 +224,23 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             }
         }
     }
+    // When the GPS fix is outside the snap tolerance, fetch ground heights for a
+    // temporary connector from the user's position to the nearest forward route point.
+    LaunchedEffect(location, routeMatchCandidate, offRoute, navigationFinished) {
+        val fix = location
+        val candidate = routeMatchCandidate
+        if (!offRoute || navigationFinished || fix == null || candidate == null ||
+            candidate.distanceMeters > 250.0 || !gpsQualityOk
+        ) {
+            rejoinGroundElevations = null
+        } else {
+            rejoinGroundElevations = withContext(Dispatchers.IO) {
+                ArTerrainDem.elevation(fix.latitude, fix.longitude) to
+                    ArTerrainDem.elevation(candidate.snappedLat, candidate.snappedLon)
+            }
+        }
+    }
+
     LaunchedEffect(routeMatch, location, gpsReliable, navigationFinished) {
         val match = routeMatch
         val fix = location
@@ -545,6 +564,51 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         }
                     }
 
+                    // Off-route connector: draw a temporary dashed path from the live GPS
+                    // position to the continuity-matched point on the correct forward route leg.
+                    val reconnectTarget = routeMatchCandidate
+                    if (offRoute && fix != null && reconnectTarget != null &&
+                        reconnectTarget.distanceMeters <= 250.0 && projectionReady && pose != null
+                    ) {
+                        val ground = rejoinGroundElevations
+                        val referenceGround = ground?.first
+                        val targetGround = ground?.second
+                        val connectorPoints = (0..8).map { index ->
+                            val fraction = index / 8.0
+                            val latitude = fix.latitude + (reconnectTarget.snappedLat - fix.latitude) * fraction
+                            val longitude = fix.longitude + (reconnectTarget.snappedLon - fix.longitude) * fraction
+                            val elevation = if (referenceGround != null && targetGround != null) {
+                                referenceGround + (targetGround - referenceGround) * fraction
+                            } else null
+                            projectArRouteSample(
+                                fix.latitude, fix.longitude,
+                                ArRouteSample(latitude, longitude, 0.0, elevation),
+                                referenceGround, 1.4, pose, focalPixels,
+                                size.width.toDouble(), size.height.toDouble()
+                            )
+                        }
+                        val visibleConnector = connectorPoints.filterNotNull()
+                        if (visibleConnector.size >= 2) {
+                            val connectorPath = Path().apply {
+                                moveTo(visibleConnector.first().x, visibleConnector.first().y)
+                                visibleConnector.drop(1).forEach { lineTo(it.x, it.y) }
+                            }
+                            drawPath(
+                                connectorPath,
+                                Color(0xFFFFA726).copy(alpha = 0.95f),
+                                style = Stroke(width = 8f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 12f), 0f))
+                            )
+                            drawPath(
+                                connectorPath,
+                                Color.White.copy(alpha = 0.95f),
+                                style = Stroke(width = 2.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(20f, 12f), 0f))
+                            )
+                            val endpoint = visibleConnector.last()
+                            drawCircle(Color(0xFFFFA726), 13f, androidx.compose.ui.geometry.Offset(endpoint.x, endpoint.y))
+                            drawCircle(Color.White, 5f, androidx.compose.ui.geometry.Offset(endpoint.x, endpoint.y))
+                        }
+                    }
+
                     // Stable view reticle; the route itself is projected through the camera pose.
                     val cx = size.width / 2f
                     drawCircle(ArLime.copy(alpha = 0.96f), 30f, androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f), style = Stroke(3f))
@@ -632,8 +696,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF8A65))
                         ) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text("当前位置远离 GPX 轨迹，已暂停导航", color = Color(0xFFFFAB91), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                                Text("距轨迹约 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m；请检查定位、项目或重新靠近路线", color = Color(0xFFFFCCBC), fontSize = 12.sp)
+                                Text(if (routeMatchCandidate!!.distanceMeters <= 250.0) "已生成临时接入指引" else "当前位置远离 GPX 轨迹，暂无法安全接入", color = Color(0xFFFFAB91), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                                Text(if (routeMatchCandidate!!.distanceMeters <= 250.0) "橙色虚线从当前位置指向前方最近的正确轨迹点；接入后自动恢复蓝色主路线" else "距轨迹约 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m；请先靠近路线后再接入", color = Color(0xFFFFCCBC), fontSize = 12.sp)
                             }
                         }
                     } else if (match != null && !gpsReliable) {
@@ -686,7 +750,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                 locationError.isNotBlank() -> locationError
                                 location == null -> "等待 GPS 卫星定位"
                                 !gpsQualityOk -> "GPS 精度/新鲜度不足 · ${location!!.accuracy.roundToInt()} m"
-                                offRoute -> "距 GPX 轨迹 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m · 暂停贴合"
+                                offRoute -> "距 GPX 轨迹 ${routeMatchCandidate!!.distanceMeters.roundToInt()} m · ${if (routeMatchCandidate!!.distanceMeters <= 250.0) "临时接入指引" else "等待靠近路线"}"
                                 gpsReliable -> "GPS 稳定 · ±${location!!.accuracy.roundToInt()} m · ${if (terrainSnapshot != null) "DEM 地形贴合" else if (routeElevations.size == routePoints.size && routeElevations.any { it != null }) "平滑高程辅助" else "地面高度近似"}"
                                 else -> "正在连续匹配路线…"
                             },

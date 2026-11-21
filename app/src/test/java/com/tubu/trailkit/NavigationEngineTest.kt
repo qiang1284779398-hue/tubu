@@ -109,4 +109,30 @@ class NavigationEngineTest {
         assertTrue(next.progressMeters > previous.progressMeters)
         assertTrue(next.progressMeters < previous.progressMeters + 140.0)
     }
+
+    @Test fun wgs84GeodesicMatchesEquatorialEastAndNorthDistances() {
+        assertEquals(
+            111319.490793,
+            geodesicDistanceMeters(0.0 to 0.0, 0.0 to 1.0),
+            0.01
+        )
+        assertEquals(
+            110574.388558,
+            geodesicDistanceMeters(0.0 to 0.0, 1.0 to 0.0),
+            0.01
+        )
+    }
+
+    @Test fun wgs84GeodesicIsSymmetricAndHandlesAntimeridian() {
+        val a = 0.0 to 179.9
+        val b = 0.0 to -179.9
+        val forward = geodesicDistanceMeters(a, b)
+        val reverse = geodesicDistanceMeters(b, a)
+        assertEquals(22263.898159, forward, 0.02)
+        assertEquals(forward, reverse, 0.001)
+    }
+
+    @Test fun wgs84GeodesicReturnsZeroForIdenticalCoordinates() {
+        assertEquals(0.0, geodesicDistanceMeters(28.4 to 98.6, 28.4 to 98.6), 0.0)
+    }
 }

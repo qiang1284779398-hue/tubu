@@ -235,6 +235,9 @@ private fun deleteProjectNavigationData(context:Context,project:Project) {
 fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onSharedGpxHandled: () -> Unit = {}) {
     val context= LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(context) {
+        withContext(Dispatchers.IO) { recoverInterruptedMbtilesReplacements(context) }
+    }
     var projects by remember { mutableStateOf(loadWithBundledYubeng(context)) }
     var selected by remember { mutableStateOf<String?>(if (autoOpen3D) "bundled-yubeng" else null) }
     var projectPage by remember(selected) { mutableStateOf("gear") }
@@ -246,7 +249,12 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     var chosenPhoto by remember { mutableStateOf("") }
     var cameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) cameraPhotoUri?.let { chosenPhoto = it.toString() }
+        if (success) cameraPhotoUri?.let { captured ->
+            coroutineScope.launch {
+                try { chosenPhoto = storeGearPhoto(context, captured) }
+                catch (e: Exception) { Toast.makeText(context, "照片保存失败：${e.message ?: "请重试"}", Toast.LENGTH_LONG).show() }
+            }
+        }
     }
     var manageProjectId by remember { mutableStateOf<String?>(null) }
     var editProjectField by remember { mutableStateOf<String?>(null) }
@@ -273,6 +281,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     var githubToken by remember { mutableStateOf("") }
     var githubPhotoUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var githubUploading by remember { mutableStateOf(false) }
+    var githubPublicAcknowledged by remember { mutableStateOf(false) }
     var githubUploadStatus by remember { mutableStateOf("") }
 
     LaunchedEffect(sharedGpxUri) {
@@ -307,6 +316,11 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                         name to readGpxTrack(context, uri)
                     }
                     if (target != null) {
+                        val previousRoute=projects.firstOrNull { it.id==target }?.trackData.orEmpty()
+                        if(previousRoute.isNotBlank() && previousRoute!=track.encodedPoints) {
+                            // Offline corridors belong to the old GPX; discard them when replacing that route.
+                            deleteOfflineRegionsForProject(context,target)
+                        }
                         val updated = projects.map { item ->
                             if (item.id == target) item.copy(route = listOf(item.route, track.summary).filter { it.isNotBlank() }.joinToString("\n"), trackData=track.encodedPoints, waypointData=track.encodedWaypoints, elevationData=track.encodedElevations) else item
                         }
@@ -321,42 +335,49 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
         }
     }
     val mbtilesImporter = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) try {
+        if (uri != null) {
             val target = mapTargetProjectId
-            if (target != null) {
-                val dir = File(context.filesDir, "offline_maps")
-                if (!dir.exists()) dir.mkdirs()
-                val file = File(dir, "map_${target}.mbtiles")
-                context.contentResolver.openInputStream(uri)?.use { input -> file.outputStream().use { output -> input.copyTo(output) } } ?: error("无法读取地图文件")
-                android.database.sqlite.SQLiteDatabase.openDatabase(file.absolutePath, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { db ->
-                    db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='tiles'", null).use { c -> if (!c.moveToFirst()) error("不是有效的 MBTiles 文件") }
-                    db.rawQuery("SELECT value FROM metadata WHERE name='format'", null).use { c -> if (c.moveToFirst() && c.getString(0).lowercase() in listOf("pbf","mvt")) error("暂不支持矢量 PBF，请导入 PNG/JPG/WebP 栅格 MBTiles") }
-                }
-                val updated = projects.map { if (it.id == target) it.copy(mapPath = file.absolutePath) else it }
-                persist(context, updated); projects = updated
-                Toast.makeText(context, "离线地图导入成功", Toast.LENGTH_LONG).show()
+            coroutineScope.launch {
+                try {
+                    if (target != null) {
+                        val installedPath = withContext(Dispatchers.IO) { installMbtilesSafely(context, uri, target) }
+                        val updated = projects.map { if (it.id == target) it.copy(mapPath = installedPath) else it }
+                        persist(context, updated)
+                        projects = updated
+                        Toast.makeText(context, "离线地图验证并导入成功，原地图已安全保留", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "地图导入失败，原地图未被替换：" + (e.message ?: "文件格式不正确"), Toast.LENGTH_LONG).show()
+                } finally { mapTargetProjectId = null }
             }
-        } catch (e: Exception) {
-            Toast.makeText(context, "地图导入失败：" + (e.message ?: "文件格式不正确"), Toast.LENGTH_LONG).show()
-        } finally { mapTargetProjectId = null }
+        } else { mapTargetProjectId = null }
     }
-    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) try {
-            val json=context.getSharedPreferences("trailkit",0).getString("projects","[]") ?: "[]"
-            context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
-            Toast.makeText(context,"备份文件已导出",Toast.LENGTH_LONG).show()
-        } catch(e:Exception) { Toast.makeText(context,"导出失败：${e.message}",Toast.LENGTH_LONG).show() }
+    val exportBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) coroutineScope.launch {
+            try {
+                val json = context.getSharedPreferences("trailkit",0).getString("projects","[]") ?: "[]"
+                withContext(Dispatchers.IO) { writeTrailKitBackup(context, uri, json) }
+                Toast.makeText(context,"项目备份 ZIP 已导出（项目、装备照片和导入的 MBTiles；MapLibre 下载区不包含）",Toast.LENGTH_LONG).show()
+            } catch(e:Exception) { Toast.makeText(context,"备份导出失败：${e.message ?: "未知错误"}",Toast.LENGTH_LONG).show() }
+        }
     }
     val importBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) try {
-            val json=context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } ?: error("无法读取文件")
-            val parsed=JSONArray(json)
-            context.getSharedPreferences("trailkit",0).edit().putString("projects",parsed.toString()).apply()
-            projects=load(context); selected=null
-            Toast.makeText(context,"备份恢复成功",Toast.LENGTH_LONG).show()
-        } catch(e:Exception) { Toast.makeText(context,"恢复失败：文件格式不正确",Toast.LENGTH_LONG).show() }
+        if (uri != null) coroutineScope.launch {
+            try {
+                val json = withContext(Dispatchers.IO) { readTrailKitBackup(context, uri) }
+                val parsed = JSONArray(json)
+                context.getSharedPreferences("trailkit",0).edit().putString("projects",parsed.toString()).apply()
+                projects=load(context); selected=null
+                Toast.makeText(context,"备份恢复成功：项目、照片和随包 MBTiles 已恢复",Toast.LENGTH_LONG).show()
+            } catch(e:Exception) { Toast.makeText(context,"恢复失败：${e.message ?: "备份文件无效"}",Toast.LENGTH_LONG).show() }
+        }
     }
-    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if(uri!=null) chosenPhoto=uri.toString() }
+    val picker=rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) coroutineScope.launch {
+            try { chosenPhoto = storeGearPhoto(context, uri) }
+            catch (e: Exception) { Toast.makeText(context, "照片导入失败：${e.message ?: "请重试"}", Toast.LENGTH_LONG).show() }
+        }
+    }
     val githubPhotoPicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         githubPhotoUris=uris
         githubUploadStatus=if(uris.isEmpty()) "" else "已选择 ${uris.size} 张照片"
@@ -408,8 +429,8 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                         if(projectPage=="gear") IconButton(onClick={makePoster(context,project)}) { Icon(Icons.Default.Image,"生成海报") }
                         if(projectPage=="nav") IconButton(onClick={itineraryProjectId=project.id}) { Icon(Icons.Default.Landscape,"行程信息") }
                     } else {
-                        IconButton(onClick={exportBackup.launch("TrailKit-备份.json")}) { Icon(Icons.Default.Image,"导出备份") }
-                        IconButton(onClick={importBackup.launch(arrayOf("application/json","text/*"))}) { Icon(Icons.Default.Add,"恢复备份") }
+                        IconButton(onClick={exportBackup.launch("TrailKit-项目备份.zip")}) { Icon(Icons.Default.Image,"导出备份") }
+                        IconButton(onClick={importBackup.launch(arrayOf("application/zip","application/json","application/octet-stream","text/*"))}) { Icon(Icons.Default.Add,"恢复备份") }
                     }
                 }
             )
@@ -559,7 +580,9 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                             items(list,key={it.id}) { g ->
                                 Card(Modifier.fillMaxWidth().clickable { editing=g;chosenPhoto=g.photo;gearDialog=true },shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA)),elevation=CardDefaults.cardElevation(defaultElevation=2.dp)) {
                                     Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
-                                        val image=remember(g.photo) { try { if(g.photo.isNotBlank()) android.graphics.BitmapFactory.decodeStream(context.contentResolver.openInputStream(Uri.parse(g.photo))) else null } catch(_:Exception){null} }
+                                        val image by produceState<Bitmap?>(initialValue=null,key1=g.photo) {
+                                            value=withContext(Dispatchers.IO){decodeGearPhoto(context,g.photo,360)}
+                                        }
                                         if(image!=null) Image(image.asImageBitmap(),null,Modifier.size(68.dp).clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop)
                                         else Box(Modifier.size(68.dp).clip(RoundedCornerShape(16.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center){Icon(Icons.Default.PhotoCamera,null,tint=forest)}
                                         Spacer(Modifier.width(12.dp))
@@ -569,7 +592,12 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                                                 Text(if(g.packed)"已打包" else "未打包",fontSize=11.sp,color=muted)
                                             }
                                         }
-                                        IconButton(onClick={save(projects.map{if(it.id==p.id)it.copy(gear=it.gear.filterNot{x->x.id==g.id}) else it})}) { Icon(Icons.Default.Delete,null,tint=androidx.compose.ui.graphics.Color(0xFFB36D5D)) }
+                                        IconButton(onClick={
+                                            val remaining=projects.map{if(it.id==p.id)it.copy(gear=it.gear.filterNot{x->x.id==g.id}) else it}
+                                            val removed=projects.firstOrNull{it.id==p.id}?.copy(gear=listOf(g))
+                                            removed?.let{deleteUnreferencedProjectPhotos(context,it,remaining)}
+                                            save(remaining)
+                                        }) { Icon(Icons.Default.Delete,null,tint=androidx.compose.ui.graphics.Color(0xFFB36D5D)) }
                                     }
                                 }
                             }
@@ -813,7 +841,12 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
             confirmButton = {
                 TextButton(onClick = {
                     val id = deleteProjectId
-                    projects.firstOrNull { it.id == id }?.let { deleteProjectNavigationData(context,it) }
+                    projects.firstOrNull { it.id == id }?.let { projectToDelete ->
+                        deleteProjectNavigationData(context, projectToDelete)
+                        projectToDelete.mapPath.takeIf { it.isNotBlank() }?.let { path -> runCatching { File(path).delete() } }
+                        deleteUnreferencedProjectPhotos(context, projectToDelete, projects.filterNot { it.id == id })
+                        deleteOfflineRegionsForProject(context, id)
+                    }
                     save(projects.filterNot { it.id == id })
                     if (selected == id) selected = null
                     deleteProjectId = null
@@ -887,7 +920,11 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
 
     if(gearDialog && project!=null) GearDialog(editing,chosenPhoto,{picker.launch("image/*")},{takeGearPhoto()},{gearDialog=false}) { g ->
         val updated=if(editing==null) project.copy(gear=project.gear+g) else project.copy(gear=project.gear.map{if(it.id==g.id)g else it})
-        save(projects.map{if(it.id==project.id)updated else it});gearDialog=false
+        val allUpdated=projects.map{if(it.id==project.id)updated else it}
+        if(editing!=null && editing.photo.isNotBlank() && editing.photo!=g.photo) {
+            deleteUnreferencedProjectPhotos(context,project.copy(gear=listOf(editing)),allUpdated)
+        }
+        save(allUpdated);gearDialog=false
     }
     if(githubPhotoDialog) {
         AlertDialog(
@@ -895,7 +932,16 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
             title={ Text("上传照片到 GitHub") },
             text={
                 Column(Modifier.heightIn(max=440.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                    Text("照片将保存到仓库：tubu / test/",fontSize=13.sp,color=forest,fontWeight=FontWeight.Bold)
+                    Text("照片将保存到公开仓库：tubu / test/",fontSize=13.sp,color=forest,fontWeight=FontWeight.Bold)
+                    Surface(color=androidx.compose.ui.graphics.Color(0xFFFFE8E4),shape=RoundedCornerShape(12.dp)) {
+                        Column(Modifier.padding(11.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+                            Text("隐私警告：此 GitHub 仓库是公开的。上传后，照片和文件名可能被任何人查看、下载和长期保存；删除仓库文件也不保证清除他人副本。",fontSize=12.sp,color=androidx.compose.ui.graphics.Color(0xFF8F3028),fontWeight=FontWeight.SemiBold)
+                            Row(verticalAlignment=Alignment.CenterVertically) {
+                                Checkbox(checked=githubPublicAcknowledged,onCheckedChange={githubPublicAcknowledged=it},enabled=!githubUploading)
+                                Text("我已了解照片会公开，并确认仍要上传",fontSize=11.sp,color=androidx.compose.ui.graphics.Color(0xFF8F3028))
+                            }
+                        }
+                    }
                     OutlinedTextField(
                         value=githubToken,onValueChange={githubToken=it.trim()},
                         label={Text("GitHub Token (需 Contents: write 权限)")},
@@ -912,7 +958,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                 }
             },
             confirmButton={
-                TextButton(enabled=!githubUploading && githubToken.isNotBlank() && githubPhotoUris.isNotEmpty(),onClick={
+                TextButton(enabled=!githubUploading && githubToken.isNotBlank() && githubPhotoUris.isNotEmpty() && githubPublicAcknowledged,onClick={
                     githubUploading=true
                     githubUploadStatus="上传准备中…"
                     coroutineScope.launch {
@@ -931,7 +977,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                     }
                 }) { Text(if(githubUploading) "正在上传…" else "开始上传") }
             },
-            dismissButton={TextButton(onClick={if(!githubUploading) githubPhotoDialog=false}){Text("关闭")}}
+            dismissButton={TextButton(onClick={if(!githubUploading){githubPhotoDialog=false;githubPublicAcknowledged=false}}){Text("关闭")}}
         )
     }
 
@@ -965,7 +1011,9 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
         Column(Modifier.heightIn(max=520.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
             Box(Modifier.fillMaxWidth().height(145.dp).clip(RoundedCornerShape(14.dp)).background(androidx.compose.ui.graphics.Color(0xFFE9EEE8)),contentAlignment=Alignment.Center) {
                 val ctx=LocalContext.current
-                val bitmap=remember(photo){try{if(photo.isNotBlank())android.graphics.BitmapFactory.decodeStream(ctx.contentResolver.openInputStream(Uri.parse(photo)))else null}catch(_:Exception){null}}
+                val bitmap by produceState<Bitmap?>(initialValue=null,key1=photo) {
+                    value=withContext(Dispatchers.IO){decodeGearPhoto(ctx,photo,800)}
+                }
                 if(bitmap!=null) Image(bitmap.asImageBitmap(),null,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
                 else Column(horizontalAlignment=Alignment.CenterHorizontally){Icon(Icons.Default.PhotoCamera,null,tint=forest);Text("还没有装备照片",fontSize=12.sp,color=forest)}
             }
@@ -989,6 +1037,31 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
             OutlinedTextField(maintenance,{maintenance=it},label={Text("维修 / 保养记录")},modifier=Modifier.fillMaxWidth(),minLines=2,maxLines=3)
         }
     },confirmButton={TextButton(onClick={if(name.isNotBlank())save(Gear(initial?.id?:System.nanoTime().toString(),name.trim(),cat,price.toDoubleOrNull()?:0.0,(qty.toIntOrNull()?:1).coerceAtLeast(1),note.trim(),photo,weight.toDoubleOrNull()?:0.0,initial?.packed?:false,warranty.trim(),maintenance.trim()))}){Text("保存")}},dismissButton={TextButton(onClick=close){Text("取消")}})
+}
+
+private fun decodeGearPhoto(context:Context,value:String,maxDimension:Int):Bitmap? {
+    if(value.isBlank()) return null
+    fun open() : java.io.InputStream? {
+        val uri=runCatching{Uri.parse(value)}.getOrNull() ?: return null
+        return try {
+            if(uri.scheme=="content" || uri.scheme=="file") context.contentResolver.openInputStream(uri)
+            else File(value).takeIf{it.isFile}?.inputStream()
+        } catch(_:Exception){null}
+    }
+    return try {
+        val bounds=BitmapFactory.Options().apply{inJustDecodeBounds=true}
+        open()?.use{BitmapFactory.decodeStream(it,null,bounds)}
+        if(bounds.outWidth<=0 || bounds.outHeight<=0) return null
+        val target=maxDimension.coerceAtLeast(128)
+        var sample=1
+        while(bounds.outWidth/sample>target*2 || bounds.outHeight/sample>target*2) sample*=2
+        val options=BitmapFactory.Options().apply{
+            inJustDecodeBounds=false
+            inSampleSize=sample
+            inPreferredConfig=Bitmap.Config.RGB_565
+        }
+        open()?.use{BitmapFactory.decodeStream(it,null,options)}
+    } catch(_:Exception){null}
 }
 
 private fun makePoster(context:Context,project:Project) {
@@ -1027,7 +1100,7 @@ private fun makePoster(context:Context,project:Project) {
             val path = Path().apply { addRoundRect(r, 20f, 20f, Path.Direction.CW) }
             canvas.clipPath(path)
             var source: Bitmap? = null
-            try { if (uri.isNotBlank()) source = BitmapFactory.decodeStream(context.contentResolver.openInputStream(Uri.parse(uri))) } catch (_: Exception) {}
+            try { if (uri.isNotBlank()) source = decodeGearPhoto(context, uri, 1200) } catch (_: Exception) {}
             if (source != null) {
                 val b = source!!
                 val scale = maxOf(r.width() / b.width, r.height() / b.height)

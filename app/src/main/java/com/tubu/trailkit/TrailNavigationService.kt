@@ -42,7 +42,7 @@ class TrailNavigationService : Service(), LocationListener {
             val powerManager=getSystemService(Context.POWER_SERVICE) as PowerManager
             navigationWakeLock=powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"TrailKit:Navigation").apply {
                 setReferenceCounted(false)
-                // Safety timeout: release automatically if the service is unexpectedly stranded.
+                // Long hikes can exceed six hours; renew this bounded lease on every location fix.
                 acquire(6L*60L*60L*1000L)
             }
         } catch(_:Exception) {
@@ -110,9 +110,17 @@ class TrailNavigationService : Service(), LocationListener {
         // This service is the only owner of location requests. Fan each fix out to
         // the map/recording UI so the app never registers a second GPS listener.
         TrailLocationHub.publish(location)
+        // The original wake-lock lease is bounded as a safety measure. Renew it
+        // while the foreground navigation service is actively receiving fixes.
+        if(navigationWakeLock?.isHeld!=true) acquireNavigationWakeLock()
         val age=(SystemClock.elapsedRealtimeNanos()-location.elapsedRealtimeNanos).coerceAtLeast(0L)/1_000_000L
         val source=when(location.provider) { LocationManager.GPS_PROVIDER -> "GPS"; LocationManager.NETWORK_PROVIDER -> "网络"; LocationManager.PASSIVE_PROVIDER -> "被动"; else -> location.provider ?: "定位" }
-        val text=(if(trackWriter!=null)"记录中 · " else "")+"$source · ${String.format(Locale.US,"%.5f, %.5f",location.latitude,location.longitude)} · 精度 ±${location.accuracy.toInt()} m · ${if(age<=15000L)"实时" else "延迟 ${age/1000}s"}"
+        val recordingStatus=if(trackWriter!=null) {
+            if(location.provider!=LocationManager.GPS_PROVIDER || age>8_000L || !location.hasAccuracy() || location.accuracy>35f)
+                " · 本次定位未写入轨迹（需要新鲜且精度≤35m的GPS点，轨迹可能有缺口）"
+            else " · 高精度轨迹记录中"
+        } else ""
+        val text=(if(trackWriter!=null)"记录中 · " else "")+"$source · ${String.format(Locale.US,"%.5f, %.5f",location.latitude,location.longitude)} · 精度 ±${location.accuracy.toInt()} m · ${if(age<=15000L)"实时" else "延迟 ${age/1000}s"}"+recordingStatus
         val nowElapsed=SystemClock.elapsedRealtime()
         if(nowElapsed-lastLocationNotificationMs>=2000L) {
             lastLocationNotificationMs=nowElapsed

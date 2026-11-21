@@ -305,6 +305,8 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
     var paused by remember(projectId){mutableStateOf(false)}
     var message by remember(projectId){mutableStateOf("按路线走廊分级下载：9–11 级覆盖路线附近，12–15 级提供细节；缩小范围以减少流量。已保存区域可恢复。")}
     var activeRegion by remember(projectId){mutableStateOf<OfflineRegion?>(null)}
+    var cleanupDialog by remember(projectId){mutableStateOf(false)}
+    var cleanupMessage by remember(projectId){mutableStateOf("")}
 
     LaunchedEffect(projectId,points) {
         val hasVector=!prefs.getString(vectorTaskKey,null).isNullOrBlank()
@@ -518,6 +520,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             Text("离线地图下载",style=MaterialTheme.typography.titleSmall)
             Text(message,style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Text("下载范围：路线两侧约 900 m 的低级别地图（9–11 级）+ 两侧约 220 m 的高细节地图（12–15 级）。相比旧方案减少低级别覆盖宽度和高一级缩放层，优先保留徒步路线附近。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("管理提示：项目专属下载区域可在此清理；地图包导入后保存在本机，删除项目时会一并清理。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp),modifier=Modifier.fillMaxWidth()) {
                 OutlinedButton(
                     onClick={startDownload(TRAILKIT_OFFLINE_VECTOR_STYLE,"标准矢量图",false)},
@@ -539,8 +542,82 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                 )
             }
             Text("预估瓦片数仅作下载前规划参考，实际资源量取决于地图样式、文字字体和服务端瓦片；MapLibre 不提供可靠的下载前 MB 估算。暂停、网络中断或退出页面后，已下载区域会保留，可继续同一任务。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("卫星底图仍使用 Esri World Imagery 的浏览缓存（上限 512 MB），当前不提供批量离线卫星下载。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(
+                onClick={cleanupDialog=true},
+                enabled=!busy,
+                modifier=Modifier.fillMaxWidth()
+            ) { Text("清理本项目已下载的离线地图") }
+            if(cleanupMessage.isNotBlank()) Text(cleanupMessage,style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.secondary)
+            Text("卫星底图仍使用 Esri World Imagery 的浏览缓存（上限 512 MB），当前不提供批量离线卫星下载。ZIP 项目备份不包含 MapLibre 下载区；换机后需要重新下载。",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+    if(cleanupDialog) AlertDialog(
+        onDismissRequest={cleanupDialog=false},
+        title={Text("清理本项目离线地图？")},
+        text={Text("将删除本项目通过 TrailKit 下载的矢量/地形离线区域，并释放其独占存储空间。不会删除其他项目的地图，也不会删除导入的 MBTiles 文件。此操作无法撤销。")},
+        confirmButton={TextButton(onClick={
+            cleanupDialog=false
+            if(busy) pauseDownload()
+            cleanupMessage="正在清理本项目离线地图…"
+            deleteOfflineRegionsForProject(context,projectId) { count,errors ->
+                complete=false;paused=false;busy=false;progress=0f;batchIndex=0;batchTotal=0;downloaded=0L;required=0L;bytes=0L
+                cleanupMessage=if(errors.isEmpty()) "已清理 $count 个离线区域。" else "已清理 $count 个区域；有 ${errors.size} 项未能清理：${errors.joinToString("；")}"
+            }
+        }){Text("确认清理",color=MaterialTheme.colorScheme.error)}},
+        dismissButton={TextButton(onClick={cleanupDialog=false}){Text("取消")}}
+    )
+}
+
+internal fun deleteOfflineRegionsForProject(
+    context: Context,
+    projectId: String,
+    onComplete: (Int, List<String>) -> Unit = { _, _ -> }
+) {
+    val prefs=context.getSharedPreferences("trailkit_offline_downloads",Context.MODE_PRIVATE)
+    fun clearTaskPreferences() {
+        prefs.edit()
+            .remove("task_${projectId}_vector").remove("task_${projectId}_terrain")
+            .remove("route_${projectId}_vector").remove("route_${projectId}_terrain")
+            .apply()
+    }
+    try {
+        MapLibre.getInstance(context.applicationContext)
+        OfflineManager.getInstance(context).listOfflineRegions(object:OfflineManager.ListOfflineRegionsCallback {
+            override fun onList(regions:Array<OfflineRegion>?) {
+                val matches=regions.orEmpty().filter { region ->
+                    try {
+                        val metadata=JSONObject(String(region.metadata,Charsets.UTF_8))
+                        metadata.optString("app")=="TrailKit" && metadata.optString("projectId")==projectId
+                    } catch(_:Exception) { false }
+                }
+                if(matches.isEmpty()) { clearTaskPreferences(); onComplete(0, emptyList()); return }
+                var remaining=matches.size
+                var deleted=0
+                val errors=mutableListOf<String>()
+                fun finishOne() {
+                    remaining--
+                    if(remaining==0) {
+                        if(errors.isEmpty()) clearTaskPreferences()
+                        onComplete(deleted,errors.toList())
+                    }
+                }
+                matches.forEach { region ->
+                    try {
+                        region.setDownloadState(OfflineRegion.STATE_INACTIVE)
+                        region.delete(object:OfflineRegion.OfflineRegionDeleteCallback {
+                            override fun onDelete() { deleted++;finishOne() }
+                            override fun onError(error:String) { errors.add(error);finishOne() }
+                        })
+                    } catch(e:Exception) {
+                        errors.add(e.message ?: "删除区域失败")
+                        finishOne()
+                    }
+                }
+            }
+            override fun onError(error:String) { onComplete(0,listOf(error)) }
+        })
+    } catch(e:Exception) {
+        onComplete(0,listOf(e.message ?: "无法读取离线区域"))
     }
 }
 

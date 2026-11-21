@@ -10,8 +10,8 @@ android {
         applicationId = "com.tubu.trailkit"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "1.5.0"
+        versionCode = 25
+        versionName = "1.6.0"
     }
     signingConfigs {
         create("stable") {

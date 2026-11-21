@@ -19,6 +19,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.File
+import java.security.MessageDigest
 import java.nio.*
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -31,7 +33,7 @@ internal fun Terrain3DDialog(projectName:String,encodedTrack:String,visible:Bool
  var status by remember{mutableStateOf("正在启动高分辨率 DEM 地形…")}
  val ctx=androidx.compose.ui.platform.LocalContext.current
  val view=remember(points){TerrainSurface(ctx,points){status=it}}
- DisposableEffect(view){onDispose{view.onPause()}}
+ DisposableEffect(view){onDispose{view.shutdown()}}
  Dialog(onDismissRequest=onClose,properties=DialogProperties(usePlatformDefaultWidth=false,decorFitsSystemWindows=false)){
   Column(Modifier.fillMaxSize()){
    Surface(color=MaterialTheme.colorScheme.surface,tonalElevation=4.dp){Column(Modifier.fillMaxWidth().padding(14.dp)){
@@ -47,7 +49,8 @@ internal fun Terrain3DDialog(projectName:String,encodedTrack:String,visible:Bool
  }
 }
 private class TerrainSurface(c:android.content.Context,pts:List<Pair<Double,Double>>,report:(String)->Unit):GLSurfaceView(c){
- private val renderer=TerrainRenderer(pts,report)
+ private val renderer=TerrainRenderer(pts,File(c.cacheDir,"trailkit_dem_tiles"),report)
+ fun shutdown(){renderer.cancel();try{onPause()}catch(_:Exception){}}
  private var lastX=0f;private var lastY=0f;private var lastSpan=0f
  init{setEGLContextClientVersion(2);preserveEGLContextOnPause=true;setRenderer(renderer);renderMode=RENDERMODE_CONTINUOUSLY}
  private fun span(e:MotionEvent):Float{val dx=e.getX(0)-e.getX(1);val dy=e.getY(0)-e.getY(1);return hypot(dx,dy)}
@@ -77,7 +80,29 @@ private class TerrainSurface(c:android.content.Context,pts:List<Pair<Double,Doub
   return true
  }
 }
-private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(String)->Unit):GLSurfaceView.Renderer{
+private class TerrainRenderer(val pts:List<Pair<Double,Double>>,private val cacheDir:File,val report:(String)->Unit):GLSurfaceView.Renderer{
+ @Volatile private var cancelled=false
+ @Volatile private var terrainThread:Thread?=null
+ fun cancel(){cancelled=true;terrainThread?.interrupt()}
+ private fun ensureActive(){if(cancelled||Thread.currentThread().isInterrupted)throw InterruptedException("地形加载已取消")}
+ private fun cachedDemBytes(url:String):ByteArray{
+  ensureActive()
+  if(!cacheDir.exists())cacheDir.mkdirs()
+  val key=MessageDigest.getInstance("SHA-256").digest(url.toByteArray(Charsets.UTF_8)).joinToString(""){"%02x".format(it.toInt() and 0xff)}
+  val cached=File(cacheDir,"$key.png")
+  if(cached.isFile&&cached.length()>0L){cached.setLastModified(System.currentTimeMillis());return cached.readBytes()}
+  val connection=(URL(url).openConnection() as HttpURLConnection).apply{
+   connectTimeout=8_000;readTimeout=12_000;setRequestProperty("User-Agent","TrailKit Outdoor App")
+  }
+  val bytes=try{connection.inputStream.use{it.readBytes()}}finally{connection.disconnect()}
+  ensureActive()
+  if(bytes.isNotEmpty()){
+   val temp=File(cacheDir,"$key.tmp")
+   try{temp.writeBytes(bytes);if(!temp.renameTo(cached)){temp.delete();if(!cached.exists())cached.writeBytes(bytes)}}finally{temp.delete()}
+   cacheDir.listFiles()?.filter{it.isFile&&it.extension=="png"}?.sortedByDescending{it.lastModified()}?.drop(128)?.forEach{it.delete()}
+  }
+  return bytes
+ }
  @Volatile private var yaw=0f
  @Volatile private var pitch=-8f
  @Volatile private var cameraX=0f
@@ -140,8 +165,10 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
   fun shader(type:Int,src:String):Int{val id=GLES20.glCreateShader(type);GLES20.glShaderSource(id,src);GLES20.glCompileShader(id);val a=IntArray(1);GLES20.glGetShaderiv(id,GLES20.GL_COMPILE_STATUS,a,0);check(a[0]!=0){GLES20.glGetShaderInfoLog(id)};return id}
   try{GLES20.glAttachShader(program,shader(GLES20.GL_VERTEX_SHADER,vs));GLES20.glAttachShader(program,shader(GLES20.GL_FRAGMENT_SHADER,fs));GLES20.glLinkProgram(program);val a=IntArray(1);GLES20.glGetProgramiv(program,GLES20.GL_LINK_STATUS,a,0);check(a[0]!=0){GLES20.glGetProgramInfoLog(program)}}
   catch(e:Exception){report("GPU 着色器错误："+e.message);return}
-  report("正在按 GPX 全轨迹范围下载高分辨率 DEM…")
-  Thread{loadTerrain()}.start()
+  report("正在准备 DEM 地形…相同高程瓦片会使用本地缓存")
+  if(terrainThread?.isAlive!=true){
+   terrainThread=Thread({loadTerrain()},"TrailKit-DEM").apply{isDaemon=true;start()}
+  }
  }
  private fun mercatorX(lon:Double,z:Int)=((lon+180.0)/360.0)*(256.0*(1 shl z))
  private fun mercatorY(lat:Double,z:Int):Double{
@@ -199,21 +226,21 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    require(cols in 1..16&&rows in 1..16&&cols*rows<=64){"轨迹范围过大，无法安全加载 DEM"}
    val composite=Bitmap.createBitmap(cols*256,rows*256,Bitmap.Config.ARGB_8888);mosaic=composite
    val canvas=Canvas(composite)
-   fun get(url:String):ByteArray{
-    val c=URL(url).openConnection() as HttpURLConnection;c.connectTimeout=15000;c.readTimeout=25000;c.setRequestProperty("User-Agent","TrailKit Outdoor App")
-    return try{c.inputStream.use{it.readBytes()}}finally{c.disconnect()}
-   }
    var loaded=0
    for(ty in ty0..ty1)for(tx in tx0..tx1){
-    val bytes=get("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/$z/$tx/$ty.png")
+    ensureActive()
+    val bytes=cachedDemBytes("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/$z/$tx/$ty.png")
     val tile=BitmapFactory.decodeByteArray(bytes,0,bytes.size)?:error("DEM 瓦片解码失败")
     canvas.drawBitmap(tile,(tx-tx0)*256f,(ty-ty0)*256f,null);tile.recycle();loaded++
     report("正在拼接全线地形 DEM："+loaded+"/"+(cols*rows)+" 张瓦片…")
    }
-   val rasterSize=1537;val heights=FloatArray(rasterSize*rasterSize)
+   ensureActive()
+   // 1025² elevation samples keep peak memory suitable for long-route phones.
+   val rasterSize=1025;val heights=FloatArray(rasterSize*rasterSize)
    val left=minX-tx0*256.0;val top=minY-ty0*256.0
    val spanPxX=max(1.0,maxX-minX);val spanPxY=max(1.0,maxY-minY)
    for(y in 0 until rasterSize){
+    if(y%32==0)ensureActive()
     val sy=(top+y/(rasterSize-1.0)*spanPxY).roundToInt().coerceIn(0,rows*256-1)
     for(x in 0 until rasterSize){
      val sx=(left+x/(rasterSize-1.0)*spanPxX).roundToInt().coerceIn(0,cols*256-1)
@@ -226,8 +253,8 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    val groundSpan=max(spanPxX,spanPxY)*metersPerPixel
    val aspectX=(spanPxX/max(spanPxX,spanPxY)).toFloat()
    val aspectY=(spanPxY/max(spanPxX,spanPxY)).toFloat()
-   // 385×385 网格：直接展开三角形，避免 GLES2 16 位索引的 65535 顶点限制
-   val gridSize=385
+   // 257×257 网格：直接展开三角形；降低 GLES 缓冲区与峰值内存。
+   val gridSize=257
    val v=FloatArray((gridSize-1)*(gridSize-1)*6*5);var k=0
    fun putVertex(x:Int,y:Int){
     val u=x/(gridSize-1f);val vv=y/(gridSize-1f)
@@ -235,12 +262,17 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
     val zPos=((elev-(minElev+maxElev)*.5f)/groundSpan*5.0).toFloat()
     v[k++]=(u-.5f)*1.72f*aspectX;v[k++]=(.5f-vv)*1.72f*aspectY;v[k++]=zPos;v[k++]=u;v[k++]=vv
    }
-   for(y in 0 until gridSize-1)for(x in 0 until gridSize-1){
-    putVertex(x,y);putVertex(x,y+1);putVertex(x+1,y)
-    putVertex(x+1,y);putVertex(x,y+1);putVertex(x+1,y+1)
+   for(y in 0 until gridSize-1){
+    if(y%32==0)ensureActive()
+    for(x in 0 until gridSize-1){
+     putVertex(x,y);putVertex(x,y+1);putVertex(x+1,y)
+     putVertex(x+1,y);putVertex(x,y+1);putVertex(x+1,y+1)
+    }
    }
-   val texSize=1536;val pixels=IntArray(texSize*texSize);val rasterMeters=groundSpan/(texSize-1).toDouble()
-   for(y in 0 until texSize)for(x in 0 until texSize){
+   val texSize=1024;val pixels=IntArray(texSize*texSize);val rasterMeters=groundSpan/(texSize-1).toDouble()
+   for(y in 0 until texSize){
+    if(y%32==0)ensureActive()
+    for(x in 0 until texSize){
     val sx=(x.toDouble()*(rasterSize-1)/(texSize-1)).roundToInt().coerceIn(0,rasterSize-1)
     val sy=(y.toDouble()*(rasterSize-1)/(texSize-1)).roundToInt().coerceIn(0,rasterSize-1)
     val idx=sy*rasterSize+sx;val elev=heights[idx]
@@ -253,7 +285,9 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
     val contour=((elev%100f+100f)%100f)
     if(contour<2.2f||contour>97.8f){rr=(rr*.78f).roundToInt();gg=(gg*.78f).roundToInt();bb=(bb*.78f).roundToInt()}
     pixels[y*texSize+x]=Color.rgb(rr,gg,bb)
+    }
    }
+   ensureActive()
    val texBitmap=Bitmap.createBitmap(texSize,texSize,Bitmap.Config.ARGB_8888)
    texBitmap.setPixels(pixels,0,texSize,0,0,texSize,texSize)
    val route=ArrayList<Float>(pts.size*3)
@@ -273,8 +307,9 @@ private class TerrainRenderer(val pts:List<Pair<Double,Double>>,val report:(Stri
    cameraX=0f;cameraY=-.78f*aspectY
    val eye=(1.7f*5f/groundSpan.toFloat().coerceAtLeast(1f)).coerceIn(.008f,.06f)
    cameraZ=groundZAt(cameraX,cameraY)+eye
-   report("高精度地形已就绪："+loaded+" 张 DEM · 385×385 山体网格 · 贴地行走 · 高倍率缩放。")
-  }catch(e:Exception){report("地形加载失败："+(e.message?:e.javaClass.simpleName)+"；请检查网络后重试。")}
+   report("高精度地形已就绪："+loaded+" 张 DEM · 257×257 山体网格 · 贴地行走 · 高倍率缩放。")
+  }catch(e:InterruptedException){report("地形加载已取消，已缓存的 DEM 瓦片会保留。")}
+  catch(e:Exception){if(!cancelled)report("地形加载失败："+(e.message?:e.javaClass.simpleName)+"；请检查网络后重试。")}
   finally{mosaic?.recycle()}
  }
  override fun onSurfaceChanged(gl:GL10?,width:Int,height:Int){w=width.coerceAtLeast(1);h=height.coerceAtLeast(1);GLES20.glViewport(0,0,w,h)}

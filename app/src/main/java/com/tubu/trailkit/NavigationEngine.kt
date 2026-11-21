@@ -193,6 +193,9 @@ fun matchRouteContinuously(
         val distance = hypot(px, py)
         val segmentLength = prefix[i + 1] - prefix[i]
         val progress = prefix[i] + segmentLength * fraction
+        if (previous != null && (progress < minProgress - 0.001 || progress > maxProgress + 0.001)) {
+            continue
+        }
 
         var score = distance
         if (previous != null) {

@@ -5,6 +5,8 @@ import kotlin.math.*
 /** Camera pose expressed in a true-north East/North/Up world frame. */
 data class ArVector3(val east: Double, val north: Double, val up: Double) {
     operator fun unaryMinus() = ArVector3(-east, -north, -up)
+    operator fun plus(other: ArVector3) = ArVector3(east + other.east, north + other.north, up + other.up)
+    operator fun minus(other: ArVector3) = ArVector3(east - other.east, north - other.north, up - other.up)
     operator fun times(value: Double) = ArVector3(east * value, north * value, up * value)
     fun dot(other: ArVector3): Double = east * other.east + north * other.north + up * other.up
 }

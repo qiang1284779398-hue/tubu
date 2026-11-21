@@ -661,7 +661,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         if(active && !destinationPromptHandled && match!=null && fix!=null &&
             (gpsFixAgeSeconds?:999L)<=15L && fix.accuracy<=25f &&
             match.remainingMeters<=35.0 &&
-            mapDistance(fix.latitude to fix.longitude,navigationPoints.last())<=maxOf(25.0,fix.accuracy*1.5f)
+            mapDistance(fix.latitude to fix.longitude,navigationPoints.last())<=maxOf(25.0,fix.accuracy.toDouble()*1.5)
         ) {
             destinationPromptHandled=true
             destinationPromptVisible=true

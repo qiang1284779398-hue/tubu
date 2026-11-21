@@ -177,7 +177,8 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
     }
 
     val upcomingTurn = remember(routeMatch, route) {
-        if (routeMatch != null && route != null) findUpcomingCameraTurn(route, routeMatch) else null
+        val activeMatch = routeMatch
+        if (activeMatch != null && route != null) findUpcomingCameraTurn(route, activeMatch) else null
     }
     val displayProjectName = remember(projectName) {
         if (projectName.matches(Regex("""\d{4}-\d{2}-\d{2}.*\d{10,}.*"""))) "当前徒步项目" else projectName
@@ -370,7 +371,7 @@ internal fun TerrainArCameraDialog(projectName: String, encodedTrack: String, en
                                 val physicalSize = camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
                                 val focalLengths = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
                                 val sensorRotation = camera.cameraInfo.getSensorRotationDegrees(targetRotation)
-                                if (physicalSize != null && !focalLengths.isNullOrEmpty()) {
+                                if (physicalSize != null && focalLengths != null && focalLengths.isNotEmpty()) {
                                     val rotated = sensorRotation % 180 != 0
                                     cameraIntrinsics = ArCameraIntrinsics(
                                         if (rotated) physicalSize.height.toDouble() else physicalSize.width.toDouble(),

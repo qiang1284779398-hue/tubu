@@ -529,7 +529,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                     enabled=!busy&&points.size>=2,
                     modifier=Modifier.weight(1f)
                 ){Text(if(hasTerrainTask)"继续地形" else "下载地形")}
-                OutlinedButton(onClick={pauseDownload},enabled=busy,modifier=Modifier.weight(1f)){Text("暂停")}
+                OutlinedButton(onClick={pauseDownload()},enabled=busy,modifier=Modifier.weight(1f)){Text("暂停")}
             }
             if(busy||complete||paused) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())

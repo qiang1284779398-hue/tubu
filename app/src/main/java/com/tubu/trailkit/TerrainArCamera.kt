@@ -227,7 +227,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val fix = location
         if (!navigationFinished && !destinationPromptHandled && match != null && fix != null && gpsReliable &&
             gpsAgeMillis <= 10_000L && fix.accuracy <= 25f && match.remainingMeters <= 35.0 &&
-            haversineForAr(fix.latitude, fix.longitude, routePoints.last().first, routePoints.last().second) <= maxOf(25.0, fix.accuracy * 1.5f)
+            haversineForAr(fix.latitude, fix.longitude, routePoints.last().first, routePoints.last().second) <= maxOf(25.0, fix.accuracy.toDouble() * 1.5)
         ) {
             destinationPromptHandled = true
             destinationPromptVisible = true

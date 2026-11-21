@@ -135,4 +135,29 @@ class NavigationEngineTest {
     @Test fun wgs84GeodesicReturnsZeroForIdenticalCoordinates() {
         assertEquals(0.0, geodesicDistanceMeters(28.4 to 98.6, 28.4 to 98.6), 0.0)
     }
+    @Test fun routeProgressWindowStaysTightForNormalWalkingFixes() {
+        val allowance = routeProgressAdvanceLimitMeters(
+            speedMetersPerSecond = 1.8,
+            elapsedSeconds = 1.0,
+            currentAccuracyMeters = 5.0,
+            previousAccuracyMeters = 5.0
+        )
+        assertEquals(9.75, allowance, 0.001)
+    }
+
+    @Test fun routeProgressWindowAccountsForPoorAccuracyButHasAHardCap() {
+        val moderate = routeProgressAdvanceLimitMeters(5.5, 2.0, 25.0, 20.0)
+        assertEquals(33.75, moderate, 0.001)
+        val longGap = routeProgressAdvanceLimitMeters(5.5, 30.0, 25.0, 25.0)
+        assertEquals(45.0, longGap, 0.001)
+    }
+
+    @Test fun routeProgressWindowHandlesInvalidSensorValuesSafely() {
+        assertEquals(
+            8.0,
+            routeProgressAdvanceLimitMeters(Double.NaN, Double.NaN, Double.NaN, -1.0),
+            0.001
+        )
+    }
+
 }

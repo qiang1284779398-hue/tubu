@@ -15,13 +15,86 @@ data class RouteMatch(
     val remainingMeters:Double get()=(totalMeters-progressMeters).coerceAtLeast(0.0)
 }
 
-private fun haversineMeters(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
-    val r=6371000.0
-    val p1=Math.toRadians(a.first);val p2=Math.toRadians(b.first)
-    val dp=Math.toRadians(b.first-a.first);val dl=Math.toRadians(b.second-a.second)
-    val h=sin(dp/2).pow(2)+cos(p1)*cos(p2)*sin(dl/2).pow(2)
-    return 2*r*asin(sqrt(h.coerceIn(0.0,1.0)))
+private fun sphericalFallbackDistanceMeters(a: Pair<Double, Double>, b: Pair<Double, Double>): Double {
+    val radius = 6371008.8
+    val p1 = Math.toRadians(a.first)
+    val p2 = Math.toRadians(b.first)
+    val dp = Math.toRadians(b.first - a.first)
+    val dl = Math.toRadians(b.second - a.second)
+    val h = sin(dp / 2).pow(2) + cos(p1) * cos(p2) * sin(dl / 2).pow(2)
+    return 2.0 * radius * asin(sqrt(h.coerceIn(0.0, 1.0)))
 }
+
+/**
+ * Inverse geodesic on the WGS84 ellipsoid (Vincenty).
+ * The spherical fallback covers the rare near-antipodal non-convergence case.
+ */
+fun geodesicDistanceMeters(a: Pair<Double, Double>, b: Pair<Double, Double>): Double {
+    if (a == b) return 0.0
+    val semiMajor = 6378137.0
+    val flattening = 1.0 / 298.257223563
+    val semiMinor = (1.0 - flattening) * semiMajor
+    val phi1 = Math.toRadians(a.first)
+    val phi2 = Math.toRadians(b.first)
+    val longitudeDifference = Math.toRadians(b.second - a.second)
+    val reduced1 = atan((1.0 - flattening) * tan(phi1))
+    val reduced2 = atan((1.0 - flattening) * tan(phi2))
+    val sinU1 = sin(reduced1)
+    val cosU1 = cos(reduced1)
+    val sinU2 = sin(reduced2)
+    val cosU2 = cos(reduced2)
+    var lambda = ((longitudeDifference + Math.PI) % (2.0 * Math.PI) + 2.0 * Math.PI) % (2.0 * Math.PI) - Math.PI
+    var sinSigma = 0.0
+    var cosSigma = 0.0
+    var sigma = 0.0
+    var sinAlpha = 0.0
+    var cosSquaredAlpha = 0.0
+    var cosTwoSigmaM = 0.0
+    var converged = false
+
+    repeat(100) {
+        val sinLambda = sin(lambda)
+        val cosLambda = cos(lambda)
+        val term1 = cosU2 * sinLambda
+        val term2 = cosU1 * sinU2 - sinU1 * cosU2 * cosLambda
+        sinSigma = sqrt(term1 * term1 + term2 * term2)
+        if (sinSigma < 1e-15) return 0.0
+        cosSigma = sinU1 * sinU2 + cosU1 * cosU2 * cosLambda
+        sigma = atan2(sinSigma, cosSigma)
+        sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma
+        cosSquaredAlpha = (1.0 - sinAlpha * sinAlpha).coerceAtLeast(0.0)
+        cosTwoSigmaM = if (cosSquaredAlpha < 1e-15) 0.0
+            else cosSigma - 2.0 * sinU1 * sinU2 / cosSquaredAlpha
+        val coefficient = flattening / 16.0 * cosSquaredAlpha *
+            (4.0 + flattening * (4.0 - 3.0 * cosSquaredAlpha))
+        val previousLambda = lambda
+        lambda = longitudeDifference + (1.0 - coefficient) * flattening * sinAlpha *
+            (sigma + coefficient * sinSigma * (cosTwoSigmaM +
+                coefficient * cosSigma * (-1.0 + 2.0 * cosTwoSigmaM * cosTwoSigmaM)))
+        if (abs(lambda - previousLambda) < 1e-12) {
+            converged = true
+            return@repeat
+        }
+    }
+    if (!converged) return sphericalFallbackDistanceMeters(a, b)
+
+    val uSquared = cosSquaredAlpha * (semiMajor * semiMajor - semiMinor * semiMinor) /
+        (semiMinor * semiMinor)
+    val coefficientA = 1.0 + uSquared / 16384.0 *
+        (4096.0 + uSquared * (-768.0 + uSquared * (320.0 - 175.0 * uSquared)))
+    val coefficientB = uSquared / 1024.0 *
+        (256.0 + uSquared * (-128.0 + uSquared * (74.0 - 47.0 * uSquared)))
+    val deltaSigma = coefficientB * sinSigma *
+        (cosTwoSigmaM + coefficientB / 4.0 *
+            (cosSigma * (-1.0 + 2.0 * cosTwoSigmaM * cosTwoSigmaM) -
+                coefficientB / 6.0 * cosTwoSigmaM *
+                (-3.0 + 4.0 * sinSigma * sinSigma) *
+                (-3.0 + 4.0 * cosTwoSigmaM * cosTwoSigmaM)))
+    return semiMinor * coefficientA * (sigma - deltaSigma)
+}
+
+private fun haversineMeters(a: Pair<Double, Double>, b: Pair<Double, Double>): Double =
+    geodesicDistanceMeters(a, b)
 
 private fun bearingDegrees(a:Pair<Double,Double>,b:Pair<Double,Double>):Double {
     val p1=Math.toRadians(a.first);val p2=Math.toRadians(b.first)

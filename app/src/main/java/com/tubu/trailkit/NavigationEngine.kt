@@ -36,14 +36,16 @@ fun geodesicDistanceMeters(a: Pair<Double, Double>, b: Pair<Double, Double>): Do
     val semiMinor = (1.0 - flattening) * semiMajor
     val phi1 = Math.toRadians(a.first)
     val phi2 = Math.toRadians(b.first)
-    val longitudeDifference = Math.toRadians(b.second - a.second)
+    val rawLongitudeDifference = Math.toRadians(b.second - a.second)
+    val longitudeDifference = ((rawLongitudeDifference + Math.PI) % (2.0 * Math.PI) +
+        2.0 * Math.PI) % (2.0 * Math.PI) - Math.PI
     val reduced1 = atan((1.0 - flattening) * tan(phi1))
     val reduced2 = atan((1.0 - flattening) * tan(phi2))
     val sinU1 = sin(reduced1)
     val cosU1 = cos(reduced1)
     val sinU2 = sin(reduced2)
     val cosU2 = cos(reduced2)
-    var lambda = ((longitudeDifference + Math.PI) % (2.0 * Math.PI) + 2.0 * Math.PI) % (2.0 * Math.PI) - Math.PI
+    var lambda = longitudeDifference
     var sinSigma = 0.0
     var cosSigma = 0.0
     var sigma = 0.0

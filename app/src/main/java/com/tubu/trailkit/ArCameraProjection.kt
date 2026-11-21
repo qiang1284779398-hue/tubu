@@ -115,6 +115,16 @@ private fun arInterpolateRoutePoint(
     )
 }
 
+/** Median-filter short elevation spikes caused by arm/wrist motion and barometric noise. */
+fun smoothArRouteElevations(elevations: List<Double?>, radius: Int = 2): List<Double?> {
+    if (elevations.isEmpty() || radius <= 0) return elevations
+    return elevations.indices.map { index ->
+        val start = (index - radius).coerceAtLeast(0)
+        val end = (index + radius).coerceAtMost(elevations.lastIndex)
+        val values = (start..end).mapNotNull { elevations[it] }.filter { it.isFinite() }.sorted()
+        if (values.isEmpty()) null else values[values.size / 2]
+    }
+}
 /** Resamples GPX at a fixed metric interval so sparse files still render smooth bends. */
 fun sampleArRouteAhead(
     route: PreparedRoute,

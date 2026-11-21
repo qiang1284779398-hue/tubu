@@ -187,22 +187,41 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 val saved=JSONArray(customWaypointPrefs.getString("custom_waypoints_$projectId","[]"))
                 for(i in 0 until saved.length()) {
                     val item=saved.getJSONObject(i)
-                    add(GpxWaypoint(item.getDouble("lat"),item.getDouble("lon"),item.optString("name","自定义标记")))
+                    add(GpxWaypoint(item.getDouble("lat"),item.getDouble("lon"),item.optString("name","自定义标记"),item.optString("desc",""),item.optString("cmt",""),item.optString("type",""),item.optString("sym",""),if(item.has("ele")&&!item.isNull("ele"))item.optDouble("ele") else null,item.optString("time","")))
                 }
             } catch(_:Exception) {}
         }
     }
+    var editingCustomWaypoint by remember(projectId){mutableStateOf<GpxWaypoint?>(null)}
+    var creatingCustomWaypoint by remember(projectId){mutableStateOf(false)}
+    var waypointNameDraft by remember(projectId){mutableStateOf("")}
+    var waypointDescriptionDraft by remember(projectId){mutableStateOf("")}
+    var waypointTypeDraft by remember(projectId){mutableStateOf("普通地点")}
+    var showWaypointTypeMenu by remember(projectId){mutableStateOf(false)}
+    val waypointTypes=listOf("普通地点","营地","水源","观景点","危险路段","休息点","补给点","岔路口","拍照点")
     val allWaypoints=waypoints+customWaypoints
     fun persistCustomWaypoints() {
         val saved=JSONArray()
-        customWaypoints.forEach{wp->saved.put(JSONObject().put("lat",wp.lat).put("lon",wp.lon).put("name",wp.name))}
+        customWaypoints.forEach { wp ->
+            val item=JSONObject().put("lat",wp.lat).put("lon",wp.lon).put("name",wp.name)
+            if(wp.description.isNotBlank())item.put("desc",wp.description)
+            if(wp.comment.isNotBlank())item.put("cmt",wp.comment)
+            if(wp.type.isNotBlank())item.put("type",wp.type)
+            if(wp.symbol.isNotBlank())item.put("sym",wp.symbol)
+            wp.elevation?.let{item.put("ele",it)}
+            if(wp.time.isNotBlank())item.put("time",wp.time)
+            saved.put(item)
+        }
         customWaypointPrefs.edit().putString("custom_waypoints_$projectId",saved.toString()).apply()
     }
-    fun addCustomWaypoint(lat:Double,lon:Double) {
-        val markerName="地图标记 ${customWaypoints.size+1}"
-        customWaypoints.add(GpxWaypoint(lat,lon,markerName))
-        persistCustomWaypoints()
-        android.widget.Toast.makeText(context,"已添加标记：$markerName",android.widget.Toast.LENGTH_LONG).show()
+    fun openWaypointEditor(lat:Double,lon:Double,target:GpxWaypoint?=null) {
+        val waypoint=target ?: GpxWaypoint(lat,lon,"地图标记 ${customWaypoints.size+1}",time=java.time.Instant.now().toString())
+        editingCustomWaypoint=waypoint
+        creatingCustomWaypoint=target==null
+        waypointNameDraft=waypoint.name
+        waypointDescriptionDraft=waypoint.description
+        waypointTypeDraft=waypoint.type.ifBlank{"普通地点"}
+        showWaypointTypeMenu=false
     }
     val elevationProfile=remember(encodedElevations){decodeGpxElevations(encodedElevations)}
     val navigationElevations=remember(elevationProfile,reverseRoute){if(reverseRoute)elevationProfile.asReversed() else elevationProfile}
@@ -316,8 +335,6 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
     var lastVibrationAt by remember(projectId) { mutableLongStateOf(0L) }
     var isRecording by remember(projectId) { mutableStateOf(false) }
     var showWaypointList by remember(projectId) { mutableStateOf(false) }
-    var editingCustomWaypoint by remember(projectId) { mutableStateOf<GpxWaypoint?>(null) }
-    var waypointNameDraft by remember(projectId) { mutableStateOf("") }
     var measureMode by remember(projectId) { mutableStateOf(false) }
     val measurePoints=remember(projectId){mutableStateListOf<Pair<Double,Double>>()}
     val measureDistance=remember(measurePoints.toList()){measurePoints.zipWithNext().sumOf{mapDistance(it.first,it.second)}}
@@ -364,8 +381,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
             }
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 val file=projectTrackFile(context,projectId)
-                if(file.exists() && file.length()>80L) output.write(recoverRecordedGpx(file))
-                else output.write(body.toByteArray(Charsets.UTF_8))
+                val file=projectTrackFile(context,projectId)
+                val trackXml=if(file.exists()&&file.length()>80L)String(recoverRecordedGpx(file),Charsets.UTF_8) else body
+                output.write(appendGpxWaypoints(trackXml,allWaypoints).toByteArray(Charsets.UTF_8))
             }
         } catch(_:Exception) { gpsError="GPX 导出失败，请检查保存位置" }
     }
@@ -381,10 +399,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     append("</trkpt>\n")
                 }
                 append("</trkseg></trk>\n")
-                allWaypoints.forEachIndexed { index,wp -> append("<wpt lat=\"${wp.lat}\" lon=\"${wp.lon}\"><name>${xml(wp.name)}</name></wpt>\n") }
                 append("</gpx>")
             }
-            context.contentResolver.openOutputStream(uri)?.use{it.write(body.toByteArray(Charsets.UTF_8))}
+            context.contentResolver.openOutputStream(uri)?.use{it.write(appendGpxWaypoints(body,allWaypoints).toByteArray(Charsets.UTF_8))}
         } catch(_:Exception) { gpsError="路线 GPX 导出失败，请检查保存位置" }
     }
     val viewPrefs=remember(projectId,path){context.getSharedPreferences("trailkit_map_view",Context.MODE_PRIVATE)}
@@ -974,7 +991,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                             val coords = String.format(Locale.US, "%.6f, %.6f", lat, lon)
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("地图坐标", coords))
-                            addCustomWaypoint(lat, lon)
+                            openWaypointEditor(lat, lon)
                             android.widget.Toast.makeText(context, "坐标：$coords", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     )
@@ -1152,13 +1169,19 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                         val labelStroke=Paint(labelFill).apply{color=android.graphics.Color.WHITE;style=Paint.Style.STROKE;strokeWidth=5f}
                         var lastLabelX=-1000f;var lastLabelY=-1000f
                         allWaypoints.forEachIndexed { index,wp ->
-                            marker.color=if(index<waypoints.size)android.graphics.Color.rgb(235,151,47) else android.graphics.Color.rgb(123,87,164)
+                            marker.color=when(wp.type) {
+                                "营地"->android.graphics.Color.rgb(42,139,82)
+                                "水源"->android.graphics.Color.rgb(40,128,205)
+                                "观景点","拍照点"->android.graphics.Color.rgb(194,143,44)
+                                "危险路段"->android.graphics.Color.rgb(205,66,58)
+                                else->if(index<waypoints.size)android.graphics.Color.rgb(235,151,47) else android.graphics.Color.rgb(123,87,164)
+                            }
                             val projected=project(wp.lat,wp.lon);val x=projected.x
                             val y=projected.y
                             if(x in 0f..size.width && y in 0f..size.height) {
                                 canvas.drawCircle(x,y,6f,marker);canvas.drawCircle(x,y,6f,outline)
                                 if(zoom>=13f && (kotlin.math.abs(x-lastLabelX)>100f || kotlin.math.abs(y-lastLabelY)>65f)) {
-                                    val label=wp.name.take(16)
+                                    val label=if(wp.type.isNotBlank()&&wp.type!="普通地点") "${wp.type} · ${wp.name}".take(16) else wp.name.take(16)
                                     canvas.drawText(label,x+10f,y-9f,labelStroke);canvas.drawText(label,x+10f,y-9f,labelFill)
                                     lastLabelX=x;lastLabelY=y
                                 }
@@ -1451,7 +1474,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                     FilterChip(selected=showPlannedRoute,onClick={showPlannedRoute=!showPlannedRoute;prefs.edit().putBoolean("show_planned_route_$projectId",showPlannedRoute).apply()},label={Text("计划路线 · 蓝色虚线")})
                     FilterChip(selected=showRecordedTrack,onClick={showRecordedTrack=!showRecordedTrack;prefs.edit().putBoolean("show_recorded_track_$projectId",showRecordedTrack).apply()},label={Text("实际轨迹 · 橙红实线")},enabled=recordedPoints.isNotEmpty() || hasSavedRecording)
                 }
-                Text("蓝色虚线：导入的 GPX 计划路线   橙红实线：GPS 实际记录（重叠时优先显示实际轨迹）   蓝点：当前位置   橙点：GPX 途经点 · 紫点：自定义标记（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                Text("蓝色虚线：计划路线   橙红实线：实际轨迹   蓝点：当前位置   绿色：营地 · 蓝色：水源 · 红色：危险点 · 金色：观景点 · 橙/紫：普通途经点/自定义点（${customWaypoints.size}）",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                     OutlinedButton(onClick={measureMode=!measureMode;if(!measureMode)measurePoints.clear()},modifier=Modifier.weight(1f)){Text(if(measureMode)"结束测距" else "地图测距")}
                     OutlinedButton(onClick={measurePoints.clear()},modifier=Modifier.weight(1f),enabled=measurePoints.isNotEmpty()){Text("清除测距点")}
@@ -1677,7 +1700,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 },modifier=Modifier.fillMaxWidth()) { Text("复制度分秒坐标（DMS）") }
                 if(current!=null) OutlinedButton(onClick={
                     val loc=current!!
-                    addCustomWaypoint(loc.latitude,loc.longitude)
+                    openWaypointEditor(loc.latitude,loc.longitude)
                 },modifier=Modifier.fillMaxWidth()) { Text("将当前位置保存为标记点") }
                 if(current!=null) OutlinedButton(onClick={
                     val loc=current!!
@@ -1723,16 +1746,15 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                                 clipboard.setPrimaryClip(ClipData.newPlainText(wp.name,String.format(Locale.US,"%.6f, %.6f",wp.lat,wp.lon)))
                                 android.widget.Toast.makeText(context,"已复制 ${wp.name} 坐标",android.widget.Toast.LENGTH_SHORT).show()
                             }) { Text("复制") }
-                            if(index>=waypoints.size) OutlinedButton(onClick={
-                                editingCustomWaypoint=wp
-                                waypointNameDraft=wp.name
-                            }) { Text("改名") }
+                            if(index>=waypoints.size) OutlinedButton(onClick={openWaypointEditor(wp.lat,wp.lon,wp)}) { Text("编辑") }
                             if(index>=waypoints.size) OutlinedButton(onClick={
                                 customWaypoints.remove(wp)
                                 persistCustomWaypoints()
                                 announcedWaypoints.clear()
                             }) { Text("删除") }
                         }
+                        val waypointDetails=listOf(wp.type.takeIf{it.isNotBlank()},wp.description.takeIf{it.isNotBlank()},wp.comment.takeIf{it.isNotBlank()}).filterNotNull().joinToString(" · ")
+                        if(waypointDetails.isNotBlank()) Text(waypointDetails,Modifier.padding(start=8.dp,bottom=4.dp),fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
                     }
                 }
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -1804,18 +1826,49 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 editingCustomWaypoint?.let { target ->
                     AlertDialog(
                         onDismissRequest={editingCustomWaypoint=null},
-                        title={Text("重命名地图标记")},
-                        text={TextField(value=waypointNameDraft,onValueChange={waypointNameDraft=it},singleLine=true,label={Text("标记名称")})},
-                        confirmButton={TextButton(onClick={
-                            val index=customWaypoints.indexOfFirst{it.lat==target.lat && it.lon==target.lon}
-                            val name=waypointNameDraft.trim()
-                            if(index>=0 && name.isNotBlank()) {
-                                customWaypoints[index]=target.copy(name=name)
-                                persistCustomWaypoints()
+                        title={Text(if(creatingCustomWaypoint)"新建徒步标注点" else "编辑徒步标注点")},
+                        text={
+                            Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                                Text("坐标：${String.format(Locale.US,"%.6f, %.6f",target.lat,target.lon)}",fontSize=11.sp,color=MaterialTheme.colorScheme.secondary)
+                                TextField(value=waypointNameDraft,onValueChange={waypointNameDraft=it.take(80)},singleLine=true,label={Text("地点名称")})
+                                Box {
+                                    OutlinedButton(onClick={showWaypointTypeMenu=true},modifier=Modifier.fillMaxWidth()) { Text("地点类型：$waypointTypeDraft") }
+                                    DropdownMenu(expanded=showWaypointTypeMenu,onDismissRequest={showWaypointTypeMenu=false}) {
+                                        waypointTypes.forEach { type -> DropdownMenuItem(text={Text(type)},onClick={waypointTypeDraft=type;showWaypointTypeMenu=false}) }
+                                    }
+                                }
+                                TextField(value=waypointDescriptionDraft,onValueChange={waypointDescriptionDraft=it.take(1000)},minLines=3,maxLines=5,label={Text("现场说明（做了什么、有什么、路况等）")})
+                                Text("类别和说明会写入 GPX 的标准 <type>、<desc> 字段。",fontSize=10.sp,color=MaterialTheme.colorScheme.secondary)
                             }
+                        },
+                        confirmButton={TextButton(onClick={
+                            val name=waypointNameDraft.trim()
+                            if(name.isNotBlank()) {
+                                val selectedType=waypointTypeDraft.trim()
+                                val symbol=when(selectedType) {
+                                    "营地"->"Campground"
+                                    "水源"->"Drinking Water"
+                                    "观景点","拍照点"->"Scenic Area"
+                                    "危险路段"->"Danger Area"
+                                    "休息点"->"Rest Area"
+                                    "补给点"->"Food"
+                                    "岔路口"->"Trail Junction"
+                                    else->""
+                                }
+                                val updated=target.copy(name=name,description=waypointDescriptionDraft.trim(),type=selectedType,symbol=symbol)
+                                if(creatingCustomWaypoint) customWaypoints.add(updated)
+                                else {
+                                    val index=customWaypoints.indexOf(target)
+                                    if(index>=0)customWaypoints[index]=updated
+                                }
+                                persistCustomWaypoints()
+                                android.widget.Toast.makeText(context,"标注点已保存",android.widget.Toast.LENGTH_SHORT).show()
+                            } else android.widget.Toast.makeText(context,"请先填写地点名称",android.widget.Toast.LENGTH_SHORT).show()
                             editingCustomWaypoint=null
+                            creatingCustomWaypoint=false
+                            showWaypointTypeMenu=false
                         }){Text("保存")}},
-                        dismissButton={TextButton(onClick={editingCustomWaypoint=null}){Text("取消")}}
+                        dismissButton={TextButton(onClick={editingCustomWaypoint=null;creatingCustomWaypoint=false;showWaypointTypeMenu=false}){Text("取消")}}
                     )
                 }
                 }

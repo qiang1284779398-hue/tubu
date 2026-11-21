@@ -20,7 +20,18 @@ fun readGpxTrack(context:Context,uri:Uri):GpxTrackResult {
     "trkpt","rtept"->{val lat=parser.getAttributeValue(null,"lat")?.toDoubleOrNull();val lon=parser.getAttributeValue(null,"lon")?.toDoubleOrNull();if(lat!=null&&lon!=null&&lat in -90.0..90.0&&lon in -180.0..180.0){points.add(lat to lon);elevations.add(null);activeTrackPointIndex=points.lastIndex}}
     "wpt"->{val lat=parser.getAttributeValue(null,"lat")?.toDoubleOrNull();val lon=parser.getAttributeValue(null,"lon")?.toDoubleOrNull();if(lat!=null&&lon!=null&&lat in -90.0..90.0&&lon in -180.0..180.0)waypoint=JSONObject().put("lat",lat).put("lon",lon)}
     "name"->{if(waypoint!=null){val name=parser.nextText().trim();if(name.isNotBlank())waypoint!!.put("name",name)}}
-    "ele"->{val elevation=parser.nextText().toDoubleOrNull();val index=activeTrackPointIndex;if(elevation!=null&&index!=null)elevations[index]=elevation}
+    "desc","cmt","sym","type","time"->{
+     if(waypoint!=null){
+      val field=parser.name.lowercase(Locale.ROOT)
+      val value=parser.nextText().trim()
+      if(value.isNotBlank())waypoint!!.put(field,value)
+     }
+    }
+    "ele"->{
+     val elevation=parser.nextText().trim().toDoubleOrNull()
+     if(waypoint!=null){if(elevation!=null)waypoint!!.put("ele",elevation)}
+     else {val index=activeTrackPointIndex;if(elevation!=null&&index!=null)elevations[index]=elevation}
+    }
    }
    if(event==XmlPullParser.END_TAG && (parser.name.equals("trkpt",true)||parser.name.equals("rtept",true)))activeTrackPointIndex=null
    if(event==XmlPullParser.END_TAG && parser.name.equals("wpt",true)){waypoint?.let{waypoints.put(it)};waypoint=null}
@@ -87,11 +98,54 @@ fun decodeTrackPoints(encoded:String):List<Pair<Double,Double>> = try {
   val a=JSONArray(encoded);List(a.length()){i->val p=a.getJSONArray(i);p.getDouble(0) to p.getDouble(1)}
  }
 }catch(_:Exception){emptyList()}
-data class GpxWaypoint(val lat:Double,val lon:Double,val name:String)
+data class GpxWaypoint(
+ val lat:Double,
+ val lon:Double,
+ val name:String,
+ val description:String="",
+ val comment:String="",
+ val type:String="",
+ val symbol:String="",
+ val elevation:Double?=null,
+ val time:String=""
+)
 fun decodeGpxWaypoints(encoded:String):List<GpxWaypoint> = try {
  val source=if(encoded.startsWith("W1")) encoded.substring(2) else encoded
- val a=JSONArray(source);List(a.length()){i->val p=a.getJSONObject(i);GpxWaypoint(p.getDouble("lat"),p.getDouble("lon"),p.optString("name","途经点"))}
+ val a=JSONArray(source);List(a.length()){i->
+  val p=a.getJSONObject(i)
+  GpxWaypoint(
+   lat=p.getDouble("lat"),lon=p.getDouble("lon"),name=p.optString("name","途经点"),
+   description=p.optString("desc",""),comment=p.optString("cmt",""),
+   type=p.optString("type",""),symbol=p.optString("sym",""),
+   elevation=if(p.has("ele")&&!p.isNull("ele"))p.optDouble("ele") else null,
+   time=p.optString("time","")
+  )
+ }
 }catch(_:Exception){emptyList()}
+
+private fun escapeGpxXml(value:String):String =
+ value.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&apos;")
+
+// Merge independent GPX waypoints into an existing track/route document.
+fun appendGpxWaypoints(gpxXml:String,waypoints:List<GpxWaypoint>):String {
+ if(waypoints.isEmpty()) return gpxXml
+ val closingIndex=gpxXml.lowercase(Locale.ROOT).lastIndexOf("</gpx>")
+ if(closingIndex<0) return gpxXml
+ val waypointXml=buildString {
+  waypoints.forEach { wp ->
+   append("<wpt lat=\"").append(wp.lat).append("\" lon=\"").append(wp.lon).append("\">")
+   wp.elevation?.let{append("<ele>").append(it).append("</ele>")}
+   if(wp.time.isNotBlank()) append("<time>").append(escapeGpxXml(wp.time)).append("</time>")
+   if(wp.name.isNotBlank()) append("<name>").append(escapeGpxXml(wp.name)).append("</name>")
+   if(wp.comment.isNotBlank()) append("<cmt>").append(escapeGpxXml(wp.comment)).append("</cmt>")
+   if(wp.description.isNotBlank()) append("<desc>").append(escapeGpxXml(wp.description)).append("</desc>")
+   if(wp.symbol.isNotBlank()) append("<sym>").append(escapeGpxXml(wp.symbol)).append("</sym>")
+   if(wp.type.isNotBlank()) append("<type>").append(escapeGpxXml(wp.type)).append("</type>")
+   append("</wpt>\n")
+  }
+ }
+ return gpxXml.substring(0,closingIndex)+waypointXml+gpxXml.substring(closingIndex)
+}
 
 fun decodeGpxElevations(encoded:String):List<Double?> = try {
  if(encoded.startsWith("E1")) {

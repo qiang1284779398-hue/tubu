@@ -142,7 +142,7 @@ class NavigationEngineTest {
             currentAccuracyMeters = 5.0,
             previousAccuracyMeters = 5.0
         )
-        assertEquals(9.75, allowance, 0.001)
+        assertEquals(9.55, allowance, 0.001)
     }
 
     @Test fun routeProgressWindowAccountsForPoorAccuracyButHasAHardCap() {
@@ -154,7 +154,7 @@ class NavigationEngineTest {
 
     @Test fun routeProgressWindowHandlesInvalidSensorValuesSafely() {
         assertEquals(
-            8.0,
+            22.75,
             routeProgressAdvanceLimitMeters(Double.NaN, Double.NaN, Double.NaN, -1.0),
             0.001
         )

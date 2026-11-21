@@ -8,12 +8,12 @@ class OfflineDownloadPlannerTest {
     @Test fun shortRouteUsesSeparateBroadAndHighDetailCorridors() {
         val plan=OfflineDownloadPlanner.createPlan(listOf(31.0 to 121.0,31.01 to 121.01))
         assertEquals(2,plan.regions.size)
-        assertEquals(9,plan.regions[0].minZoom
+        assertEquals(9,plan.regions[0].minZoom)
         assertEquals(11,plan.regions[0].maxZoom)
-        assertEquals(900.0,plan.regions[0].bufferMeters,0.0
+        assertEquals(900.0,plan.regions[0].bufferMeters,0.0)
         assertEquals(12,plan.regions[1].minZoom)
         assertEquals(15,plan.regions[1].maxZoom)
-        assertEquals(220.0,plan.regions[1].bufferMeters,0.0
+        assertEquals(220.0,plan.regions[1].bufferMeters,0.0)
         assertTrue(plan.regions.all{it.geoJson.startsWith("{")})
         assertTrue(plan.regions.all{it.estimatedTileCount>0})
     }

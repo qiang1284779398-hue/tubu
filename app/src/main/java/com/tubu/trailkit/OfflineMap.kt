@@ -643,17 +643,22 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
         "track" -> routeMatch?.bearingDegrees?.toFloat() ?: if(!arrowHeading.isNaN()) arrowHeading else 0f
         else -> 0f
     }
-    LaunchedEffect(mapOrientation, desiredMapBearing) {
-        var remaining = ((desiredMapBearing - mapBearing + 540f) % 360f) - 180f
-        val steps = 8
-        repeat(steps) {
-            remaining = ((desiredMapBearing - mapBearing + 540f) % 360f) - 180f
-            if(kotlin.math.abs(remaining) > 0.7f) {
-                mapBearing = (mapBearing + remaining / (steps - it).toFloat() + 360f) % 360f
-                kotlinx.coroutines.delay(35L)
+    // Track the latest compass target continuously instead of restarting a
+    // long 8-step animation on every sensor callback. This keeps rotation
+    // responsive while retaining a small amount of visual damping.
+    val latestDesiredMapBearing by rememberUpdatedState(desiredMapBearing)
+    LaunchedEffect(mapOrientation) {
+        while(true) {
+            val target=(latestDesiredMapBearing+360f)%360f
+            val delta=((target-mapBearing+540f)%360f)-180f
+            if(kotlin.math.abs(delta)<0.12f) {
+                mapBearing=target
+            } else {
+                val response=if(kotlin.math.abs(delta)>25f) 0.62f else 0.48f
+                mapBearing=(mapBearing+delta*response+360f)%360f
             }
+            kotlinx.coroutines.delay(16L)
         }
-        mapBearing = (desiredMapBearing + 360f) % 360f
     }
     val nextTurnInfo=remember(progressMatch,navigationPoints,preparedRoute) {
         progressMatch?.let { match ->
@@ -800,9 +805,9 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 val normalized=(raw+360f)%360f
                 val now=android.os.SystemClock.elapsedRealtime()
                 val difference=if(lastPublished.isNaN()) 360f else kotlin.math.abs((normalized-lastPublished+540f)%360f-180f)
-                // Sensor callbacks can be frequent. Avoid recomposing the whole navigation sheet
-                // for tiny compass noise; publish meaningful heading changes at most 4 times/sec.
-                if(now-lastPublishAt>=250L && (lastPublished.isNaN() || difference>=2f)) {
+                // Publish at about 30 Hz. A small angular threshold avoids noise,
+                // while the tighter interval follows normal hand rotation promptly.
+                if(now-lastPublishAt>=33L && (lastPublished.isNaN() || difference>=0.25f)) {
                     lastPublishAt=now
                     lastPublished=normalized
                     heading=normalized
@@ -812,7 +817,7 @@ private fun loadMbTile(db:SQLiteDatabase,z:Int,x:Int,y:Int,minZoom:Int,cache:Lru
                 if(compassAccuracy!=accuracy) compassAccuracy=accuracy
             }
         }
-        if(visible && sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_NORMAL)
+        if(visible && sensor!=null) manager.registerListener(listener,sensor,SensorManager.SENSOR_DELAY_GAME)
         onDispose { manager.unregisterListener(listener) }
     }
     if (cameraReturnPromptVisible) {

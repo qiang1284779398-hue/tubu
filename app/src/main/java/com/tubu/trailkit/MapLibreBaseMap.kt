@@ -288,10 +288,10 @@ internal const val TRAILKIT_ESRI_SATELLITE_STYLE = "https://raw.githubuserconten
 internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId:String,selectedStyle:String,onSelectStyle:(String)->Unit) {
     val context=LocalContext.current
     val prefs=remember(context){context.getSharedPreferences("trailkit_offline_downloads",Context.MODE_PRIVATE)}
-    val vectorTaskKey="task_\${projectId}_vector"
-    val terrainTaskKey="task_\${projectId}_terrain"
-    val vectorRouteKey="route_\${projectId}_vector"
-    val terrainRouteKey="route_\${projectId}_terrain"
+    val vectorTaskKey="task_${projectId}_vector"
+    val terrainTaskKey="task_${projectId}_terrain"
+    val vectorRouteKey="route_${projectId}_vector"
+    val terrainRouteKey="route_${projectId}_terrain"
 
     var progress by remember(projectId){mutableFloatStateOf(0f)}
     var batchIndex by remember(projectId){mutableIntStateOf(0)}
@@ -351,7 +351,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             batchTotal=plan.regions.size;downloaded=0L;required=0L;bytes=0L
             estimatedTiles=plan.estimatedTileCount
             activeRegion=null
-            message="正在准备$label：路线总长约 \${"%.1f".format(java.util.Locale.US,plan.routeLengthMeters/1000.0)} km，分为 \${plan.regions.size} 个走廊区域；预估约 \${plan.estimatedTileCount} 张地图瓦片。"
+            message="正在准备$label：路线总长约 ${"%.1f".format(java.util.Locale.US,plan.routeLengthMeters/1000.0)} km，分为 ${plan.regions.size} 个走廊区域；预估约 ${plan.estimatedTileCount} 张地图瓦片。"
             var completedBytes=0L
             var completedResources=0L
             var completedRegions=0
@@ -383,7 +383,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                         downloaded=doneResources+status.completedResourceCount
                         required=status.requiredResourceCount
                         bytes=doneBytes+status.completedResourceSize
-                        message="$label 下载中：区域 \${index+1}/\${plan.regions.size}（\${plannedLabel(plan.regions[index])}），\${status.completedResourceCount}/\${status.requiredResourceCount} 项资源，累计 \${bytes/1024/1024} MB。"
+                        message="$label 下载中：区域 ${index+1}/${plan.regions.size}（${plannedLabel(plan.regions[index])}），${status.completedResourceCount}/${status.requiredResourceCount} 项资源，累计 ${bytes/1024/1024} MB。"
                         if(status.isComplete && status.requiredResourceCount>0L) {
                             terminal=true
                             region.setDownloadState(OfflineRegion.STATE_INACTIVE)
@@ -417,7 +417,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                     activeRegion=null
                     downloaded=completedResources
                     bytes=completedBytes
-                    message="$label 下载完成：\${plan.regions.size} 个路线走廊区域，约 \${plan.estimatedTileCount} 张瓦片；实际资源 \${completedResources} 项、\${completedBytes/1024/1024} MB。"
+                    message="$label 下载完成：${plan.regions.size} 个路线走廊区域，约 ${plan.estimatedTileCount} 张瓦片；实际资源 ${completedResources} 项、${completedBytes/1024/1024} MB。"
                 } else {
                     batchIndex=index+1
                     val planned=plan.regions[index]
@@ -437,7 +437,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                                     override fun onStatus(status:OfflineRegionStatus?) {
                                         if(stopped || paused)return
                                         if(status==null) {
-                                            stopForRecoverableError("无法读取第 \${index+1} 个区域状态。")
+                                            stopForRecoverableError("无法读取第 ${index+1} 个区域状态。")
                                             return
                                         }
                                         if(status.isComplete && status.requiredResourceCount>0L) {
@@ -454,7 +454,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                                         }
                                     }
                                     override fun onError(error:String?) {
-                                        stopForRecoverableError("读取第 \${index+1} 个区域失败："+(error?: "未知错误"))
+                                        stopForRecoverableError("读取第 ${index+1} 个区域失败："+(error?: "未知错误"))
                                     }
                                 })
                             } else {
@@ -467,7 +467,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                                 )
                                 val metadata=JSONObject()
                                     .put("app","TrailKit")
-                                    .put("name","TrailKit-$label-$projectId-\${index+1}")
+                                    .put("name","TrailKit-$label-$projectId-${index+1}")
                                     .put("taskId",taskId)
                                     .put("projectId",projectId)
                                     .put("layer",label)
@@ -487,7 +487,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                                         watchRegion(offlineRegion,index,completedRegions,completedBytes,completedResources)
                                     }
                                     override fun onError(error:String) {
-                                        stopForRecoverableError("创建第 \${index+1} 个离线区域失败：$error")
+                                        stopForRecoverableError("创建第 ${index+1} 个离线区域失败：$error")
                                     }
                                 })
                             }
@@ -528,7 +528,7 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
             if(busy||complete||paused) {
                 LinearProgressIndicator(progress={progress},modifier=Modifier.fillMaxWidth())
                 Text(
-                    "\${(progress*100).toInt()}% · 区域 \${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · 已完成 $downloaded 项 · 当前区域需 $required 项 · 累计 \${bytes/1024/1024} MB",
+                    "${(progress*100).toInt()}% · 区域 ${batchIndex.coerceAtMost(batchTotal)}/$batchTotal · 已完成 $downloaded 项 · 当前区域需 $required 项 · 累计 ${bytes/1024/1024} MB",
                     style=MaterialTheme.typography.labelSmall
                 )
             }
@@ -539,4 +539,4 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
 }
 
 private fun plannedLabel(plan:OfflineDownloadRegionPlan):String =
-    "\${plan.minZoom}–\${plan.maxZoom} 级 · \${plan.bufferMeters.toInt()} m 缓冲"
+    "${plan.minZoom}–${plan.maxZoom} 级 · ${plan.bufferMeters.toInt()} m 缓冲"

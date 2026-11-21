@@ -164,7 +164,7 @@ internal object OfflineDownloadPlanner {
         }.toMutableList()
         ring.add(ring.first())
         val coordinates=ring.joinToString(",") { (lon,lat) ->
-            "[\${"%.7f".format(java.util.Locale.US,lon)},\${"%.7f".format(java.util.Locale.US,lat)}]"
+            "[${"%.7f".format(java.util.Locale.US,lon)},${"%.7f".format(java.util.Locale.US,lat)}]"
         }
         return """{"type":"Polygon","coordinates":[[$coordinates]]}"""
     }

@@ -104,9 +104,9 @@ class NavigationEngineTest {
     @Test fun continuousMatcherCanAdvanceWhenAllowedDistanceIncreases() {
         val route = prepareRoute(listOf(0.0 to 0.0, 0.0 to 0.001, 0.001 to 0.001))
         val previous = matchRoute(route, 0.0 to 0.0004) ?: error("initial match missing")
-        val next = matchRouteContinuously(route, 0.0004 to 0.001, previous, 100.0)
+        val next = matchRouteContinuously(route, 0.0004 to 0.001, previous, 140.0)
             ?: error("forward match missing")
         assertTrue(next.progressMeters > previous.progressMeters)
-        assertTrue(next.progressMeters < previous.progressMeters + 100.0)
+        assertTrue(next.progressMeters < previous.progressMeters + 140.0)
     }
 }

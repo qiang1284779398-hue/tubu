@@ -33,7 +33,7 @@ import org.maplibre.android.offline.OfflineManager
 import org.maplibre.android.offline.OfflineRegion
 import org.maplibre.android.offline.OfflineRegionError
 import org.maplibre.android.offline.OfflineRegionStatus
-import org.maplibre.geojson.Geometry
+import org.maplibre.geojson.Feature
 import org.maplibre.android.offline.OfflineGeometryRegionDefinition
 import java.util.concurrent.TimeUnit
 import java.util.UUID
@@ -458,7 +458,13 @@ internal fun RouteOfflineDownloadCard(points:List<Pair<Double,Double>>,projectId
                                     }
                                 })
                             } else {
-                                val geometry=try { Geometry.fromJson(planned.geoJson) } catch(e:Exception) {
+                                val geometry=try {
+                                    val featureJson=JSONObject().put("type","Feature")
+                                        .put("geometry",JSONObject(planned.geoJson))
+                                        .put("properties",JSONObject()).toString()
+                                    Feature.fromJson(featureJson).geometry()
+                                        ?: throw IllegalStateException("GeoJSON 没有 geometry")
+                                } catch(e:Exception) {
                                     stopForRecoverableError("路线区域几何生成失败："+(e.message?:"未知错误"))
                                     return
                                 }

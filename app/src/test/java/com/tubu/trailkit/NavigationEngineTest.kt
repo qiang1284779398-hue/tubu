@@ -81,4 +81,32 @@ class NavigationEngineTest {
         assertEquals("31°13′30.00″N",formatDms(31.225,true))
         assertEquals("121°28′30.00″W",formatDms(-121.475,false))
     }
+
+    @Test fun continuousMatcherDoesNotJumpToNearbyLaterSwitchback() {
+        val route = prepareRoute(listOf(
+            0.0 to 0.0,
+            0.0 to 0.001,
+            0.000135 to 0.001,
+            0.000135 to 0.0
+        ))
+        val previous = matchRoute(route, 0.0 to 0.0005) ?: error("initial match missing")
+        val next = matchRouteContinuously(
+            route,
+            0.000135 to 0.0005,
+            previous,
+            maxForwardProgressMeters = 30.0
+        ) ?: error("continuous match missing")
+        assertEquals(0, next.segmentIndex)
+        assertTrue(next.progressMeters < previous.progressMeters + 30.0)
+        assertTrue(next.distanceMeters in 13.0..17.0)
+    }
+
+    @Test fun continuousMatcherCanAdvanceWhenAllowedDistanceIncreases() {
+        val route = prepareRoute(listOf(0.0 to 0.0, 0.0 to 0.001, 0.001 to 0.001))
+        val previous = matchRoute(route, 0.0 to 0.0004) ?: error("initial match missing")
+        val next = matchRouteContinuously(route, 0.0004 to 0.001, previous, 100.0)
+            ?: error("forward match missing")
+        assertTrue(next.progressMeters > previous.progressMeters)
+        assertTrue(next.progressMeters < previous.progressMeters + 100.0)
+    }
 }

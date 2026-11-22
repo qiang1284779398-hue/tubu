@@ -71,18 +71,19 @@ private val sand = androidx.compose.ui.graphics.Color(0xFFF3F0E7)
 private val muted = androidx.compose.ui.graphics.Color(0xFF78827A)
 
 fun normalizeGearCategory(raw:String):String {
-    val s=raw.trim()
+    val s=raw.trim().lowercase(Locale.ROOT)
     return when {
-        s.contains("背负")||s.contains("背包")->"背负系统"
-        s.contains("帐篷")||s.contains("营地")||s.contains("地布")||s.contains("露营")->"帐篷与营地系统"
-        s.contains("睡眠")||s.contains("睡袋")||s.contains("气垫")||s.contains("蛋巢")->"睡眠系统"
-        s.contains("衣物")||s.contains("服装")||s.contains("冲锋")||s.contains("软壳")||s.contains("抓绒")||s.contains("速干")||s.contains("羽绒")||s.contains("袜")||s.contains("帽")||s.contains("面巾")||s.contains("雨衣")->"衣物系统"
-        s.contains("鞋")||s.contains("靴")||s.contains("雪套")->"鞋靴系统"
-        s.contains("炊")||s.contains("饮")||s.contains("炉")||s.contains("锅")||s.contains("水")||s.contains("餐具")->"炊事与饮水系统"
-        s.contains("行进")||s.contains("登山杖")||s.contains("徒步")||s.contains("冰爪")->"行进系统"
-        s.contains("电子")||s.contains("导航")||s.contains("手表")||s.contains("电池")||s.contains("充电")||s.contains("GPS")||s.contains("头灯")||s.contains("照明")->"电子与导航系统"
-        s.contains("急救")||s.contains("卫生")||s.contains("药")||s.contains("毛巾")||s.contains("收纳")||s.contains("防晒")||s.contains("护理")||s=="其他"->"急救与卫生系统"
-        else->"急救与卫生系统"
+        s.contains("背负") || s.contains("背包") -> "背负系统"
+        s.contains("帐篷") || s.contains("营地") || s.contains("地布") || s.contains("露营") -> "帐篷与营地系统"
+        s.contains("睡眠") || s.contains("睡袋") || s.contains("气垫") || s.contains("蛋巢") || s.contains("枕") -> "睡眠系统"
+        // 收纳袋、毛巾等按用户现有装备体系归入衣物系统；避免“防水”中的“水”触发炊事分类
+        s.contains("衣物") || s.contains("服装") || s.contains("冲锋") || s.contains("软壳") || s.contains("抓绒") || s.contains("速干") || s.contains("羽绒") || s.contains("袜") || s.contains("帽") || s.contains("面巾") || s.contains("雨衣") || s.contains("毛巾") || s.contains("收纳袋") || s.contains("收纳包") -> "衣物系统"
+        s.contains("鞋") || s.contains("靴") || s.contains("雪套") || s.contains("护腿") -> "鞋靴系统"
+        s.contains("炊") || s.contains("炉") || s.contains("锅") || s.contains("餐具") || s.contains("饮水") || s.contains("水壶") || s.contains("水袋") || s.contains("净水") || s.contains("滤水") -> "炊事与饮水系统"
+        s.contains("行进") || s.contains("登山杖") || s.contains("徒步") || s.contains("冰爪") -> "行进系统"
+        s.contains("电子") || s.contains("导航") || s.contains("手表") || s.contains("电池") || s.contains("充电") || s.contains("gps") || s.contains("头灯") || s.contains("照明") -> "电子与导航系统"
+        s.contains("急救") || s.contains("卫生") || s.contains("药") || s.contains("防晒") || s.contains("护理") || s.contains("保温毯") || s.contains("哨子") || s == "其他" -> "急救与卫生系统"
+        else -> "急救与卫生系统"
     }
 }
 
@@ -564,7 +565,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                         LinearProgressIndicator(progress={if(p.gear.isEmpty())0f else p.gear.count{it.packed}.toFloat()/p.gear.size},modifier=Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(8.dp)),color=forest,trackColor=androidx.compose.ui.graphics.Color(0xFFDDE4DA))
                         Text("分类重量统计",fontWeight=FontWeight.Bold,color=forest)
                         categories.forEach { c ->
-                            val grams=p.gear.filter{it.category==c}.sumOf{it.weightGrams*it.quantity}
+                            val grams=p.gear.filter{normalizeGearCategory(it.category)==c}.sumOf{it.weightGrams*it.quantity}
                             if(grams>0) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                 Text(c,fontSize=11.sp,color=muted); Text("${String.format(Locale.CHINA,"%.0f",grams)} g",fontSize=11.sp,color=forest)
                             }

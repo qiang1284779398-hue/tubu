@@ -439,8 +439,8 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
             error = androidx.compose.ui.graphics.Color(0xFFB65346)
         ),
         shapes = Shapes(
-            small = RoundedCornerShape(12.dp),
-            medium = RoundedCornerShape(18.dp),
+            small = RoundedCornerShape(16.dp),
+            medium = RoundedCornerShape(20.dp),
             large = RoundedCornerShape(26.dp)
         )
     ) {
@@ -477,7 +477,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                         }
                     }
                     item {
-                        Card(Modifier.fillMaxWidth().clickable { githubPhotoDialog=true },shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA))) {
+                        Card(Modifier.clip(RoundedCornerShape(22.dp)).fillMaxWidth().clickable { githubPhotoDialog=true },shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA))) {
                             Row(Modifier.fillMaxWidth().padding(18.dp),verticalAlignment=Alignment.CenterVertically) {
                                 Box(Modifier.size(52.dp).clip(RoundedCornerShape(16.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center) { Icon(Icons.Default.Image,null,tint=forest,modifier=Modifier.size(28.dp)) }
                                 Spacer(Modifier.width(12.dp))
@@ -491,7 +491,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                     }
                     if(projects.isEmpty()) item { Empty("还没有徒步项目","点击右下角 + 创建你的第一个计划") }
                     items(projects,key={it.id}) { p ->
-                        Card(Modifier.fillMaxWidth().combinedClickable(onClick={ selected=p.id },onLongClick={ manageProjectId=p.id }),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA)),elevation=CardDefaults.cardElevation(defaultElevation=3.dp)) {
+                        Card(Modifier.clip(RoundedCornerShape(22.dp)).fillMaxWidth().combinedClickable(onClick={ selected=p.id },onLongClick={ manageProjectId=p.id }),shape=RoundedCornerShape(22.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA)),elevation=CardDefaults.cardElevation(defaultElevation=3.dp)) {
                             Column(Modifier.padding(18.dp)) {
                                 Row(verticalAlignment=Alignment.CenterVertically) {
                                     Box(Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(androidx.compose.ui.graphics.Color(0xFFE5EBE2)),contentAlignment=Alignment.Center) { Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(27.dp)) }
@@ -602,7 +602,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                         if(list.isNotEmpty()) {
                             item { Row(Modifier.fillMaxWidth().padding(top=5.dp,bottom=1.dp),verticalAlignment=Alignment.CenterVertically) { Box(Modifier.width(4.dp).height(18.dp).clip(RoundedCornerShape(4.dp)).background(forest)); Spacer(Modifier.width(9.dp)); Text(cat,fontWeight=FontWeight.Bold,color=forest,fontSize=15.sp) } }
                             items(list,key={it.id}) { g ->
-                                Card(Modifier.fillMaxWidth().clickable { editing=g;chosenPhoto=g.photo;gearDialog=true },shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA)),elevation=CardDefaults.cardElevation(defaultElevation=2.dp)) {
+                                Card(Modifier.clip(RoundedCornerShape(20.dp)).fillMaxWidth().clickable { editing=g;chosenPhoto=g.photo;gearDialog=true },shape=RoundedCornerShape(20.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFFFFEFA)),elevation=CardDefaults.cardElevation(defaultElevation=2.dp)) {
                                     Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically) {
                                         val image by produceState<Bitmap?>(initialValue=null,key1=g.photo) {
                                             value=withContext(Dispatchers.IO){decodeGearPhoto(context,g.photo,360)}
@@ -647,14 +647,14 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                             item {
                                 Text("导航与地图",fontWeight=FontWeight.Bold,color=forest,fontSize=16.sp)
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                    Card(Modifier.weight(1f).clickable { mapOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White)) {
+                                    Card(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).clickable { mapOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White)) {
                                         Column(Modifier.fillMaxWidth().padding(16.dp),horizontalAlignment=Alignment.CenterHorizontally) {
                                             Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(28.dp))
                                             Spacer(Modifier.height(8.dp));Text("地图 / 轨迹导航",fontWeight=FontWeight.Bold,fontSize=13.sp,color=forest)
                                             Text(if(p.trackData.isNotBlank()) "进入路线导航" else "打开离线地图",fontSize=10.sp,color=muted)
                                         }
                                     }
-                                    Card(Modifier.weight(1f).clickable { if(p.trackData.isNotBlank()) trackOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White)) {
+                                    Card(Modifier.weight(1f).clip(RoundedCornerShape(18.dp)).clickable { if(p.trackData.isNotBlank()) trackOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color.White)) {
                                         Column(Modifier.fillMaxWidth().padding(16.dp),horizontalAlignment=Alignment.CenterHorizontally) {
                                             Icon(Icons.Default.Image,null,tint=forest,modifier=Modifier.size(28.dp))
                                             Spacer(Modifier.height(8.dp));Text("轨迹预览",fontWeight=FontWeight.Bold,fontSize=13.sp,color=forest)
@@ -664,7 +664,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                                 }
                             }
                             item {
-                                Card(Modifier.fillMaxWidth().clickable { arCameraOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFF173B32))) {
+                                Card(Modifier.clip(RoundedCornerShape(18.dp)).fillMaxWidth().clickable { arCameraOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFF173B32))) {
                                     Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
                                         Icon(Icons.Default.PhotoCamera,null,tint=androidx.compose.ui.graphics.Color.White,modifier=Modifier.size(30.dp))
                                         Spacer(Modifier.width(12.dp))
@@ -677,7 +677,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                                 }
                             }
                             item {
-                                Card(Modifier.fillMaxWidth().clickable { terrain3dOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFE8EEE7))) {
+                                Card(Modifier.clip(RoundedCornerShape(18.dp)).fillMaxWidth().clickable { terrain3dOpen=true },shape=RoundedCornerShape(18.dp),colors=CardDefaults.cardColors(containerColor=androidx.compose.ui.graphics.Color(0xFFE8EEE7))) {
                                     Row(Modifier.fillMaxWidth().padding(16.dp),verticalAlignment=Alignment.CenterVertically) {
                                         Icon(Icons.Default.Landscape,null,tint=forest,modifier=Modifier.size(30.dp))
                                         Spacer(Modifier.width(12.dp))
@@ -694,7 +694,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                             }
                             item {
                                 Card(
-                                    Modifier.fillMaxWidth().clickable {
+                                    Modifier.clip(RoundedCornerShape(20.dp)).fillMaxWidth().clickable {
                                         gpxTargetProjectId=p.id
                                         gpxImporter.launch(arrayOf("*/*"))
                                     },

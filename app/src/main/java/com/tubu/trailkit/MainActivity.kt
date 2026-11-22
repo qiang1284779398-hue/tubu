@@ -15,6 +15,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 import android.widget.Toast
+import android.util.LruCache
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -414,6 +415,25 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     }
     fun save(list:List<Project>) { projects=list; persist(context,list) }
     val project=projects.firstOrNull { it.id==selected }
+    // Cache category filtering and weight aggregation so opening/recomposing a large project
+    // does not repeatedly scan the full gear list for every category.
+    val categoryWeights = remember(project?.id, project?.gear) {
+        categories.associateWith { category ->
+            project?.gear.orEmpty().asSequence()
+                .filter { normalizeGearCategory(it.category) == category }
+                .sumOf { it.weightGrams * it.quantity }
+        }
+    }
+    val categoryGroups = remember(project?.id, project?.gear, searchQuery, packedOnly, sortByWeight) {
+        categories.associateWith { category ->
+            val filtered = project?.gear.orEmpty().filter {
+                normalizeGearCategory(it.category) == category &&
+                    (it.name.contains(searchQuery, true) || it.note.contains(searchQuery, true)) &&
+                    (!packedOnly || !it.packed)
+            }
+            if (sortByWeight) filtered.sortedByDescending { it.weightGrams * it.quantity } else filtered
+        }
+    }
 
     // Android system back / edge-swipe: return from a project detail page to the project list instead of closing the app.
     BackHandler(enabled = project != null) {
@@ -572,7 +592,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                         LinearProgressIndicator(progress={if(p.gear.isEmpty())0f else p.gear.count{it.packed}.toFloat()/p.gear.size},modifier=Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(8.dp)),color=forest,trackColor=androidx.compose.ui.graphics.Color(0xFFDDE4DA))
                         Text("分类重量统计",fontWeight=FontWeight.Bold,color=forest)
                         categories.forEach { c ->
-                            val grams=p.gear.filter{normalizeGearCategory(it.category)==c}.sumOf{it.weightGrams*it.quantity}
+                            val grams=categoryWeights[c] ?: 0.0
                             if(grams>0) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
                                 Text(c,fontSize=11.sp,color=muted); Text("${String.format(Locale.CHINA,"%.0f",grams)} g",fontSize=11.sp,color=forest)
                             }
@@ -597,8 +617,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                     }
                     if(p.gear.isEmpty()) item { Empty("装备清单还是空的","点击右下角 + 添加第一件装备") }
                     categories.forEach { cat ->
-                        val filtered=p.gear.filter{normalizeGearCategory(it.category)==cat && (it.name.contains(searchQuery,true)||it.note.contains(searchQuery,true)) && (!packedOnly || !it.packed)}
-                        val list=if(sortByWeight) filtered.sortedByDescending{it.weightGrams*it.quantity} else filtered
+                        val list=categoryGroups[cat].orEmpty()
                         if(list.isNotEmpty()) {
                             item { Row(Modifier.fillMaxWidth().padding(top=5.dp,bottom=1.dp),verticalAlignment=Alignment.CenterVertically) { Box(Modifier.width(4.dp).height(18.dp).clip(RoundedCornerShape(4.dp)).background(forest)); Spacer(Modifier.width(9.dp)); Text(cat,fontWeight=FontWeight.Bold,color=forest,fontSize=15.sp) } }
                             items(list,key={it.id}) { g ->
@@ -1070,8 +1089,16 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     },confirmButton={TextButton(onClick={if(name.isNotBlank())save(Gear(initial?.id?:System.nanoTime().toString(),name.trim(),cat,price.toDoubleOrNull()?:0.0,(qty.toIntOrNull()?:1).coerceAtLeast(1),note.trim(),photo,weight.toDoubleOrNull()?:0.0,initial?.packed?:false,warranty.trim(),maintenance.trim()))}){Text("保存")}},dismissButton={TextButton(onClick=close){Text("取消")}})
 }
 
+// Small LRU cache for decoded gear thumbnails/previews. The source path and target
+// dimension form the key, preventing repeated disk reads and bitmap decoding on re-entry.
+private val gearPhotoBitmapCache = object : LruCache<String, Bitmap>(12 * 1024) {
+    override fun sizeOf(key: String, value: Bitmap): Int = (value.allocationByteCount / 1024).coerceAtLeast(1)
+}
+
 private fun decodeGearPhoto(context:Context,value:String,maxDimension:Int):Bitmap? {
     if(value.isBlank()) return null
+    val cacheKey = "$maxDimension|$value"
+    gearPhotoBitmapCache.get(cacheKey)?.let { return it }
     fun open() : java.io.InputStream? {
         val uri=runCatching{Uri.parse(value)}.getOrNull() ?: return null
         return try {
@@ -1091,7 +1118,9 @@ private fun decodeGearPhoto(context:Context,value:String,maxDimension:Int):Bitma
             inSampleSize=sample
             inPreferredConfig=Bitmap.Config.RGB_565
         }
-        open()?.use{BitmapFactory.decodeStream(it,null,options)}
+        open()?.use{BitmapFactory.decodeStream(it,null,options)}?.also { decoded ->
+            gearPhotoBitmapCache.put(cacheKey, decoded)
+        }
     } catch(_:Exception){null}
 }
 

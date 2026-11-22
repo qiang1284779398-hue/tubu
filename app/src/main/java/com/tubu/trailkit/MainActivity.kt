@@ -16,6 +16,7 @@ import java.net.URL
 import java.util.UUID
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -414,6 +415,12 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     fun save(list:List<Project>) { projects=list; persist(context,list) }
     val project=projects.firstOrNull { it.id==selected }
 
+    // Android system back / edge-swipe: return from a project detail page to the project list instead of closing the app.
+    BackHandler(enabled = project != null) {
+        selected = null
+        projectPage = "gear"
+    }
+
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = forest,
@@ -440,7 +447,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
         Scaffold(containerColor=sand, topBar={
             TopAppBar(
                 title={ Column { Text(project?.name ?: "徒步装备管家",fontWeight=FontWeight.Bold); Text(if(project==null) "把每一次出发，准备得漂亮一点" else (if(projectPage=="gear") "装备清单" else "户外导航")+" · "+project.place,fontSize=11.sp,color=muted) } },
-                navigationIcon={ if(project!=null) IconButton(onClick={selected=null}) { Icon(Icons.Default.ArrowBack,"返回") } },
+                navigationIcon={ if(project!=null) IconButton(onClick={selected=null;projectPage="gear"}) { Icon(Icons.Default.ArrowBack,"返回") } },
                 actions={
                     if(project!=null) {
                         if(projectPage=="gear") IconButton(onClick={makePoster(context,project)}) { Icon(Icons.Default.Image,"生成海报") }

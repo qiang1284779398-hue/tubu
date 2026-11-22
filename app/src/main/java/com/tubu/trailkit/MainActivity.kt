@@ -695,7 +695,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                             item {
                                 Text("天气与安全",fontWeight=FontWeight.Bold,color=forest,fontSize=16.sp)
                                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                    OutlinedButton(onClick={weatherOpen=true},modifier=Modifier.weight(1f)) { Text("目的地天气") }
+                                    OutlinedButton(onClick={weatherOpen=true},modifier=Modifier.weight(1f)) { Text("最高点 Windy 天气") }
                                     OutlinedButton(onClick={safetyOpen=true},modifier=Modifier.weight(1f)) { Text("安全中心") }
                                 }
                             }
@@ -719,7 +719,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
 
     }
 
-    if (weatherOpen && project != null) TrailWeatherDialog(project.place) { weatherOpen=false }
+    if (weatherOpen && project != null) TrailWeatherDialog(project) { weatherOpen=false }
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
     if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen, onClose={ mapOpen=false; mapOpenedFromCamera=false }, fromCamera=mapOpenedFromCamera, onReturnToCamera={ mapOpen=false; mapOpenedFromCamera=false; arCameraOpen=true })

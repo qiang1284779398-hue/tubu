@@ -60,32 +60,12 @@ private fun findRouteWeatherPeak(trackData: String, elevationData: String): Rout
     return best ?: error("GPX 没有海拔数据，且 DEM 高程数据暂时无法获取。请检查网络后重试。")
 }
 
-private fun windyEmbedUrl(latitude: Double, longitude: Double): String {
-    val lat = String.format(java.util.Locale.US, "%.6f", latitude)
-    val lon = String.format(java.util.Locale.US, "%.6f", longitude)
-    val params = listOf(
-        "lat=$lat",
-        "lon=$lon",
-        "detailLat=$lat",
-        "detailLon=$lon",
-        "width=100%25",
-        "height=100%25",
-        "zoom=9",
-        "level=surface",
-        "overlay=wind",
-        "menu=",
-        "message=true",
-        "marker=true",
-        "calendar=now",
-        "pressure=true",
-        "type=map",
-        "location=coordinates",
-        "detail=all",
-        "metricWind=m%2Fs",
-        "metricTemp=%C2%B0C",
-        "radarRange=-1"
-    )
-    return "https://embed.windy.com/embed2.html?${params.joinToString("&")}"
+private fun windyPointForecastUrl(latitude: Double, longitude: Double): String {
+    val lat = String.format(java.util.Locale.US, "%.5f", latitude)
+    val lon = String.format(java.util.Locale.US, "%.5f", longitude)
+    // Open Windy's own point-forecast page inside the app WebView.
+    // The embed2 map does not expose the native Meteogram/model selector.
+    return "https://www.windy.com/$lat/$lon?$lat,$lon,9"
 }
 
 @Composable
@@ -112,7 +92,7 @@ fun TrailWeatherDialog(project: Project, onClose: () -> Unit) {
     }
 
     val url = remember(peak) {
-        peak?.let { windyEmbedUrl(it.latitude, it.longitude) }
+        peak?.let { windyPointForecastUrl(it.latitude, it.longitude) }
     }
 
     Dialog(
@@ -131,7 +111,7 @@ fun TrailWeatherDialog(project: Project, onClose: () -> Unit) {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text("Windy 山地天气", style = MaterialTheme.typography.titleLarge)
-                        Text("仅按 GPX 轨迹最高海拔点定位", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("来源：ECMWF  ·  显示：Meteogram  ·  GPX 最高点", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextButton(onClick = onClose) { Text("关闭") }
                 }
@@ -185,7 +165,7 @@ fun TrailWeatherDialog(project: Project, onClose: () -> Unit) {
                     }
                 }
                 Text(
-                    "天气地图由 Windy 提供；需联网加载。山地局地天气变化快，预报不能替代现场判断。",
+                    "已在应用内打开 Windy 原生点位预报。请在 Windy 页面选择 ECMWF 来源与 Meteogram 显示；需联网加载。山地局地天气变化快，预报不能替代现场判断。",
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
                     fontSize = 10.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

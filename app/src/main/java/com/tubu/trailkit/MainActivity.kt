@@ -65,7 +65,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
-private val categories = listOf("背负系统","露营睡眠","服装系统","鞋袜防护","炊具饮食","电子导航","照明工具","其他")
+private val categories = listOf("背负系统","帐篷与营地系统","睡眠系统","衣物系统","鞋靴系统","炊事与饮水系统","行进系统","电子与导航系统","急救与卫生系统")
 private val forest = androidx.compose.ui.graphics.Color(0xFF183C32)
 private val sand = androidx.compose.ui.graphics.Color(0xFFF3F0E7)
 private val muted = androidx.compose.ui.graphics.Color(0xFF78827A)
@@ -1070,124 +1070,90 @@ private fun decodeGearPhoto(context:Context,value:String,maxDimension:Int):Bitma
 }
 
 private fun makePoster(context:Context,project:Project) {
-    var bitmap: Bitmap? = null
+    var bitmap:Bitmap?=null
     try {
-        val width = 1440
-        val groups = categories.mapNotNull { c -> project.gear.filter { it.category == c }.takeIf { it.isNotEmpty() }?.let { c to it } }
-        val height = (900 + groups.sumOf { 112 + it.second.size * 188 } + 250).coerceAtLeast(1500)
-        bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap!!)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        val paper = 0xFFF2F0E8.toInt()
-        val ink = 0xFF1D3028.toInt()
-        val forest = 0xFF183D31.toInt()
-        val sage = 0xFF718477.toInt()
-        val white = 0xFFFFFFFF.toInt()
-        fun box(r: RectF, radius: Float, color: Int) {
-            paint.shader = null; paint.style = Paint.Style.FILL; paint.color = color
-            canvas.drawRoundRect(r, radius, radius, paint)
+        val width=1440
+        val names=listOf("背负系统","帐篷与营地系统","睡眠系统","衣物系统","鞋靴系统","炊事与饮水系统","行进系统","电子与导航系统","急救与卫生系统","其他")
+        val colors=listOf(0xFF3989E8.toInt(),0xFF58A85E.toInt(),0xFF8B5BC7.toInt(),0xFF78A63C.toInt(),0xFFEE8B32.toInt(),0xFF149CB4.toInt(),0xFF32A66A.toInt(),0xFF3979D8.toInt(),0xFFE65353.toInt(),0xFF8995A5.toInt())
+        fun cat(s:String)=when {
+            s.contains("背负")||s.contains("背包")->names[0]
+            s.contains("帐篷")||s.contains("营地")||s.contains("地布")->names[1]
+            s.contains("睡眠")||s.contains("睡袋")||s.contains("气垫")||s.contains("蛋巢")->names[2]
+            s.contains("衣物")||s.contains("服装")||s.contains("冲锋")||s.contains("软壳")||s.contains("抓绒")||s.contains("速干")||s.contains("羽绒")||s.contains("袜")||s.contains("帽")||s.contains("面巾")||s.contains("雨衣")->names[3]
+            s.contains("鞋")||s.contains("靴")||s.contains("雪套")->names[4]
+            s.contains("炊")||s.contains("饮")||s.contains("炉")||s.contains("锅")||s.contains("水")||s.contains("餐具")->names[5]
+            s.contains("行进")||s.contains("登山杖")||s.contains("徒步")||s.contains("冰爪")->names[6]
+            s.contains("电子")||s.contains("导航")||s.contains("手表")||s.contains("电池")||s.contains("充电")||s.contains("GPS")||s.contains("头灯")||s.contains("照明")->names[7]
+            s.contains("急救")||s.contains("卫生")||s.contains("药")||s.contains("毛巾")||s.contains("收纳")||s.contains("防晒")||s.contains("护理")->names[8]
+            else->names[9]
         }
-        fun txt(s: String, x: Float, y: Float, size: Float, color: Int, bold: Boolean = false,
-                align: Paint.Align = Paint.Align.LEFT) {
-            paint.shader = null; paint.style = Paint.Style.FILL; paint.color = color
-            paint.textSize = size; paint.textAlign = align
-            paint.typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
-            canvas.drawText(s, x, y, paint); paint.textAlign = Paint.Align.LEFT
-        }
-        fun fit(s: String, x: Float, y: Float, max: Float, size: Float, color: Int) {
-            paint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
-            var z = size
-            while (z > 42f) { paint.textSize = z; if (paint.measureText(s) <= max) break; z -= 2f }
-            txt(s, x, y, z, color, true)
-        }
-        fun crop(uri: String, r: RectF) {
-            val save = canvas.save()
-            val path = Path().apply { addRoundRect(r, 20f, 20f, Path.Direction.CW) }
-            canvas.clipPath(path)
-            var source: Bitmap? = null
-            try { if (uri.isNotBlank()) source = decodeGearPhoto(context, uri, 1200) } catch (_: Exception) {}
-            if (source != null) {
-                val b = source!!
-                val scale = maxOf(r.width() / b.width, r.height() / b.height)
-                val w = b.width * scale; val h = b.height * scale
-                canvas.drawBitmap(b, null, RectF(r.centerX()-w/2, r.centerY()-h/2, r.centerX()+w/2, r.centerY()+h/2), paint)
-                b.recycle()
-            } else {
-                paint.color = 0xFFE5EAE2.toInt(); canvas.drawRect(r, paint)
-                paint.color = 0xFF9BA99B.toInt(); paint.style = Paint.Style.STROKE; paint.strokeWidth = 5f
-                val mountain = Path().apply { moveTo(r.left+25,r.bottom-28); lineTo(r.left+70,r.top+42); lineTo(r.left+110,r.bottom-48); lineTo(r.left+145,r.top+60); lineTo(r.right-20,r.bottom-28) }
-                canvas.drawPath(mountain, paint); paint.style = Paint.Style.FILL
-            }
-            canvas.restoreToCount(save)
-        }
-        canvas.drawColor(paper)
-        paint.shader = LinearGradient(0f,0f,width.toFloat(),620f,intArrayOf(0xFF244B3B.toInt(),0xFF102A23.toInt()),null,Shader.TileMode.CLAMP)
-        canvas.drawRect(0f,0f,width.toFloat(),620f,paint); paint.shader = null
-        // Subtle topographic contour motif.
-        paint.color = 0x24D8E4D8; paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f
-        for (i in 0..7) {
-            val d=i*34f
-            val path=Path().apply { moveTo(900f+d,-30f); cubicTo(760f+d,140f,1320f-d,190f,1050f+d,390f); cubicTo(900f+d,500f,1300f-d,520f,1440f,430f+d) }
-            canvas.drawPath(path,paint)
-        }
-        paint.style=Paint.Style.FILL
-        txt("TRAILKIT   /   OUTDOOR GEAR JOURNAL",92f,100f,26f,0xFFC8D7C9.toInt(),true)
-        txt("装备档案  ·  FIELD EDITION",92f,150f,20f,0xFF9FB5A4.toInt())
-        fit(project.name,92f,275f,1240f,84f,white)
-        val subtitle=listOf(project.place,project.date).filter{it.isNotBlank()}.joinToString("     /     ")
-        txt(if(subtitle.isBlank()) "一份为下一段旅程准备的装备清单" else subtitle,96f,340f,28f,0xFFD7E1D7.toInt())
-        txt("PREPARED FOR THE TRAIL",96f,405f,18f,0xFF9FB5A4.toInt(),true)
-
-        // Summary card.
-        box(RectF(72f,465f,1368f,735f),30f,white)
-        txt("装备总价值  /  TOTAL VALUE",116f,530f,22f,sage,true)
-        txt(yuan(project.gear.sumOf{it.price*it.quantity}),112f,635f,80f,forest,true)
-        paint.color=0xFFE2E2D8.toInt(); paint.strokeWidth=2f
-        canvas.drawLine(900f,515f,900f,685f,paint)
-        txt("装备总数量",955f,555f,21f,sage)
-        txt(project.gear.sumOf{it.quantity}.toString(),955f,625f,54f,ink,true)
-        txt("品类  "+groups.size+"    ·    单品  "+project.gear.size,955f,675f,20f,sage)
-
-        var y=835f
-        groups.forEachIndexed { index, pair ->
-            val category=pair.first; val items=pair.second
-            box(RectF(78f,y-45f,1362f,y+30f),18f,0xFFE6E9E1.toInt())
-            txt("%02d".format(index+1),108f,y+5f,24f,forest,true)
-            txt(category,180f,y+7f,31f,ink,true)
-            txt(items.size.toString()+" ITEMS",1000f,y+5f,18f,sage,true)
-            txt(yuan(items.sumOf{it.price*it.quantity}),1320f,y+7f,25f,forest,true,Paint.Align.RIGHT)
-            y+=102f
-            items.forEach { gear ->
-                box(RectF(78f,y,1362f,y+166f),22f,white)
-                crop(gear.photo,RectF(96f,y+13f,256f,y+153f))
-                fit(gear.name,292f,y+57f,700f,34f,ink)
-                txt("数量 × "+gear.quantity+"     /     单价 "+yuan(gear.price),294f,y+96f,20f,sage)
-                if(gear.note.isNotBlank()) {
-                    val note=gear.note.take(54)
-                    txt(note,294f,y+132f,18f,0xFF92998F.toInt())
+        val groups=names.mapNotNull{n->project.gear.filter{cat(it.category)==n}.takeIf{it.isNotEmpty()}?.let{n to it}}
+        val totalWeight=project.gear.sumOf{it.weightGrams*it.quantity}
+        val totalPrice=project.gear.sumOf{it.price*it.quantity}
+        val totalCount=project.gear.sumOf{it.quantity}
+        val unknown=project.gear.count{it.weightGrams<=0.0}
+        val grid=groups.chunked(3)
+        val heights=grid.map{maxOf(240f,it.maxOf{g->g.second.size}*52f+155f)}
+        val bottom=405f+heights.sum()+grid.size*24f
+        val height=(bottom+440f).toInt()
+        bitmap=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888)
+        val canvas=Canvas(bitmap!!)
+        val p=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val navy=0xFF102D57.toInt();val blue=0xFF2877D5.toInt();val green=0xFF21834D.toInt()
+        val ink=0xFF182B4C.toInt();val muted=0xFF71809A.toInt();val white=0xFFFFFFFF.toInt()
+        fun box(r:RectF,color:Int,rad:Float=22f,shadow:Boolean=false){p.shader=null;p.style=Paint.Style.FILL;p.color=color;if(shadow)p.setShadowLayer(8f,0f,4f,0x220C315F);canvas.drawRoundRect(r,rad,rad,p);p.clearShadowLayer()}
+        fun txt(s:String,x:Float,y:Float,size:Float,color:Int,bold:Boolean=false,align:Paint.Align=Paint.Align.LEFT){p.shader=null;p.style=Paint.Style.FILL;p.color=color;p.textSize=size;p.textAlign=align;p.typeface=Typeface.create("sans-serif",if(bold)Typeface.BOLD else Typeface.NORMAL);canvas.drawText(s,x,y,p);p.textAlign=Paint.Align.LEFT}
+        fun fit(s:String,x:Float,y:Float,max:Float,size:Float,color:Int){var z=size;p.typeface=Typeface.DEFAULT_BOLD;while(z>17f){p.textSize=z;if(p.measureText(s)<=max)break;z-=2f};txt(s,x,y,z,color,true)}
+        fun money(v:Double)="¥"+String.format(Locale.CHINA,"%,.2f",v)
+        canvas.drawColor(0xFFF0F5FC.toInt())
+        p.shader=LinearGradient(0f,0f,width.toFloat(),230f,intArrayOf(0xFFE5F1FF.toInt(),0xFF83B5E7.toInt(),0xFF244C79.toInt()),null,Shader.TileMode.CLAMP);canvas.drawRect(0f,0f,width.toFloat(),230f,p);p.shader=null
+        listOf(floatArrayOf(400f,225f,570f,42f,740f,225f),floatArrayOf(620f,225f,890f,8f,1110f,225f),floatArrayOf(920f,225f,1190f,42f,1435f,225f)).forEachIndexed{i,a->val path=Path().apply{moveTo(a[0],a[1]);lineTo(a[2],a[3]);lineTo(a[4],a[5]);close()};p.color=if(i%2==0)0xFF416D9B.toInt() else 0xFF315A86.toInt();canvas.drawPath(path,p)}
+        txt("▲  TRAILKIT",58f,62f,27f,blue,true);fit(project.name+" 装备清单",58f,132f,950f,64f,navy)
+        txt(listOf(project.place,project.date).filter{it.isNotBlank()}.joinToString("  ·  ").ifBlank{"专业装备 · 精准轻量 · 安全出行"},62f,180f,23f,0xFF355477.toInt())
+        box(RectF(22f,205f,1418f,365f),white,28f,true)
+        val sx=floatArrayOf(205f,560f,925f,1250f)
+        txt(totalCount.toString(),sx[0],280f,62f,navy,true,Paint.Align.CENTER);txt("件装备",sx[0],326f,22f,muted,false,Paint.Align.CENTER)
+        txt(if(totalWeight>0)String.format(Locale.CHINA,"%.2f kg",totalWeight/1000.0) else "待完善",sx[1],280f,48f,blue,true,Paint.Align.CENTER);txt(if(unknown>0)"已录重量 · "+unknown+" 件缺重" else "装备总重量（含数量）",sx[1],326f,19f,muted,false,Paint.Align.CENTER)
+        txt(money(totalPrice),sx[2],280f,45f,green,true,Paint.Align.CENTER);txt("总支出",sx[2],326f,22f,muted,false,Paint.Align.CENTER)
+        txt(groups.size.toString(),sx[3],280f,62f,navy,true,Paint.Align.CENTER);txt("个系统",sx[3],326f,22f,muted,false,Paint.Align.CENTER)
+        listOf(382f,742f,1102f).forEach{p.color=0xFFD9E3F0.toInt();p.strokeWidth=2f;canvas.drawLine(it,235f,it,338f,p)}
+        var y=405f
+        grid.forEachIndexed{ri,row->
+            val h=heights[ri]
+            row.forEachIndexed{ci,pair->
+                val idx=names.indexOf(pair.first).coerceAtLeast(0);val x=22f+ci*474f
+                box(RectF(x,y,x+454f,y+h),white,24f,true);box(RectF(x,y,x+454f,y+9f),colors[idx],6f)
+                txt(pair.first,x+22f,y+51f,25f,colors[idx],true);txt(money(pair.second.sumOf{it.price*it.quantity}),x+430f,y+91f,27f,ink,true,Paint.Align.RIGHT)
+                txt("装备名称",x+22f,y+130f,17f,muted,true);txt("重量",x+326f,y+130f,17f,muted,true,Paint.Align.RIGHT);txt("价格",x+430f,y+130f,17f,muted,true,Paint.Align.RIGHT)
+                var iy=y+168f
+                pair.second.forEach{g->
+                    fit(if(g.quantity>1)g.name+" ×"+g.quantity else g.name,x+22f,iy,245f,19f,ink)
+                    txt(if(g.weightGrams>0)String.format(Locale.CHINA,"%.2f kg",g.weightGrams*g.quantity/1000.0) else "—",x+326f,iy,17f,ink,false,Paint.Align.RIGHT)
+                    txt(money(g.price*g.quantity),x+430f,iy,17f,ink,false,Paint.Align.RIGHT)
+                    iy+=52f;p.color=0xFFE9EEF5.toInt();p.strokeWidth=1f;canvas.drawLine(x+18f,iy-24f,x+436f,iy-24f,p)
                 }
-                txt(yuan(gear.price*gear.quantity),1320f,y+82f,30f,forest,true,Paint.Align.RIGHT)
-                y+=188f
-            }
-            y+=10f
+                box(RectF(x+12f,y+h-52f,x+442f,y+h-10f),0xFFF0F5FC.toInt(),12f)
+                txt("小计",x+24f,y+h-24f,17f,navy,true);val w=pair.second.sumOf{it.weightGrams*it.quantity}
+                txt(if(w>0)String.format(Locale.CHINA,"%.2f kg",w/1000.0) else "—",x+320f,y+h-24f,17f,navy,true,Paint.Align.RIGHT)
+                txt(money(pair.second.sumOf{it.price*it.quantity}),x+430f,y+h-24f,17f,navy,true,Paint.Align.RIGHT)
+            };y+=h+24f
         }
-        val foot=height-190f
-        box(RectF(78f,foot,1362f,height-58f),24f,0xFF142F27.toInt())
-        txt("PACK WELL. WALK FAR.",112f,foot+62f,31f,white,true)
-        txt("每一次出发，都值得认真准备。",112f,foot+105f,22f,0xFFD0DCCF.toInt())
-        txt("TRAILKIT  ·  PERSONAL GEAR RECORD",1320f,foot+84f,17f,0xFFB5C7B8.toInt(),true,Paint.Align.RIGHT)
-
-        val filename="TrailKit_"+project.name+"_"+System.currentTimeMillis()+".jpg"
-        val values=ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME,filename)
-            put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg")
-            if(Build.VERSION.SDK_INT>=29) put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/TrailKit")
-        }
-        val uri=context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values) ?: error("无法创建图片")
-        val ok=context.contentResolver.openOutputStream(uri)?.use { bitmap!!.compress(Bitmap.CompressFormat.JPEG,96,it) } ?: false
-        if(!ok) error("图片保存失败")
-        Toast.makeText(context,"专业版装备海报已保存到相册 Pictures/TrailKit",Toast.LENGTH_LONG).show()
-    } catch(e:Exception) {
-        Toast.makeText(context,"生成失败："+(e.message?:"未知错误"),Toast.LENGTH_LONG).show()
-    } finally { bitmap?.recycle() }
+        val top=y+5f
+        box(RectF(22f,top,970f,top+300f),white,24f,true);txt("各系统重量占比",55f,top+48f,29f,navy,true)
+        val weighted=groups.map{it.first to it.second.sumOf{g->g.weightGrams*g.quantity}}.filter{it.second>0}
+        if(weighted.isNotEmpty()&&totalWeight>0){var angle=-90f;weighted.forEach{item->val sweep=(item.second/totalWeight*360).toFloat();p.color=colors[names.indexOf(item.first).coerceAtLeast(0)];canvas.drawArc(RectF(58f,top+85f,270f,top+275f),angle,sweep,true,p);angle+=sweep}}else{p.color=0xFFE2EAF4.toInt();canvas.drawCircle(164f,top+180f,94f,p)}
+        weighted.take(9).forEachIndexed{i,item->val xx=320f+(i/5)*310f;val yy=top+100f+(i%5)*39f;p.color=colors[names.indexOf(item.first).coerceAtLeast(0)];canvas.drawCircle(xx,yy-7f,8f,p);txt(item.first,xx+20f,yy,17f,ink);txt(String.format(Locale.CHINA,"%.1f%%",item.second/totalWeight*100),xx+275f,yy,17f,navy,true,Paint.Align.RIGHT)}
+        box(RectF(995f,top,1418f,top+300f),navy,24f,true);txt("装备清单总结",1206f,top+62f,28f,white,true,Paint.Align.CENTER)
+        txt(if(totalWeight>0)String.format(Locale.CHINA,"约 %.2f kg",totalWeight/1000.0) else "重量待完善",1206f,top+142f,39f,white,true,Paint.Align.CENTER)
+        txt("总支出："+money(totalPrice),1206f,top+205f,22f,0xFFD6E8FF.toInt(),true,Paint.Align.CENTER)
+        txt(totalCount.toString()+" 件装备 · "+groups.size+" 个系统",1206f,top+250f,18f,0xFFD6E8FF.toInt(),false,Paint.Align.CENTER)
+        txt("注：重量按单件重量 × 数量计算；缺少重量的装备不计入总重。食品、水、燃料等消耗品需另行录入。",42f,top+342f,16f,muted)
+        txt("TRAILKIT  ·  PACK SMART. WALK FAR.",1398f,top+382f,17f,navy,true,Paint.Align.RIGHT)
+        val filename="TrailKit_装备清单_"+project.name+"_"+System.currentTimeMillis()+".jpg"
+        val values=ContentValues().apply{put(MediaStore.Images.Media.DISPLAY_NAME,filename);put(MediaStore.Images.Media.MIME_TYPE,"image/jpeg");if(Build.VERSION.SDK_INT>=29)put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/TrailKit")}
+        val uri=context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values)?:error("无法创建图片")
+        val ok=context.contentResolver.openOutputStream(uri)?.use{bitmap!!.compress(Bitmap.CompressFormat.JPEG,95,it)}?:false
+        if(!ok)error("图片保存失败")
+        Toast.makeText(context,"装备清单信息图已保存到相册 Pictures/TrailKit",Toast.LENGTH_LONG).show()
+    }catch(e:Exception){Toast.makeText(context,"生成失败："+(e.message?:"未知错误"),Toast.LENGTH_LONG).show()}finally{bitmap?.recycle()}
 }

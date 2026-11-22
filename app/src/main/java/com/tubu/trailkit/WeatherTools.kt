@@ -111,7 +111,7 @@ fun TrailWeatherDialog(project: Project, onClose: () -> Unit) {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text("Windy 山地天气", style = MaterialTheme.typography.titleLarge)
-                        Text("来源：ECMWF  ·  显示：Meteogram  ·  GPX 最高点", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("预报目标：ECMWF  ·  显示目标：Meteogram  ·  GPX 最高点", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextButton(onClick = onClose) { Text("关闭") }
                 }

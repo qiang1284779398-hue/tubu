@@ -1112,6 +1112,25 @@ private fun makePoster(context:Context,project:Project) {
         fun txt(s:String,x:Float,y:Float,size:Float,color:Int,bold:Boolean=false,align:Paint.Align=Paint.Align.LEFT){p.shader=null;p.style=Paint.Style.FILL;p.color=color;p.textSize=size;p.textAlign=align;p.typeface=Typeface.create("sans-serif",if(bold)Typeface.BOLD else Typeface.NORMAL);canvas.drawText(s,x,y,p);p.textAlign=Paint.Align.LEFT}
         fun fit(s:String,x:Float,y:Float,max:Float,size:Float,color:Int){var z=size;p.typeface=Typeface.DEFAULT_BOLD;while(z>17f){p.textSize=z;if(p.measureText(s)<=max)break;z-=2f};txt(s,x,y,z,color,true)}
         fun money(v:Double)="¥"+String.format(Locale.CHINA,"%,.2f",v)
+
+        fun systemIcon(cx:Float,cy:Float,index:Int,color:Int) {
+            val saved=canvas.save()
+            box(RectF(cx-34f,cy-34f,cx+34f,cy+34f),Color.argb(28,Color.red(color),Color.green(color),Color.blue(color)),22f)
+            p.color=color;p.style=Paint.Style.STROKE;p.strokeWidth=5f;p.strokeCap=Paint.Cap.ROUND;p.strokeJoin=Paint.Join.ROUND
+            when(index) {
+                0 -> { canvas.drawRoundRect(RectF(cx-19f,cy-20f,cx+19f,cy+25f),9f,9f,p);canvas.drawArc(RectF(cx-12f,cy-30f,cx+12f,cy-8f),180f,180f,false,p);canvas.drawLine(cx-25f,cy-9f,cx-19f,cy+16f,p);canvas.drawLine(cx+25f,cy-9f,cx+19f,cy+16f,p);canvas.drawLine(cx-8f,cy-5f,cx+8f,cy-5f,p) }
+                1 -> { val q=Path().apply{moveTo(cx-28f,cy+24f);lineTo(cx,cy-25f);lineTo(cx+29f,cy+24f);close()};canvas.drawPath(q,p);canvas.drawLine(cx,cy-25f,cx,cy+24f,p);canvas.drawLine(cx,cy+24f,cx+14f,cy+24f,p) }
+                2 -> { canvas.drawRoundRect(RectF(cx-18f,cy-29f,cx+18f,cy+29f),17f,17f,p);canvas.drawLine(cx-18f,cy-9f,cx+18f,cy-9f,p);canvas.drawLine(cx-18f,cy+8f,cx+18f,cy+8f,p) }
+                3 -> { val q=Path().apply{moveTo(cx-12f,cy-27f);lineTo(cx-29f,cy-12f);lineTo(cx-20f,cy+1f);lineTo(cx-14f,cy-4f);lineTo(cx-14f,cy+27f);lineTo(cx+14f,cy+27f);lineTo(cx+14f,cy-4f);lineTo(cx+20f,cy+1f);lineTo(cx+29f,cy-12f);lineTo(cx+12f,cy-27f);lineTo(cx+5f,cy-18f);lineTo(cx-5f,cy-18f);close()};canvas.drawPath(q,p);canvas.drawLine(cx,cy-17f,cx,cy+25f,p) }
+                4 -> { val q=Path().apply{moveTo(cx-23f,cy-22f);lineTo(cx-8f,cy-22f);lineTo(cx-4f,cy+4f);lineTo(cx+24f,cy+12f);lineTo(cx+27f,cy+25f);lineTo(cx-25f,cy+25f);close()};canvas.drawPath(q,p);canvas.drawLine(cx-8f,cy-10f,cx+6f,cy-10f,p) }
+                5 -> { canvas.drawRoundRect(RectF(cx-23f,cy-10f,cx+23f,cy+22f),6f,6f,p);canvas.drawLine(cx-29f,cy-12f,cx+29f,cy-12f,p);canvas.drawLine(cx-13f,cy-20f,cx+13f,cy-20f,p);canvas.drawLine(cx,cy-29f,cx,cy-20f,p);canvas.drawLine(cx+23f,cy-2f,cx+31f,cy-2f,p) }
+                6 -> { canvas.drawCircle(cx,cy-22f,8f,p);canvas.drawLine(cx,cy-13f,cx-7f,cy+7f,p);canvas.drawLine(cx-4f,cy-4f,cx+15f,cy+3f,p);canvas.drawLine(cx-7f,cy+7f,cx-20f,cy+25f,p);canvas.drawLine(cx-7f,cy+7f,cx+12f,cy+25f,p);canvas.drawLine(cx+13f,cy+3f,cx+26f,cy-22f,p) }
+                7 -> { canvas.drawRoundRect(RectF(cx-17f,cy-18f,cx+17f,cy+19f),8f,8f,p);canvas.drawRoundRect(RectF(cx-8f,cy-31f,cx+8f,cy-17f),3f,3f,p);canvas.drawRoundRect(RectF(cx-8f,cy+18f,cx+8f,cy+31f),3f,3f,p);canvas.drawCircle(cx,cy,7f,p) }
+                else -> { canvas.drawRoundRect(RectF(cx-25f,cy-25f,cx+25f,cy+25f),9f,9f,p);p.style=Paint.Style.FILL;canvas.drawRect(cx-5f,cy-17f,cx+5f,cy+17f,p);canvas.drawRect(cx-17f,cy-5f,cx+17f,cy+5f,p) }
+            }
+            p.style=Paint.Style.FILL
+            canvas.restoreToCount(saved)
+        }
         canvas.drawColor(0xFFF0F5FC.toInt())
         p.shader=LinearGradient(0f,0f,width.toFloat(),230f,intArrayOf(0xFFE5F1FF.toInt(),0xFF83B5E7.toInt(),0xFF244C79.toInt()),null,Shader.TileMode.CLAMP);canvas.drawRect(0f,0f,width.toFloat(),230f,p);p.shader=null
         listOf(floatArrayOf(400f,225f,570f,42f,740f,225f),floatArrayOf(620f,225f,890f,8f,1110f,225f),floatArrayOf(920f,225f,1190f,42f,1435f,225f)).forEachIndexed{i,a->val path=Path().apply{moveTo(a[0],a[1]);lineTo(a[2],a[3]);lineTo(a[4],a[5]);close()};p.color=if(i%2==0)0xFF416D9B.toInt() else 0xFF315A86.toInt();canvas.drawPath(path,p)}
@@ -1130,7 +1149,7 @@ private fun makePoster(context:Context,project:Project) {
             row.forEachIndexed{ci,pair->
                 val idx=names.indexOf(pair.first).coerceAtLeast(0);val x=22f+ci*474f
                 box(RectF(x,y,x+454f,y+h),white,24f,true);box(RectF(x,y,x+454f,y+9f),colors[idx],6f)
-                txt(pair.first,x+22f,y+51f,25f,colors[idx],true);txt(money(pair.second.sumOf{it.price*it.quantity}),x+430f,y+91f,27f,ink,true,Paint.Align.RIGHT)
+                systemIcon(x+57f,y+52f,idx,colors[idx]);txt(pair.first,x+105f,y+48f,24f,colors[idx],true);txt(money(pair.second.sumOf{it.price*it.quantity}),x+430f,y+91f,27f,ink,true,Paint.Align.RIGHT)
                 txt("装备名称",x+22f,y+130f,17f,muted,true);txt("重量",x+326f,y+130f,17f,muted,true,Paint.Align.RIGHT);txt("价格",x+430f,y+130f,17f,muted,true,Paint.Align.RIGHT)
                 var iy=y+168f
                 pair.second.forEach{g->

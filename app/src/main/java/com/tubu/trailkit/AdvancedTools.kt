@@ -18,23 +18,23 @@ fun TrailKitAdvancedDialog(
     onClose: () -> Unit,
     onAddSuggested: (List<Gear>) -> Unit
 ) {
-    val categories = listOf("背负系统","露营睡眠","服装系统","鞋袜防护","炊具饮食","电子导航","照明工具","其他")
+    val categories = listOf("背负系统","帐篷与营地系统","睡眠系统","衣物系统","鞋靴系统","炊事与饮水系统","行进系统","电子与导航系统","急救与卫生系统")
     val forest = Color(0xFF183C32)
     val muted = Color(0xFF78827A)
     val totalWeight = project.gear.sumOf { it.weightGrams * it.quantity }
     val unknownWeight = project.gear.count { it.weightGrams <= 0.0 }
     val packedCount = project.gear.count { it.packed }
     val suggestions = listOf(
-        Gear("suggest-first-aid","急救包","其他",0.0,1,"基础急救用品","",180.0),
-        Gear("suggest-headlamp","头灯及备用电池","照明工具",0.0,1,"夜行和营地照明","",120.0),
-        Gear("suggest-rain","雨衣 / 防雨层","服装系统",0.0,1,"按天气检查防水能力","",250.0),
-        Gear("suggest-power","充电宝与充电线","电子导航",0.0,1,"检查容量和电量","",220.0),
-        Gear("suggest-water","饮水与净水方案","炊具饮食",0.0,1,"按水源情况准备","",300.0),
-        Gear("suggest-map","离线地图与导航备份","电子导航",0.0,1,"提前下载地图并准备备用导航","",30.0),
-        Gear("suggest-warm","保暖层与备用袜","服装系统",0.0,1,"按最低气温准备","",350.0),
-        Gear("suggest-emergency","应急保温毯 / 哨子","其他",0.0,1,"应急信号与失温防护","",80.0),
-        Gear("suggest-poles","登山杖","其他",0.0,1,"检查锁扣与杖尖","",500.0),
-        Gear("suggest-gaiter","雪套 / 防砂石护腿","鞋袜防护",0.0,1,"泥雪碎石路段按需携带","",180.0)
+        Gear("suggest-first-aid","急救包","急救与卫生系统",0.0,1,"基础急救用品","",180.0),
+        Gear("suggest-headlamp","头灯及备用电池","电子与导航系统",0.0,1,"夜行和营地照明","",120.0),
+        Gear("suggest-rain","雨衣 / 防雨层","衣物系统",0.0,1,"按天气检查防水能力","",250.0),
+        Gear("suggest-power","充电宝与充电线","电子与导航系统",0.0,1,"检查容量和电量","",220.0),
+        Gear("suggest-water","饮水与净水方案","炊事与饮水系统",0.0,1,"按水源情况准备","",300.0),
+        Gear("suggest-map","离线地图与导航备份","电子与导航系统",0.0,1,"提前下载地图并准备备用导航","",30.0),
+        Gear("suggest-warm","保暖层与备用袜","衣物系统",0.0,1,"按最低气温准备","",350.0),
+        Gear("suggest-emergency","应急保温毯 / 哨子","急救与卫生系统",0.0,1,"应急信号与失温防护","",80.0),
+        Gear("suggest-poles","登山杖","行进系统",0.0,1,"检查锁扣与杖尖","",500.0),
+        Gear("suggest-gaiter","雪套 / 防砂石护腿","鞋靴系统",0.0,1,"泥雪碎石路段按需携带","",180.0)
     ).filterNot { item -> project.gear.any { it.name.equals(item.name,true) } }
     AlertDialog(
         onDismissRequest=onClose,
@@ -54,7 +54,7 @@ fun TrailKitAdvancedDialog(
                 Text("负重数据质量",fontWeight=FontWeight.Bold,color=forest)
                 Text(if(unknownWeight>0) "有 "+unknownWeight+" 件装备尚未录入重量。当前总重只是已录入部分，补齐重量后分析才准确。" else "装备重量字段已全部填写。食品、水、燃料等消耗品也要单独加入清单。",fontSize=12.sp,color=muted)
                 categories.forEach { category ->
-                    val weight=project.gear.filter{it.category==category}.sumOf{it.weightGrams*it.quantity}
+                    val weight=project.gear.filter{normalizeGearCategory(it.category)==category}.sumOf{it.weightGrams*it.quantity}
                     if(weight>0) {
                         val share=(weight/totalWeight).toFloat().coerceIn(0f,1f)
                         Column(verticalArrangement=Arrangement.spacedBy(3.dp)) {
@@ -70,7 +70,7 @@ fun TrailKitAdvancedDialog(
                 Text("出发前智能检查",fontWeight=FontWeight.Bold,color=forest)
                 Text("通用检查建议，不代表每条路线都必须携带全部物品。请结合季节、天气、路线和个人情况判断。",fontSize=12.sp,color=muted)
                 suggestions.forEach { Text("• "+it.name+" · "+it.note,fontSize=12.sp) }
-                OutlinedButton(onClick={onAddSuggested(suggestions)},modifier=Modifier.fillMaxWidth()) { Text("将建议装备加入清单") }
+                OutlinedButton(onClick={onAddSuggested(suggestions);onClose()},modifier=Modifier.fillMaxWidth()) { Text("将建议装备加入清单") }
                 Text("提示：建议装备加入后重量是参考估值，实际重量需要按你购买的装备重新录入。",fontSize=11.sp,color=muted)
 
             }

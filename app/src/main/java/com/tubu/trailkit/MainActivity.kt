@@ -70,7 +70,7 @@ private val forest = androidx.compose.ui.graphics.Color(0xFF183C32)
 private val sand = androidx.compose.ui.graphics.Color(0xFFF3F0E7)
 private val muted = androidx.compose.ui.graphics.Color(0xFF78827A)
 
-private fun normalizeGearCategory(raw:String):String {
+fun normalizeGearCategory(raw:String):String {
     val s=raw.trim()
     return when {
         s.contains("背负")||s.contains("背包")->"背负系统"

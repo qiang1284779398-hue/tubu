@@ -1091,27 +1091,16 @@ private fun makePoster(context:Context,project:Project) {
     var bitmap:Bitmap?=null
     try {
         val width=1440
-        val names=listOf("背负系统","帐篷与营地系统","睡眠系统","衣物系统","鞋靴系统","炊事与饮水系统","行进系统","电子与导航系统","急救与卫生系统","其他")
+        val names=listOf("背负系统","帐篷与营地系统","睡眠系统","衣物系统","鞋靴系统","炊事与饮水系统","行进系统","电子与导航系统","急救与卫生系统")
         val colors=listOf(0xFF3989E8.toInt(),0xFF58A85E.toInt(),0xFF8B5BC7.toInt(),0xFF78A63C.toInt(),0xFFEE8B32.toInt(),0xFF149CB4.toInt(),0xFF32A66A.toInt(),0xFF3979D8.toInt(),0xFFE65353.toInt(),0xFF8995A5.toInt())
-        fun cat(s:String)=when {
-            s.contains("背负")||s.contains("背包")->names[0]
-            s.contains("帐篷")||s.contains("营地")||s.contains("地布")->names[1]
-            s.contains("睡眠")||s.contains("睡袋")||s.contains("气垫")||s.contains("蛋巢")->names[2]
-            s.contains("衣物")||s.contains("服装")||s.contains("冲锋")||s.contains("软壳")||s.contains("抓绒")||s.contains("速干")||s.contains("羽绒")||s.contains("袜")||s.contains("帽")||s.contains("面巾")||s.contains("雨衣")->names[3]
-            s.contains("鞋")||s.contains("靴")||s.contains("雪套")->names[4]
-            s.contains("炊")||s.contains("饮")||s.contains("炉")||s.contains("锅")||s.contains("水")||s.contains("餐具")->names[5]
-            s.contains("行进")||s.contains("登山杖")||s.contains("徒步")||s.contains("冰爪")->names[6]
-            s.contains("电子")||s.contains("导航")||s.contains("手表")||s.contains("电池")||s.contains("充电")||s.contains("GPS")||s.contains("头灯")||s.contains("照明")->names[7]
-            s.contains("急救")||s.contains("卫生")||s.contains("药")||s.contains("毛巾")||s.contains("收纳")||s.contains("防晒")||s.contains("护理")->names[8]
-            else->names[9]
-        }
+        fun cat(s:String)=normalizeGearCategory(s)
         val groups=names.mapNotNull{n->project.gear.filter{cat(it.category)==n}.takeIf{it.isNotEmpty()}?.let{n to it}}
         val totalWeight=project.gear.sumOf{it.weightGrams*it.quantity}
         val totalPrice=project.gear.sumOf{it.price*it.quantity}
         val totalCount=project.gear.sumOf{it.quantity}
         val unknown=project.gear.count{it.weightGrams<=0.0}
         val grid=groups.chunked(3)
-        val heights=grid.map{maxOf(240f,it.maxOf{g->g.second.size}*52f+155f)}
+        val heights=grid.map{maxOf(262f,it.maxOf{g->g.second.size}*52f+210f)}
         val bottom=405f+heights.sum()+grid.size*24f
         val height=(bottom+440f).toInt()
         bitmap=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888)

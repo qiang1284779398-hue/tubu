@@ -70,6 +70,22 @@ private val forest = androidx.compose.ui.graphics.Color(0xFF183C32)
 private val sand = androidx.compose.ui.graphics.Color(0xFFF3F0E7)
 private val muted = androidx.compose.ui.graphics.Color(0xFF78827A)
 
+private fun normalizeGearCategory(raw:String):String {
+    val s=raw.trim()
+    return when {
+        s.contains("背负")||s.contains("背包")->"背负系统"
+        s.contains("帐篷")||s.contains("营地")||s.contains("地布")||s.contains("露营")->"帐篷与营地系统"
+        s.contains("睡眠")||s.contains("睡袋")||s.contains("气垫")||s.contains("蛋巢")->"睡眠系统"
+        s.contains("衣物")||s.contains("服装")||s.contains("冲锋")||s.contains("软壳")||s.contains("抓绒")||s.contains("速干")||s.contains("羽绒")||s.contains("袜")||s.contains("帽")||s.contains("面巾")||s.contains("雨衣")->"衣物系统"
+        s.contains("鞋")||s.contains("靴")||s.contains("雪套")->"鞋靴系统"
+        s.contains("炊")||s.contains("饮")||s.contains("炉")||s.contains("锅")||s.contains("水")||s.contains("餐具")->"炊事与饮水系统"
+        s.contains("行进")||s.contains("登山杖")||s.contains("徒步")||s.contains("冰爪")->"行进系统"
+        s.contains("电子")||s.contains("导航")||s.contains("手表")||s.contains("电池")||s.contains("充电")||s.contains("GPS")||s.contains("头灯")||s.contains("照明")->"电子与导航系统"
+        s.contains("急救")||s.contains("卫生")||s.contains("药")||s.contains("毛巾")||s.contains("收纳")||s.contains("防晒")||s.contains("护理")||s=="其他"->"急救与卫生系统"
+        else->"急救与卫生系统"
+    }
+}
+
 data class Gear(val id:String,val name:String,val category:String,val price:Double,val quantity:Int,val note:String,val photo:String,val weightGrams:Double=0.0,val packed:Boolean=false,val warrantyUntil:String="",val maintenanceLog:String="")
 data class Project(val id:String,val name:String,val place:String,val date:String,val gear:List<Gear>,val route:String="",val lodging:String="",val resupply:String="",val emergency:String="",val trackData:String="",val mapPath:String="",val waypointData:String="[]",val elevationData:String="[]")
 
@@ -573,7 +589,7 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
                     }
                     if(p.gear.isEmpty()) item { Empty("装备清单还是空的","点击右下角 + 添加第一件装备") }
                     categories.forEach { cat ->
-                        val filtered=p.gear.filter{it.category==cat && (it.name.contains(searchQuery,true)||it.note.contains(searchQuery,true)) && (!packedOnly || !it.packed)}
+                        val filtered=p.gear.filter{normalizeGearCategory(it.category)==cat && (it.name.contains(searchQuery,true)||it.note.contains(searchQuery,true)) && (!packedOnly || !it.packed)}
                         val list=if(sortByWeight) filtered.sortedByDescending{it.weightGrams*it.quantity} else filtered
                         if(list.isNotEmpty()) {
                             item { Row(Modifier.fillMaxWidth().padding(top=5.dp,bottom=1.dp),verticalAlignment=Alignment.CenterVertically) { Box(Modifier.width(4.dp).height(18.dp).clip(RoundedCornerShape(4.dp)).background(forest)); Spacer(Modifier.width(9.dp)); Text(cat,fontWeight=FontWeight.Bold,color=forest,fontSize=15.sp) } }
@@ -731,9 +747,11 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
             project=project,
             onClose={advancedToolsOpen=false},
             onAddSuggested={ additions ->
-                val fresh=additions.filterNot { a -> project.gear.any { it.name.equals(a.name,true) } }
+                val latest=projects.firstOrNull { it.id==project.id }
+                val fresh=additions.filterNot { a -> latest?.gear?.any { it.name.equals(a.name,true) }==true }
+                    .map { it.copy(category=normalizeGearCategory(it.category)) }
                 if(fresh.isNotEmpty()) save(projects.map { if(it.id==project.id) it.copy(gear=it.gear+fresh) else it })
-                Toast.makeText(context,if(fresh.isEmpty()) "没有新增建议装备" else "已加入 "+fresh.size+" 件建议装备，请补录实际重量",Toast.LENGTH_LONG).show()
+                Toast.makeText(context,if(fresh.isEmpty()) "这些建议装备已在清单中" else "已加入 "+fresh.size+" 件建议装备，请返回装备清单查看",Toast.LENGTH_LONG).show()
             }
         )
     }

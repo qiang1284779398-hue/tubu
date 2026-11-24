@@ -129,7 +129,9 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     var sensorReady by remember { mutableStateOf(false) }
     var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM) }
     var gyroMagnitudeRadPerSec by remember { mutableDoubleStateOf(0.0) }
-    var magneticFieldMagnitudeMicroTesla by remember { mutableDoubleStateOf<Double?>(null) }
+    var magneticFieldMagnitudeMicroTesla by remember { mutableStateOf<Double?>(null) }
+    var stableGpsCourseCycles by remember { mutableIntStateOf(0) }
+    var previousGpsCourse by remember { mutableStateOf<Double?>(null) }
     var magneticCameraPose by remember { mutableStateOf<ArCameraPose?>(null) }
     val cameraPoseFilter = remember { ArCameraPoseFilter() }
     var cameraIntrinsics by remember { mutableStateOf(ArCameraIntrinsics(4.2, 5.6, 4.2, false)) }
@@ -328,12 +330,13 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                 alignedGpxFallback
             }
             val reference = dem.second ?: gpxAnchor
-            val rawOcclusion = if (dem.second != null) {
+            val demAnchorElevation = dem.second
+            val rawOcclusion = if (demAnchorElevation != null) {
                 withContext(Dispatchers.IO) {
                     samples.mapIndexed { index, sample ->
                         val targetElevation = dem.first.getOrNull(index)
                         if (targetElevation == null) 1f else ArTerrainDem.occlusionAlpha(
-                            fix.latitude, fix.longitude, dem.second, cameraHeightMeters.toDouble(),
+                            fix.latitude, fix.longitude, demAnchorElevation, cameraHeightMeters.toDouble(),
                             sample.latitude, sample.longitude, targetElevation
                         )
                     }

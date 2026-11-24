@@ -139,12 +139,28 @@ data class ArCameraIntrinsics(
     val sensorWidthMm: Double,
     val sensorHeightMm: Double,
     val focalLengthMm: Double,
-    val calibrated: Boolean
+    val calibrated: Boolean,
+    val intrinsicFxPixels: Double? = null,
+    val intrinsicFyPixels: Double? = null,
+    val sourcePixelWidth: Double? = null,
+    val sourcePixelHeight: Double? = null,
+    val distortionK1: Double = 0.0,
+    val distortionK2: Double = 0.0
 ) {
-    /** Pixel focal length after CameraX FILL_CENTER crops the sensor image to the viewport. */
+    /** Pixel focal length after the bound physical camera's FILL_CENTER crop. */
     fun focalPixels(viewWidth: Double, viewHeight: Double): Double {
-        if (viewWidth <= 0.0 || viewHeight <= 0.0 || sensorWidthMm <= 0.0 ||
-            sensorHeightMm <= 0.0 || focalLengthMm <= 0.0) return 0.0
+        if (viewWidth <= 0.0 || viewHeight <= 0.0) return 0.0
+        val fx = intrinsicFxPixels
+        val fy = intrinsicFyPixels
+        val sourceWidth = sourcePixelWidth
+        val sourceHeight = sourcePixelHeight
+        if (calibrated && fx != null && fy != null && sourceWidth != null && sourceHeight != null &&
+            fx > 0.0 && fy > 0.0 && sourceWidth > 0.0 && sourceHeight > 0.0
+        ) {
+            val scale = maxOf(viewWidth / sourceWidth, viewHeight / sourceHeight)
+            return (fx + fy) * 0.5 * scale
+        }
+        if (sensorWidthMm <= 0.0 || sensorHeightMm <= 0.0 || focalLengthMm <= 0.0) return 0.0
         val sensorAspect = sensorWidthMm / sensorHeightMm
         val viewAspect = viewWidth / viewHeight
         return if (viewAspect > sensorAspect) {
@@ -274,7 +290,9 @@ fun projectArWorldPoint(
     pose: ArCameraPose,
     focalPixels: Double,
     viewWidth: Double,
-    viewHeight: Double
+    viewHeight: Double,
+    distortionK1: Double = 0.0,
+    distortionK2: Double = 0.0
 ): ArScreenPoint? {
     if (focalPixels <= 0.0 || viewWidth <= 0.0 || viewHeight <= 0.0) return null
     val world = ArVector3(eastMeters, northMeters, upMeters)
@@ -282,8 +300,12 @@ fun projectArWorldPoint(
     val cameraY = -pose.imageUp.dot(world)
     val cameraZ = pose.forward.dot(world)
     if (cameraZ <= 0.5) return null
-    val x = viewWidth * 0.5 + focalPixels * cameraX / cameraZ
-    val y = viewHeight * 0.5 + focalPixels * cameraY / cameraZ
+    val normalizedX = cameraX / cameraZ
+    val normalizedY = cameraY / cameraZ
+    val radiusSquared = normalizedX * normalizedX + normalizedY * normalizedY
+    val radial = 1.0 + distortionK1 * radiusSquared + distortionK2 * radiusSquared * radiusSquared
+    val x = viewWidth * 0.5 + focalPixels * normalizedX * radial
+    val y = viewHeight * 0.5 + focalPixels * normalizedY * radial
     if (!x.isFinite() || !y.isFinite() || abs(x) > viewWidth * 8 || abs(y) > viewHeight * 8) return null
     return ArScreenPoint(x.toFloat(), y.toFloat())
 }
@@ -479,7 +501,9 @@ fun projectArRouteSampleFromAnchor(
     pose: ArCameraPose,
     focalPixels: Double,
     viewWidth: Double,
-    viewHeight: Double
+    viewHeight: Double,
+    distortionK1: Double = 0.0,
+    distortionK2: Double = 0.0
 ): ArScreenPoint? {
     fun enu(lat: Double, lon: Double): Pair<Double, Double> {
         val distance = arDistanceMeters(anchorLatitude, anchorLongitude, lat, lon)
@@ -492,7 +516,7 @@ fun projectArRouteSampleFromAnchor(
         sample.elevationMeters - referenceElevationMeters - cameraHeightMeters else -cameraHeightMeters
     return projectArWorldPoint(
         target.first - camera.first, target.second - camera.second, up,
-        pose, focalPixels, viewWidth, viewHeight
+        pose, focalPixels, viewWidth, viewHeight, distortionK1, distortionK2
     )
 }
 

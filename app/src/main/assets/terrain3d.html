@@ -109,7 +109,7 @@ button:active{background:#39664d}
  };
  try{
   map=new maplibregl.Map({
-   container:'map',style:mapStyle,center:[98.88,28.45],zoom:10.5,pitch:58,bearing:-18,maxPitch:75,minZoom:4,maxZoom:18,
+   container:'map',style:mapStyle,center:[0,20],zoom:1.5,pitch:0,bearing:0,maxPitch:75,minZoom:4,maxZoom:18,
    attributionControl:true,hash:false,failIfMajorPerformanceCaveat:false,preserveDrawingBuffer:false,
    touchZoomRotate:true,touchPitch:true,doubleClickZoom:true,
    dragPan:{linearity:.18,maxSpeed:1100,deceleration:2600}
@@ -121,6 +121,8 @@ button:active{background:#39664d}
   const message=e&&e.error&&e.error.message?e.error.message:'瓦片加载异常';
   if(/terrain|dem|tile|image|network/i.test(message))say('部分瓦片暂不可用；已缓存区域仍可显示。',false);
  });
+ let readySent=false;
+ const notifyReady=()=>{if(readySent)return;readySent=true;try{TrailKitBridge.onReady();say('路线数据下发已触发');}catch(e){say('原生 onReady 调用异常：'+((e&&e.stack)||e),true);}};
  map.on('style.load',()=>{
   if(loaded)return;
   const step=(name,fn)=>{try{fn();say('初始化完成：'+name);}catch(e){say('初始化步骤异常 ['+name+']：'+((e&&e.stack)||e),true);}};
@@ -165,10 +167,11 @@ button:active{background:#39664d}
   finally{
    loaded=true;
    try{updateReadout();}catch(e){say('读数更新异常：'+((e&&e.stack)||e),true);}
-   try{TrailKitBridge.onReady();say('路线数据下发已触发（无论地图初始化是否部分失败）');}
-   catch(e){say('原生 onReady 调用异常：'+((e&&e.stack)||e),true);}
+   notifyReady();
   }
  });
+ map.on('load',notifyReady);
+ setTimeout(()=>{if(!readySent){say('地图样式仍未完成加载，先行下发本地路线数据');notifyReady();}},2500);
  function roundedRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
  function labelSprite(text,kind){
   const scale=2,ctxCanvas=document.createElement('canvas'),ctx=ctxCanvas.getContext('2d');
@@ -316,6 +319,11 @@ button:active{background:#39664d}
  }
  window.TerrainLab={
   setData,beginDataTransfer,appendDataChunk,finishDataTransfer,
+  refreshTiles(kind){
+   const id=kind==='DEM'?'dem':'imagery';
+   const urls=id==='dem'?['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'];
+   try{const source=map&&map.getSource(id);if(source&&typeof source.setTiles==='function')source.setTiles(urls);if(map)map.triggerRepaint();say((id==='dem'?'DEM':'卫星')+' 瓦片已缓存，已请求刷新视口');}catch(e){say('瓦片刷新异常：'+((e&&e.stack)||e),true);}
+  },
   clearSelectedWaypoint(){
    selectedWaypointId=null;
    if(map&&map.getSource('selected-waypoint'))map.getSource('selected-waypoint').setData(empty);

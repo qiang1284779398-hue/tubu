@@ -115,8 +115,8 @@ button:active{background:#39664d}
    dragPan:{linearity:.18,maxSpeed:1100,deceleration:2600}
   });
  }catch(e){say('地图初始化失败：'+(e.message||e),true);return;}
- map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-left');
- map.addControl(new maplibregl.NavigationControl({showCompass:false,visualizePitch:true}),'bottom-right');
+ try{map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-left');}catch(e){say('比例尺控件初始化异常：'+((e&&e.stack)||e),true);}
+ try{map.addControl(new maplibregl.NavigationControl({showCompass:false,visualizePitch:true}),'bottom-right');}catch(e){say('导航控件初始化异常：'+((e&&e.stack)||e),true);}
  map.on('error',e=>{
   const message=e&&e.error&&e.error.message?e.error.message:'瓦片加载异常';
   if(/terrain|dem|tile|image|network/i.test(message))say('部分瓦片暂不可用；已缓存区域仍可显示。',false);

@@ -27,8 +27,12 @@ class TerrainRouteGeometryTest {
     }
 
     @Test fun waypointSnapshotKeepsDescriptionElevationAndStableIds() {
-        val encoded = """W1[{"lat":28.1,"lon":98.2,"name":"冰湖","desc":"高山湖泊","ele":3900},{"lat":28.2,"lon":98.3}]"""
-        val snapshot = buildTerrainWaypointSnapshot(encoded)
+        val snapshot = buildTerrainWaypointSnapshot(
+            listOf(
+                GpxWaypoint(28.1, 98.2, "冰湖", description = "高山湖泊", elevation = 3900.0),
+                GpxWaypoint(28.2, 98.3, "")
+            )
+        )
         assertEquals(2, snapshot.size)
         assertEquals("wp-0", snapshot[0].id)
         assertEquals("冰湖", snapshot[0].name)

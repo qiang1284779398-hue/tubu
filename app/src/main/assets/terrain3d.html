@@ -198,11 +198,12 @@ button:active{background:#39664d}
  function fitAll(){
   const full=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full');
   const coords=full&&full.geometry&&full.geometry.coordinates;
-  if(!coords||coords.length<2){say('当前项目没有可显示的有效 GPX 轨迹。',true);return;}
+  if(!coords||coords.length<2){say('当前项目没有可显示的有效 GPX 轨迹。',true);return false;}
   let west=Infinity,south=Infinity,east=-Infinity,north=-Infinity;
   coords.forEach(p=>{west=Math.min(west,p[0]);east=Math.max(east,p[0]);south=Math.min(south,p[1]);north=Math.max(north,p[1]);});
   if(west===east){west-=.001;east+=.001;}if(south===north){south-=.001;north+=.001;}
   map.fitBounds([[west,south],[east,north]],{padding:{top:85,bottom:85,left:45,right:45},duration:650,maxZoom:14});
+  return true;
  }
  function updateContours(){
   if(!contoursVisible||!map||!map.getSource('terrain-contours'))return;
@@ -276,7 +277,7 @@ button:active{background:#39664d}
    map.setFilter('waypoint-labels',null);
   });
   step('路线 LOD 切换',selectLod);
-  step('全线相机定位',fitAll);
+  step('全线相机定位',()=>{if(!fitAll())throw new Error('当前项目没有可显示的有效 GPX 轨迹');});
   const rawCount=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full')?.geometry.coordinates.length||0;
   say('路线 setData 结束 · '+rawCount+' 个轨迹点 · '+waypointData.features.length+' 个途经点 · 图标失败 '+spriteFailure+' · 已尝试全线定位');
  }

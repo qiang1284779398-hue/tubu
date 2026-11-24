@@ -300,6 +300,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             val samples = sampleArRouteAheadAdaptive(activeRoute, gpxSmoothed, requestedProgress, 120.0)
             val coordinates = samples.map { it.latitude to it.longitude }
             val dem = withContext(Dispatchers.IO) {
+                ArTerrainDem.initialize(context)
                 ArTerrainDem.elevations(coordinates) to
                     ArTerrainDem.elevation(match.snappedLat, match.snappedLon)
             }

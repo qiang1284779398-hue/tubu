@@ -69,6 +69,12 @@ internal class TerrainRequestCoalescer {
 }
 
 internal class TerrainTileCache(context: Context) {
+    companion object {
+        private val PLACEHOLDER_PNG = android.util.Base64.decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p1sAAAAASUVORK5CYII=",
+            android.util.Base64.DEFAULT
+        )
+    }
     private enum class Kind(val folder: String, val limitBytes: Long) {
         DEM("dem", 256L * 1024L * 1024L),
         IMAGERY("imagery", 512L * 1024L * 1024L)
@@ -97,6 +103,7 @@ internal class TerrainTileCache(context: Context) {
     private val demDownloads = AtomicLong()
     private val imageryDownloads = AtomicLong()
     private val appContext = context.applicationContext
+    @Volatile var onTileCached: ((String) -> Unit)? = null
 
     fun intercept(url: String): WebResourceResponse? {
         val kind = kindFor(url) ?: return null
@@ -125,6 +132,7 @@ internal class TerrainTileCache(context: Context) {
             coalescer.loadAsync(url, executor, { download(url, kind, key) }) { bytes, error ->
                 if (bytes != null && bytes.isNotEmpty()) {
                     memory.put(key, bytes)
+                    runCatching { onTileCached?.invoke(kind.name) }
                 } else {
                     recordFailure(kind)
                     if (!hasInternet()) recordOfflineMissing(kind)
@@ -133,7 +141,9 @@ internal class TerrainTileCache(context: Context) {
         } catch (_: Exception) {
             recordFailure(kind)
         }
-        return null
+        // Return a successful, non-cacheable placeholder immediately; the source is reloaded
+        // when the background fetch has persisted the real tile. Never poison GL JS with 504.
+        return placeholderResponse()
     }
 
     private fun kindFor(url: String): Kind? {
@@ -221,6 +231,12 @@ internal class TerrainTileCache(context: Context) {
         mimeType(bytes), null, status, reason,
         mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "public, max-age=31536000"),
         ByteArrayInputStream(bytes)
+    )
+
+    private fun placeholderResponse() = WebResourceResponse(
+        "image/png", null, 200, "OK",
+        mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store", "X-Terrain-Placeholder" to "true"),
+        ByteArrayInputStream(PLACEHOLDER_PNG)
     )
 
     private fun mimeType(bytes: ByteArray): String =

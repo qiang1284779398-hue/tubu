@@ -276,7 +276,7 @@ fun projectArWorldPoint(
     val cameraX = pose.imageRight.dot(world)
     val cameraY = -pose.imageUp.dot(world)
     val cameraZ = pose.forward.dot(world)
-    if (cameraZ <= 1.0) return null
+    if (cameraZ <= 0.5) return null
     val x = viewWidth * 0.5 + focalPixels * cameraX / cameraZ
     val y = viewHeight * 0.5 + focalPixels * cameraY / cameraZ
     if (!x.isFinite() || !y.isFinite() || abs(x) > viewWidth * 8 || abs(y) > viewHeight * 8) return null
@@ -439,6 +439,27 @@ fun fuseArGpsCourse(
     ) return magneticHeadingDegrees
     val delta = signedTurnAngle(magneticHeadingDegrees, gpsCourseDegrees)
     return (magneticHeadingDegrees + delta * gain.coerceIn(0.05, 0.10) + 360.0) % 360.0
+}
+
+fun arRouteSampleWorldVectorFromAnchor(
+    anchorLatitude: Double,
+    anchorLongitude: Double,
+    cameraLatitude: Double,
+    cameraLongitude: Double,
+    sample: ArRouteSample,
+    referenceElevationMeters: Double?,
+    cameraHeightMeters: Double
+): ArVector3 {
+    fun enu(lat: Double, lon: Double): Pair<Double, Double> {
+        val distance = arDistanceMeters(anchorLatitude, anchorLongitude, lat, lon)
+        val bearing = Math.toRadians(arBearingDegrees(anchorLatitude, anchorLongitude, lat, lon))
+        return distance * sin(bearing) to distance * cos(bearing)
+    }
+    val camera = enu(cameraLatitude, cameraLongitude)
+    val target = enu(sample.latitude, sample.longitude)
+    val up = if (sample.elevationMeters != null && referenceElevationMeters != null)
+        sample.elevationMeters - referenceElevationMeters - cameraHeightMeters else -cameraHeightMeters
+    return ArVector3(target.first - camera.first, target.second - camera.second, up)
 }
 
 /** ENU projection anchored at P_snap while retaining the real GPS optical-centre offset. */

@@ -491,16 +491,12 @@ internal fun buildTerrainLabPayload(
         )
     }
 
-    val elevationProfile = JSONArray()
-    elevations.forEach { elevationProfile.put(it ?: JSONObject.NULL) }
     val start = coordinates.firstOrNull()
     val end = coordinates.lastOrNull()
     return JSONObject()
-        .put("projectId", projectId)
         .put("routeLine", featureCollection(lineFeatures))
         .put("routeRibbon", featureCollection(ribbonFeatures))
         .put("waypoints", featureCollection(waypointFeatures))
-        .put("elevationProfile", elevationProfile)
         .put("start", start?.let { JSONArray().put(it.second).put(it.first) } ?: JSONObject.NULL)
         .put("end", end?.let { JSONArray().put(it.second).put(it.first) } ?: JSONObject.NULL)
         .toString()

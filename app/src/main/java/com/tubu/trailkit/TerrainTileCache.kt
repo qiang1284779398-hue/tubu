@@ -61,26 +61,30 @@ internal class TerrainRequestCoalescer {
 
 internal object TerrainTilePlaceholders {
     /**
-     * 1x1 PNG whose single pixel is RGB(1, 134, 160).
+     * 256x256 PNG, every pixel RGB(128, 0, 0).
      *
-     * Terrarium DEM decoding is elevation = -10000 + (R*65536 + G*256 + B) * 0.1,
-     * so this pixel decodes to exactly 0 m. A transparent (RGB 0,0,0) placeholder
-     * would decode to -10000 m: with terrain enabled, MapLibre projects the whole
-     * scene (terrain, imagery, route, labels) onto that sunken surface and the map
-     * renders uniformly black until every real DEM tile has downloaded. The DEM
-     * placeholder must therefore encode 0 m, never transparency.
+     * Terrarium DEM decoding is elevation = R*256 + G + B/256 - 32768, so
+     * RGB(128, 0, 0) decodes to exactly 0 m. (The -10000 + (R*65536 + G*256 + B) * 0.1
+     * formula sometimes quoted for this is Mapbox Terrain-RGB, NOT Terrarium: under
+     * Terrarium a pixel chosen with that formula lands near -32,377 m, and a
+     * transparent pixel (RGB 0,0,0) lands at -32,768 m. Either one turns every
+     * uncached DEM tile into a ~32 km pit next to real terrain: the mesh cliffs,
+     * terrain picking under the finger reads the pit, and contour generation sees
+     * hundreds of phantom levels.) The placeholder is 256x256, the same size as a
+     * real tile, because MapLibre's DEM border backfill errors out when neighbour
+     * tile dimensions differ.
      */
     const val DEM_ZERO_ELEVATION_PNG_BASE64 =
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgbFsAAAGzASgo2PpvAAAAAElFTkSuQmCC"
+        "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAAB+0lEQVR42u3TQQkAAAjAwEU3un8reHAJBmsK3pIAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwABgADAAGAAMAAYAA4ABwAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgAJMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAyAASTAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAYAAwABgADgAHAAGAAMAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADAAGAAOAAcAAYAAwABgADADHAnGpB4FDLHHvAAAAAElFTkSuQmCC"
 
     fun terrariumElevationMeters(red: Int, green: Int, blue: Int): Double =
-        -10000.0 + (red * 65536 + green * 256 + blue) * 0.1
+        red * 256.0 + green + blue / 256.0 - 32768.0
 }
 
 internal class TerrainTileCache(context: Context) {
     companion object {
         private val PLACEHOLDER_PNG = android.util.Base64.decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p1sAAAAASUVORK5CYII=",
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNgAAIAAAUAAen63NgAAAAASUVORK5CYII=",
             android.util.Base64.DEFAULT
         )
         private val DEM_PLACEHOLDER_PNG = android.util.Base64.decode(
@@ -123,14 +127,14 @@ internal class TerrainTileCache(context: Context) {
         val key = sha256(url)
         val diskFile = File(File(root, kind.folder), "$key.tile")
         memory.get(key)?.let {
-            diskFile.setLastModified(System.currentTimeMillis())
+            touchIfStale(diskFile)
             recordHit(kind)
             return response(it, 200, "OK")
         }
         if (diskFile.isFile && diskFile.length() > 0L) {
             val bytes = runCatching { diskFile.readBytes() }.getOrNull()
             if (bytes != null && bytes.isNotEmpty()) {
-                diskFile.setLastModified(System.currentTimeMillis())
+                touchIfStale(diskFile)
                 memory.put(key, bytes)
                 recordHit(kind)
                 return response(bytes, 200, "OK")
@@ -201,7 +205,7 @@ internal class TerrainTileCache(context: Context) {
         val target = File(directory, "$key.tile")
         val temp = File(directory, "$key.tmp")
         try {
-            FileOutputStream(temp).use { stream -> stream.write(bytes); stream.fd.sync() }
+            FileOutputStream(temp).use { stream -> stream.write(bytes) }
             if (!temp.renameTo(target)) {
                 temp.delete()
                 if (!target.exists()) target.writeBytes(bytes)
@@ -212,7 +216,23 @@ internal class TerrainTileCache(context: Context) {
         } catch (_: Exception) { temp.delete() }
     }
 
+    private val lastTrimAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    // Refresh a cached tile's LRU timestamp at most every 10 minutes: doing it on
+    // every hit is one stat+utime syscall pair per tile on the interceptor thread.
+    private fun touchIfStale(file: File) {
+        val now = System.currentTimeMillis()
+        if (now - file.lastModified() > 10 * 60 * 1000L) file.setLastModified(now)
+    }
+
     private fun trim(directory: File, limit: Long) {
+        // Throttled to once a minute per directory: listing + sorting by
+        // lastModified stats every cached file, and this used to run after EVERY
+        // downloaded tile.
+        val now = System.currentTimeMillis()
+        val trimKey = directory.absolutePath
+        if (now - (lastTrimAt[trimKey] ?: 0L) < 60_000L) return
+        lastTrimAt[trimKey] = now
         val files = directory.listFiles()?.filter { it.isFile && it.extension == "tile" }?.sortedBy { it.lastModified() } ?: return
         var total = files.sumOf { it.length() }
         for (file in files) {

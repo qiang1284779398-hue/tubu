@@ -49,9 +49,11 @@ class TerrainTileCacheTest {
     }
 
     @Test fun demPlaceholderPngDecodesToZeroElevation() {
-        // Regression guard for the black-screen bug: the DEM placeholder served on a
-        // cache miss must decode (Terrarium) to 0 m. A transparent placeholder pixel
-        // (RGB 0,0,0) decodes to -10000 m and sinks the whole terrain scene.
+        // Regression guard: the DEM placeholder served on a cache miss must decode
+        // (Terrarium: R*256 + G + B/256 - 32768) to 0 m at full tile size, 256x256.
+        // A transparent placeholder pixel (RGB 0,0,0) decodes to -32768 m, and the
+        // earlier RGB(1,134,160) pixel - chosen with the Mapbox Terrain-RGB formula
+        // by mistake - decodes to -32377 m; either turns uncached tiles into pits.
         // The PNG is decoded by hand with java.util.zip only: javax.imageio is not
         // visible on the Android unit-test compile classpath (android.jar shadows it).
         val bytes = java.util.Base64.getDecoder()
@@ -82,21 +84,27 @@ class TerrainTileCacheTest {
             }
             offset += 12 + length
         }
-        assertEquals(1, width)
-        assertEquals(1, height)
+        assertEquals(256, width)
+        assertEquals(256, height)
+        val rowBytes = 1 + 256 * 3
+        val raw = ByteArray(rowBytes * 256)
         val inflater = java.util.zip.Inflater()
         inflater.setInput(idat.toByteArray())
-        val raw = ByteArray(4)
         val produced = inflater.inflate(raw)
         inflater.end()
-        assertEquals(4, produced)
-        assertEquals(0, raw[0].toInt())
-        val red = raw[1].toInt() and 0xff
-        val green = raw[2].toInt() and 0xff
-        val blue = raw[3].toInt() and 0xff
-        assertEquals(1, red)
-        assertEquals(134, green)
-        assertEquals(160, blue)
-        assertEquals(0.0, TerrainTilePlaceholders.terrariumElevationMeters(red, green, blue), 0.001)
+        assertEquals(rowBytes * 256, produced)
+        // Every row: filter byte 0, then 256 pixels of RGB(128, 0, 0).
+        for (row in 0 until 256) {
+            val base = row * rowBytes
+            assertEquals(0, raw[base].toInt())
+            for (col in intArrayOf(0, 128, 255)) {
+                val p = base + 1 + col * 3
+                assertEquals(128, raw[p].toInt() and 0xff)
+                assertEquals(0, raw[p + 1].toInt() and 0xff)
+                assertEquals(0, raw[p + 2].toInt() and 0xff)
+            }
+        }
+        assertEquals(0.0, TerrainTilePlaceholders.terrariumElevationMeters(128, 0, 0), 0.001)
+        assertEquals(-32768.0, TerrainTilePlaceholders.terrariumElevationMeters(0, 0, 0), 0.001)
     }
 }

@@ -13,6 +13,10 @@ data class RouteMatch(
     val bearingDegrees:Double
 ) {
     val remainingMeters:Double get()=(totalMeters-progressMeters).coerceAtLeast(0.0)
+    /** 0..1 heuristic confidence based on lateral residual; not a statistical probability. */
+    val matchQuality: Double get() = (1.0 - distanceMeters / 50.0).coerceIn(0.0, 1.0)
+    /** Bearing of the matched route segment, exposed explicitly as its local tangent. */
+    val tangentBearingDegrees: Double get() = bearingDegrees
 }
 
 private fun sphericalFallbackDistanceMeters(a: Pair<Double, Double>, b: Pair<Double, Double>): Double {

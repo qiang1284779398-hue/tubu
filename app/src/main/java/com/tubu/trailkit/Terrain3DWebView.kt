@@ -280,7 +280,7 @@ internal fun Terrain3DDialog(
             }
         }
     }
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.statusBars)) {
             if (!fullscreen) {
             Surface(tonalElevation = 3.dp) {
                 Row(
@@ -330,7 +330,7 @@ internal fun Terrain3DDialog(
                                 webChromeClient = object : WebChromeClient() {
                                     override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                                         if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
-                                            status = "地图 JS 控制台异常：${message.message().take(900)}"
+                                            status = "地图 JS 控制台异常：${message.message().take(700)}（${message.sourceId()?.substringAfterLast('/') ?: "?"}:${message.lineNumber()}）"
                                         }
                                         return true
                                     }

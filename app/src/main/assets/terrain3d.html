@@ -129,25 +129,22 @@ button:active{background:#39664d}
   try{
    step('DEM 地形',()=>map.setTerrain({source:'dem',exaggeration:1.35}));
    step('手势控制',()=>{map.touchZoomRotate.enable();map.touchPitch.enable();map.doubleClickZoom.enable();});
-   map.addLayer({id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{
-    'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d',
-    'hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315
-   }});
    // Keep start/end labels above selected and ordinary waypoint labels.
-   map.moveLayer('route-endpoints');
-   map.on('click','waypoint-labels',e=>{
+   step('起终点图层优先级',()=>map.moveLayer('route-endpoints'));
+   step('航点点击事件',()=>map.on('click','waypoint-labels',e=>{
     const feature=e.features&&e.features[0];if(!feature)return;
     selectedWaypointId=String((feature.properties||{}).id||feature.id||'');
     map.getSource('selected-waypoint').setData({type:'FeatureCollection',features:[feature]});
     map.setFilter('waypoint-labels',['!=',['get','id'],selectedWaypointId]);
     try{TrailKitBridge.onWaypointClick(JSON.stringify(feature.properties||{}));}catch(_){}
-   });
-   map.on('mouseenter','waypoint-labels',()=>map.getCanvas().style.cursor='pointer');
-   map.on('mouseleave','waypoint-labels',()=>map.getCanvas().style.cursor='');
-   map.on('moveend',()=>{updateReadout();if(contoursVisible)queueContours();});
-   map.on('zoomend',()=>{updateReadout();selectLod();if(contoursVisible)queueContours();});
-   map.on('rotateend',updateReadout);map.on('pitchend',updateReadout);
-   map.on('idle',()=>{
+   }));
+   step('航点悬停进入事件',()=>map.on('mouseenter','waypoint-labels',()=>map.getCanvas().style.cursor='pointer'));
+   step('航点悬停离开事件',()=>map.on('mouseleave','waypoint-labels',()=>map.getCanvas().style.cursor=''));
+   step('地图平移结束事件',()=>map.on('moveend',()=>{updateReadout();if(contoursVisible)queueContours();}));
+   step('地图缩放结束事件',()=>map.on('zoomend',()=>{updateReadout();selectLod();if(contoursVisible)queueContours();}));
+   step('地图旋转结束事件',()=>map.on('rotateend',updateReadout));
+   step('地图俯仰结束事件',()=>map.on('pitchend',updateReadout));
+   step('地图空闲与瓦片诊断事件',()=>map.on('idle',()=>{
     if(!loaded)return;
     let cacheText='缓存统计暂不可用';
     let missingDem=0,missingImagery=0;
@@ -161,8 +158,8 @@ button:active{background:#39664d}
     }else{
      say('三维地形已就绪 · DEM z14 · '+cacheText);
     }
-   });
-   loaded=true;updateReadout();say('地图样式初始化结束，等待路线数据…');
+   }));
+   loaded=true;step('相机读数更新',updateReadout);say('地图样式初始化结束，等待路线数据…');
   }catch(e){say('地图初始化主流程异常：'+((e&&e.stack)||e),true);}
   finally{
    loaded=true;

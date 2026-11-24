@@ -55,13 +55,15 @@ private val ArLime = Color(0xFFB8D5A8)
 private data class ArTerrainSnapshot(
     val progressMeters: Double,
     val routeElevations: List<Double?>,
-    val currentGroundElevationMeters: Double
+    val currentGroundElevationMeters: Double,
+    val occlusionAlphas: List<Float> = emptyList()
 )
 private data class CameraRibbonPoint(
     val center: ArScreenPoint?,
     val leftWorld: ArVector3,
     val rightWorld: ArVector3,
-    val progressMeters: Double
+    val progressMeters: Double,
+    val occlusionAlpha: Float
 )
 
 private data class CameraTurn(val angleDegrees: Double, val distanceMeters: Double) {
@@ -273,7 +275,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     }
 
     // Sample the route and the snapped ground reference on the same vertical datum.
-    LaunchedEffect(location, routeMatch, route) {
+    LaunchedEffect(location, routeMatch, route, cameraHeightMeters) {
         val fix = location
         val match = routeMatch
         val activeRoute = route
@@ -300,8 +302,20 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                 alignedGpxFallback
             }
             val reference = dem.second ?: gpxAnchor
+            val rawOcclusion = if (dem.second != null) {
+                withContext(Dispatchers.IO) {
+                    samples.mapIndexed { index, sample ->
+                        val targetElevation = dem.first.getOrNull(index)
+                        if (targetElevation == null) 1f else ArTerrainDem.occlusionAlpha(
+                            fix.latitude, fix.longitude, dem.second, cameraHeightMeters.toDouble(),
+                            sample.latitude, sample.longitude, targetElevation
+                        )
+                    }
+                }
+            } else List(samples.size) { 1f }
+            val smoothedOcclusion = smoothArOcclusionAlphas(samples, rawOcclusion)
             terrainSnapshot = if (reference != null) {
-                ArTerrainSnapshot(requestedProgress, resolved, reference)
+                ArTerrainSnapshot(requestedProgress, resolved, reference, smoothedOcclusion)
             } else null
         }
     }
@@ -360,7 +374,10 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             activeTerrainSnapshot.routeElevations.size == fallbackRouteSamples.size
         ) {
             fallbackRouteSamples.mapIndexed { index, sample ->
-                sample.copy(elevationMeters = activeTerrainSnapshot.routeElevations[index])
+                sample.copy(
+                    elevationMeters = activeTerrainSnapshot.routeElevations[index],
+                    occlusionAlpha = activeTerrainSnapshot.occlusionAlphas.getOrNull(index) ?: 1f
+                )
             }
         } else {
             fallbackRouteSamples
@@ -661,14 +678,16 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                 size.width.toDouble(), size.height.toDouble(),
                                 cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
                             )
-                            CameraRibbonPoint(center, leftWorld, rightWorld, sample.progressMeters)
+                            CameraRibbonPoint(center, leftWorld, rightWorld, sample.progressMeters, sample.occlusionAlpha)
                         }
 
                         for (i in 1 until ribbonPoints.size) {
                             val a = ribbonPoints[i - 1]
                             val b = ribbonPoints[i]
                             val distanceAlong = (a.progressMeters + b.progressMeters) * 0.5 - match.progressMeters
-                            val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f) * if (gpsWeak) 0.48f else 1f
+                            val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f) *
+                                minOf(a.occlusionAlpha, b.occlusionAlpha).coerceIn(0.05f, 1f) *
+                                if (gpsWeak) 0.48f else 1f
                             val clippedQuad = projectArWorldPolygon(
                                 listOf(a.leftWorld, a.rightWorld, b.rightWorld, b.leftWorld),
                                 pose, focalPixels, size.width.toDouble(), size.height.toDouble(),

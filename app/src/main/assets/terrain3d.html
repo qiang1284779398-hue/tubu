@@ -58,6 +58,7 @@ button:active{background:#39664d}
  'use strict';
  const status=document.getElementById('status');
  const readout=document.getElementById('readout');
+ let transferChunks=null;
  const say=(message,error)=>{status.textContent=message;status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}};
  if(!window.maplibregl){say('MapLibre 本地引擎未能加载，请检查 APK 资源包。',true);return;}
  const empty={type:'FeatureCollection',features:[]};
@@ -269,7 +270,13 @@ button:active{background:#39664d}
   transferChunks[index]=String(chunk);
  }
  function finishDataTransfer(){
-  if(!transferChunks||transferChunks.some(chunk=>typeof chunk!=='string')){
+  let valid=!!transferChunks;
+  if(valid){
+   for(let i=0;i<transferChunks.length;i++){
+    if(typeof transferChunks[i]!=='string'){valid=false;break;}
+   }
+  }
+  if(!valid){
    transferChunks=null;say('路线数据传输不完整，请重新打开三维地形。',true);return;
   }
   const raw=transferChunks.join('');transferChunks=null;setData(raw);

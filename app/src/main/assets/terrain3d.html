@@ -242,36 +242,43 @@ button:active{background:#39664d}
   document.getElementById('layers').textContent='图层：'+['卫星','晕渲','卫星+晕渲'][layerMode];
  }
  function setData(raw){
+  const step=(name,fn)=>{try{fn();say('路线数据步骤完成：'+name);}catch(e){say('路线数据步骤异常 ['+name+']：'+((e&&e.stack)||e),true);}};
+  let data;
   try{
    say('路线 setData：开始解析 JSON…');
-   const data=typeof raw==='string'?JSON.parse(raw):raw;
+   data=typeof raw==='string'?JSON.parse(raw):raw;
    if(!data||!data.routeLine||!data.routeRibbon||!data.waypoints)throw new Error('路线数据缺少 routeLine/routeRibbon/waypoints');
-   say('路线 setData：JSON 解析完成，准备写入 GeoJSON 源…');
-   routeLineData=data.routeLine||empty;routeRibbonData=data.routeRibbon||empty;waypointData=data.waypoints||empty;
-   if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('route-points')||!map.getSource('waypoints')||!map.getSource('selected-waypoint')){
-    pendingData=raw;say('路线数据已接收，等待地图样式与本地数据源就绪…');return;
-   }
-   map.getSource('route-line').setData(routeLineData);
-   map.getSource('route-ribbon').setData(routeRibbonData);
-   say('路线 setData：轨迹线与缎带已提交，正在注册航点图标…');
-   const endpoints=[];
-   if(Array.isArray(data.start))endpoints.push({type:'Feature',properties:{spriteId:'endpoint-start'},geometry:{type:'Point',coordinates:data.start}});
-   if(Array.isArray(data.end))endpoints.push({type:'Feature',properties:{spriteId:'endpoint-end'},geometry:{type:'Point',coordinates:data.end}});
-   addSprite('endpoint-start','起点','endpoint');addSprite('endpoint-end','终点','endpoint');
-   map.getSource('route-points').setData({type:'FeatureCollection',features:endpoints});
-   waypointData.features.forEach(feature=>{
-    const p=feature.properties||{};const name=(p.name||'途经点').slice(0,24);
-    addSprite(p.spriteId||('wp-'+p.id),name,'waypoint');
-   });
-   map.getSource('waypoints').setData(waypointData);
-   say('路线 setData：航点已提交，正在执行全线 fitBounds…');
+   if(!Array.isArray(data.routeLine.features)||!Array.isArray(data.routeRibbon.features)||!Array.isArray(data.waypoints.features))throw new Error('路线 GeoJSON features 格式错误');
+  }catch(e){say('路线 setData 解析异常：'+((e&&e.stack)||e),true);return;}
+  routeLineData=data.routeLine;routeRibbonData=data.routeRibbon;waypointData=data.waypoints;
+  if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('route-points')||!map.getSource('waypoints')||!map.getSource('selected-waypoint')){
+   pendingData=raw;say('路线数据已接收，等待地图样式与本地数据源就绪…');return;
+  }
+  step('轨迹线 GeoJSON',()=>map.getSource('route-line').setData(routeLineData));
+  step('轨迹缎带 GeoJSON',()=>map.getSource('route-ribbon').setData(routeRibbonData));
+  const endpoints=[];
+  if(Array.isArray(data.start)&&data.start.length>=2)endpoints.push({type:'Feature',properties:{spriteId:'endpoint-start'},geometry:{type:'Point',coordinates:data.start}});
+  if(Array.isArray(data.end)&&data.end.length>=2)endpoints.push({type:'Feature',properties:{spriteId:'endpoint-end'},geometry:{type:'Point',coordinates:data.end}});
+  step('起点图标注册',()=>addSprite('endpoint-start','起点','endpoint'));
+  step('终点图标注册',()=>addSprite('endpoint-end','终点','endpoint'));
+  step('起终点 GeoJSON',()=>map.getSource('route-points').setData({type:'FeatureCollection',features:endpoints}));
+  let spriteSuccess=0,spriteFailure=0;
+  waypointData.features.forEach((feature,index)=>{
+   const p=feature.properties||{},name=(p.name||'途经点').slice(0,24),id=p.spriteId||('wp-'+p.id);
+   try{addSprite(id,name,'waypoint');spriteSuccess++;}
+   catch(e){spriteFailure++;say('航点图标异常 ['+name+']：'+((e&&e.stack)||e),true);}
+  });
+  say('航点图标注册：成功 '+spriteSuccess+' · 失败 '+spriteFailure);
+  step('途经点 GeoJSON',()=>map.getSource('waypoints').setData(waypointData));
+  step('清除选中航点状态',()=>{
    selectedWaypointId=null;
    map.getSource('selected-waypoint').setData(empty);
    map.setFilter('waypoint-labels',null);
-   selectLod();fitAll();
-   const rawCount=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full')?.geometry.coordinates.length||0;
-   say('路线 setData 完成 · '+rawCount+' 个轨迹点 · '+waypointData.features.length+' 个途经点 · 已执行全线定位');
-  }catch(e){const detail=(e&&e.stack)||((e&&e.message)||String(e));say('路线 setData 异常：'+detail,true);}
+  });
+  step('路线 LOD 切换',selectLod);
+  step('全线相机定位',fitAll);
+  const rawCount=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full')?.geometry.coordinates.length||0;
+  say('路线 setData 结束 · '+rawCount+' 个轨迹点 · '+waypointData.features.length+' 个途经点 · 图标失败 '+spriteFailure+' · 已尝试全线定位');
  }
  document.getElementById('fit').addEventListener('click',fitAll);
  document.getElementById('north').addEventListener('click',()=>map.easeTo({bearing:0,duration:420}));

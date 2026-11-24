@@ -129,7 +129,9 @@ class ArCameraProjectionTest {
 
     @Test fun adaptiveSamplingDensifiesAroundSharpRouteBend() {
         val route = prepareRoute(listOf(0.0 to 0.0, 0.0 to 0.001, 0.001 to 0.001))
-        val samples = sampleArRouteAheadAdaptive(route, emptyList(), 80.0, 60.0)
+        // Place the bend within the near 30 m zone, where the specification
+        // requires 0.5–1.0 m spacing around sharp turns.
+        val samples = sampleArRouteAheadAdaptive(route, emptyList(), 82.0, 60.0)
         val aroundCorner = samples.zipWithNext().filter {
             it.first.progressMeters in 106.0..114.0
         }.map { it.second.progressMeters - it.first.progressMeters }

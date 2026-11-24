@@ -206,12 +206,24 @@ private class TerrainLabBridge(
     private val onWaypoint: (String) -> Unit,
     private val onWalk: () -> Unit
 ) {
+    private val payloadDispatchStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+
     @JavascriptInterface fun onReady() {
+        if (!payloadDispatchStarted.compareAndSet(false, true)) return
         webView.post {
+            // Keep each WebView IPC message comfortably below Binder transaction limits.
+            val chunks = payload.chunked(48 * 1024)
+            fun sendChunk(index: Int) {
+                if (index >= chunks.size) {
+                    webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.finishDataTransfer()", null)
+                    return
+                }
+                val script = "window.TerrainLab&&window.TerrainLab.appendDataChunk($index,${JSONObject.quote(chunks[index])})"
+                webView.evaluateJavascript(script) { sendChunk(index + 1) }
+            }
             webView.evaluateJavascript(
-                "window.TerrainLab&&window.TerrainLab.setData(${JSONObject.quote(payload)})",
-                null
-            )
+                "window.TerrainLab&&window.TerrainLab.beginDataTransfer(${chunks.size})"
+            ) { sendChunk(0) }
         }
     }
     @JavascriptInterface fun onStatus(message: String) {

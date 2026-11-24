@@ -118,6 +118,8 @@ button:active{background:#39664d}
     'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.78,
     'symbol-sort-key':-1
    }});
+   // Keep start/end labels above selected and ordinary waypoint labels.
+   map.moveLayer('route-endpoints');
    map.on('click','waypoint-labels',e=>{
     const feature=e.features&&e.features[0];if(!feature)return;
     selectedWaypointId=String((feature.properties||{}).id||feature.id||'');

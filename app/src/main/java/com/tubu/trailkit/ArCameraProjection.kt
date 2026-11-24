@@ -376,7 +376,9 @@ fun projectArWorldPolygon(
     focalPixels: Double,
     viewWidth: Double,
     viewHeight: Double,
-    nearPlane: Double = 0.5
+    nearPlane: Double = 0.5,
+    distortionK1: Double = 0.0,
+    distortionK2: Double = 0.0
 ): List<ArScreenPoint> {
     if (focalPixels <= 0.0 || viewWidth <= 0.0 || viewHeight <= 0.0) return emptyList()
     val cameraVertices = worldVertices.map { world ->
@@ -387,8 +389,12 @@ fun projectArWorldPolygon(
         )
     }
     return clipArPolygonToNearPlane(cameraVertices, nearPlane).mapNotNull { point ->
-        val x = viewWidth * 0.5 + focalPixels * point.x / point.z
-        val y = viewHeight * 0.5 + focalPixels * point.y / point.z
+        val normalizedX = point.x / point.z
+        val normalizedY = point.y / point.z
+        val radiusSquared = normalizedX * normalizedX + normalizedY * normalizedY
+        val radial = 1.0 + distortionK1 * radiusSquared + distortionK2 * radiusSquared * radiusSquared
+        val x = viewWidth * 0.5 + focalPixels * normalizedX * radial
+        val y = viewHeight * 0.5 + focalPixels * normalizedY * radial
         if (x.isFinite() && y.isFinite() && kotlin.math.abs(x) <= viewWidth * 8 &&
             kotlin.math.abs(y) <= viewHeight * 8
         ) ArScreenPoint(x.toFloat(), y.toFloat()) else null

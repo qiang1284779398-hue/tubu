@@ -127,7 +127,7 @@ button:active{background:#39664d}
   });
  }catch(e){say('地图初始化失败：'+(e.message||e),true);return;}
  try{map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-left');}catch(e){say('比例尺控件初始化异常：'+((e&&e.stack)||e),true);}
- try{map.on('idle',()=>{if(Object.keys(pendingTileRefresh).length)flushTileRefresh();});}catch(_){}
+ try{map.on('idle',()=>{mapIsIdle=true;maybeFlushTiles();});map.on('movestart',()=>{mapIsIdle=false;});}catch(_){}
  try{map.on('webglcontextlost',()=>say('诊断：WebGL 上下文丢失',true));map.on('webglcontextrestored',()=>say('诊断：WebGL 上下文已恢复',true));}catch(_){}
  try{map.addControl(new maplibregl.NavigationControl({showCompass:false,visualizePitch:true}),'bottom-right');}catch(e){say('导航控件初始化异常：'+((e&&e.stack)||e),true);}
  let suppressAutoTiltUntil=0;
@@ -430,30 +430,36 @@ button:active{background:#39664d}
   say('路线传输完成：'+count+' 块 · '+raw.length+' 字符，进入 setData…');
   setData(raw);
  }
- // Tile-refresh coalescing: the native cache calls refreshTiles() EVERY time
-  // a single background tile download lands. Reloading the source per tile made
-  // the whole viewport strobe while downloads trickled in on a slow link.
-  // Collect the kinds and reload each dirty source at most once per window.
+ // Tile-refresh strategy: the native cache calls refreshTiles() EVERY time a
+  // single background tile download lands. On a slow link the downloads of one
+  // zoomed-in viewport trickle in for minutes, and every source reload rebuilds
+  // the terrain - the view strobes while stationary and the main thread stays
+  // too busy to track finger drags. So: mark dirty, and reload ONCE, only after
+  // the burst has truly ended (5 s with no new tile landing) and the map is
+  // idle; a 30 s backstop bounds staleness. Placeholders stay stable meanwhile.
   const pendingTileRefresh={};
-  let tileRefreshTimer=0;
+  let tileRefreshTimer=0,lastTileNotifyAt=0,mapIsIdle=false;
   function flushTileRefresh(){
-   if(tileRefreshTimer){clearTimeout(tileRefreshTimer);tileRefreshTimer=0;}
    const kinds=Object.keys(pendingTileRefresh);
    for(const k of kinds)delete pendingTileRefresh[k];
+   if(tileRefreshTimer){clearInterval(tileRefreshTimer);tileRefreshTimer=0;}
    for(const id of kinds){
     const urls=id==='dem'?['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'];
     try{const source=map&&map.getSource(id);if(source&&typeof source.setTiles==='function')source.setTiles(urls);}catch(e){say('瓦片刷新异常：'+((e&&e.stack)||e),true);}
    }
    if(kinds.length&&map)map.triggerRepaint();
   }
+  function maybeFlushTiles(){
+   if(!Object.keys(pendingTileRefresh).length)return;
+   const quietMs=Date.now()-lastTileNotifyAt;
+   if((quietMs>=5000&&mapIsIdle)||quietMs>=30000)flushTileRefresh();
+  }
  window.TerrainLab={
   setData,beginDataTransfer,appendDataChunk,finishDataTransfer,
   refreshTiles(kind){
-   // Mark dirty only. The actual source reload happens when the map reaches
-   // 'idle' (camera still, nothing loading) so a reload can never interrupt
-   // an interaction; a 6 s backstop covers a map that never idles.
    pendingTileRefresh[kind==='DEM'?'dem':'imagery']=true;
-   if(!tileRefreshTimer)tileRefreshTimer=setTimeout(flushTileRefresh,6000);
+   lastTileNotifyAt=Date.now();
+   if(!tileRefreshTimer)tileRefreshTimer=setInterval(maybeFlushTiles,1000);
   },
   clearSelectedWaypoint(){
    selectedWaypointId=null;

@@ -163,10 +163,13 @@ internal class TerrainTileCache(context: Context) {
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     private fun response(bytes: ByteArray, status: Int, reason: String) = WebResourceResponse(
-        "image/png", null, status, reason,
+        mimeType(bytes), null, status, reason,
         mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "public, max-age=31536000"),
         ByteArrayInputStream(bytes)
     )
+
+    private fun mimeType(bytes: ByteArray): String =
+        if (bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte()) "image/jpeg" else "image/png"
 
     private fun missingResponse() = WebResourceResponse(
         "image/png", null, 504, "Terrain Tile Missing",

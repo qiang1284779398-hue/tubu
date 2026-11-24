@@ -30,20 +30,17 @@ import org.json.JSONObject
 internal fun Terrain3DDialog(
     projectId: String,
     projectName: String,
-    encodedTrack: String,
-    encodedElevations: String,
-    encodedWaypoints: String,
+    trackCoordinates: List<Pair<Double, Double>>,
+    elevations: List<Double?>,
+    waypoints: List<TerrainWaypointSnapshot>,
     visible: Boolean,
     onClose: () -> Unit
 ) {
     if (!visible) return
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val track = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
-    val elevations = remember(encodedElevations) { decodeGpxElevations(encodedElevations) }
-    val waypoints = remember(encodedWaypoints) { buildTerrainWaypointSnapshot(encodedWaypoints) }
-    val payload = remember(projectId, track, elevations, waypoints) {
-        buildTerrainLabPayload(projectId, track, elevations, waypoints)
+    val payload = remember(projectId, trackCoordinates, elevations, waypoints) {
+        buildTerrainLabPayload(projectId, trackCoordinates, elevations, waypoints)
     }
     val tileCache = remember(context) { TerrainTileCache(context.applicationContext) }
     val assetLoader = remember(context) {
@@ -194,7 +191,7 @@ internal fun Terrain3DDialog(
         }
     }
     if (walkingMode) {
-        NativeTerrainWalkDialog(projectName, encodedTrack, true) { walkingMode = false }
+        NativeTerrainWalkDialog(projectName, trackCoordinates, true) { walkingMode = false }
     }
 }
 

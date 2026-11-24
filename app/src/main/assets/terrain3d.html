@@ -101,7 +101,7 @@ button:active{background:#39664d}
    'my-location':{type:'geojson',data:empty}
   },
   layers:[
-   {id:'satellite',type:'raster',source:'imagery',paint:{'raster-opacity':1}},
+   {id:'satellite',type:'raster',source:'imagery',paint:{'raster-opacity':1,'raster-fade-duration':0}},
    {id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d','hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315}},
    {id:'terrain-contours-line',type:'line',source:'terrain-contours',layout:{'line-join':'round','line-cap':'round','visibility':'none'},paint:{'line-color':'#f1d99a','line-width':1,'line-opacity':.72}},
    {id:'terrain-contour-labels',type:'symbol',source:'terrain-contour-labels',layout:{'icon-image':['get','spriteId'],'icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-size':.6,'visibility':'none'}},
@@ -127,6 +127,8 @@ button:active{background:#39664d}
   });
  }catch(e){say('地图初始化失败：'+(e.message||e),true);return;}
  try{map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-left');}catch(e){say('比例尺控件初始化异常：'+((e&&e.stack)||e),true);}
+ try{map.on('idle',()=>{if(Object.keys(pendingTileRefresh).length)flushTileRefresh();});}catch(_){}
+ try{map.on('webglcontextlost',()=>say('诊断：WebGL 上下文丢失',true));map.on('webglcontextrestored',()=>say('诊断：WebGL 上下文已恢复',true));}catch(_){}
  try{map.addControl(new maplibregl.NavigationControl({showCompass:false,visualizePitch:true}),'bottom-right');}catch(e){say('导航控件初始化异常：'+((e&&e.stack)||e),true);}
  let suppressAutoTiltUntil=0;
  let moveStartState=null;
@@ -435,7 +437,7 @@ button:active{background:#39664d}
   const pendingTileRefresh={};
   let tileRefreshTimer=0;
   function flushTileRefresh(){
-   tileRefreshTimer=0;
+   if(tileRefreshTimer){clearTimeout(tileRefreshTimer);tileRefreshTimer=0;}
    const kinds=Object.keys(pendingTileRefresh);
    for(const k of kinds)delete pendingTileRefresh[k];
    for(const id of kinds){
@@ -447,8 +449,11 @@ button:active{background:#39664d}
  window.TerrainLab={
   setData,beginDataTransfer,appendDataChunk,finishDataTransfer,
   refreshTiles(kind){
+   // Mark dirty only. The actual source reload happens when the map reaches
+   // 'idle' (camera still, nothing loading) so a reload can never interrupt
+   // an interaction; a 6 s backstop covers a map that never idles.
    pendingTileRefresh[kind==='DEM'?'dem':'imagery']=true;
-   if(!tileRefreshTimer)tileRefreshTimer=setTimeout(flushTileRefresh,1500);
+   if(!tileRefreshTimer)tileRefreshTimer=setTimeout(flushTileRefresh,6000);
   },
   clearSelectedWaypoint(){
    selectedWaypointId=null;

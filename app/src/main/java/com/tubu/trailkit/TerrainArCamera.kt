@@ -56,7 +56,8 @@ private data class ArTerrainSnapshot(
     val progressMeters: Double,
     val routeElevations: List<Double?>,
     val currentGroundElevationMeters: Double,
-    val occlusionAlphas: List<Float> = emptyList()
+    val occlusionAlphas: List<Float> = emptyList(),
+    val elevationFallbackRatio: Double = 1.0
 )
 private data class CameraRibbonPoint(
     val center: ArScreenPoint?,
@@ -64,6 +65,18 @@ private data class CameraRibbonPoint(
     val rightWorld: ArVector3,
     val progressMeters: Double,
     val occlusionAlpha: Float
+)
+
+private data class ArFrameSnapshot(
+    val location: Location?,
+    val match: RouteMatch?,
+    val pose: ArCameraPose?,
+    val samples: List<ArRouteSample>,
+    val referenceElevationMeters: Double?,
+    val cameraHeightMeters: Double,
+    val intrinsics: ArCameraIntrinsics,
+    val gpsWeak: Boolean,
+    val gpsUsable: Boolean
 )
 
 private data class CameraTurn(val angleDegrees: Double, val distanceMeters: Double) {
@@ -307,7 +320,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     samples.mapIndexed { index, sample ->
                         val targetElevation = dem.first.getOrNull(index)
                         if (targetElevation == null) 1f else ArTerrainDem.occlusionAlpha(
-                            fix.latitude, fix.longitude, dem.second, cameraHeightMeters.toDouble(),
+                            fix.latitude, fix.longitude, dem.second, frame.cameraHeightMeters,
                             sample.latitude, sample.longitude, targetElevation
                         )
                     }
@@ -315,7 +328,10 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             } else List(samples.size) { 1f }
             val smoothedOcclusion = smoothArOcclusionAlphas(samples, rawOcclusion)
             terrainSnapshot = if (reference != null) {
-                ArTerrainSnapshot(requestedProgress, resolved, reference, smoothedOcclusion)
+                ArTerrainSnapshot(
+                    requestedProgress, resolved, reference, smoothedOcclusion,
+                    if (dem.first.isEmpty()) 1.0 else dem.first.count { it == null }.toDouble() / dem.first.size
+                )
             } else null
         }
     }
@@ -385,6 +401,27 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     }
     val arReferenceElevation = activeTerrainSnapshot?.currentGroundElevationMeters
         ?: fallbackRouteSamples.firstOrNull()?.elevationMeters
+    val frameSnapshot = remember(
+        location, routeMatch, cameraPose, arRouteSamples, arReferenceElevation,
+        cameraHeightMeters, cameraIntrinsics, gpsWeak, gpsArUsable
+    ) {
+        ArFrameSnapshot(
+            location?.let { Location(it) }, routeMatch, cameraPose, arRouteSamples.toList(),
+            arReferenceElevation, cameraHeightMeters.toDouble(), cameraIntrinsics, gpsWeak, gpsArUsable
+        )
+    }
+    LaunchedEffect(location, routeMatch, activeTerrainSnapshot, cameraIntrinsics, ageRefresh, arRouteSamples) {
+        val count = arRouteSamples.size
+        TerrainArDiagnostics.recordState(
+            gpsAccuracyMeters = location?.accuracy?.toDouble(),
+            gpsAgeMillis = gpsAgeMillis,
+            snapDistanceMeters = routeMatch?.distanceMeters,
+            demSampleCount = activeTerrainSnapshot?.routeElevations?.size ?: 0,
+            elevationFallbackRatio = activeTerrainSnapshot?.elevationFallbackRatio ?: 1.0,
+            calibratedIntrinsics = cameraIntrinsics.calibrated,
+            occludedSampleRatio = if (count == 0) 0.0 else arRouteSamples.count { it.occlusionAlpha < 0.99f }.toDouble() / count
+        )
+    }
 
     val displayProjectName = remember(projectName) {
         if (projectName.matches(Regex("""\d{4}-\d{2}-\d{2}.*\d{10,}.*"""))) "当前徒步项目" else projectName
@@ -640,15 +677,17 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     }
                 )
                 Canvas(Modifier.fillMaxSize()) {
-                    val fix = location
-                    val match = routeMatch
-                    val pose = cameraPose
-                    if (fix != null && match != null && gpsArUsable && projectionReady &&
+                    val frameStartNanos = System.nanoTime()
+                    val frame = frameSnapshot
+                    val fix = frame.location
+                    val match = frame.match
+                    val pose = frame.pose
+                    if (fix != null && match != null && frame.gpsUsable && projectionReady &&
                         pose != null && route != null && routePoints.size > 1
                     ) {
-                        val samples = arRouteSamples
-                        val referenceElevation = arReferenceElevation
-                        val focalPixels = cameraIntrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
+                        val samples = frame.samples
+                        val referenceElevation = frame.referenceElevationMeters
+                        val focalPixels = frame.intrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
                         val ribbonPoints = samples.mapIndexed { index, sample ->
                             val previous = samples[(index - 1).coerceAtLeast(0)]
                             val next = samples[(index + 1).coerceAtMost(samples.lastIndex)]
@@ -676,7 +715,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                 match.snappedLat, match.snappedLon, fix.latitude, fix.longitude, sample,
                                 referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels,
                                 size.width.toDouble(), size.height.toDouble(),
-                                cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
+                                frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
                             )
                             CameraRibbonPoint(center, leftWorld, rightWorld, sample.progressMeters, sample.occlusionAlpha)
                         }
@@ -687,11 +726,11 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             val distanceAlong = (a.progressMeters + b.progressMeters) * 0.5 - match.progressMeters
                             val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f) *
                                 minOf(a.occlusionAlpha, b.occlusionAlpha).coerceIn(0.05f, 1f) *
-                                if (gpsWeak) 0.48f else 1f
+                                if (frame.gpsWeak) 0.48f else 1f
                             val clippedQuad = projectArWorldPolygon(
                                 listOf(a.leftWorld, a.rightWorld, b.rightWorld, b.leftWorld),
                                 pose, focalPixels, size.width.toDouble(), size.height.toDouble(),
-                                0.5, cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
+                                0.5, frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
                             )
                             if (clippedQuad.size >= 3) {
                                 val quad = Path().apply {
@@ -790,6 +829,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx + 25f, size.height * 0.5f), androidx.compose.ui.geometry.Offset(cx + 42f, size.height * 0.5f), 3f)
                     drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f - 42f), androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f - 25f), 3f)
                     drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f + 25f), androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f + 42f), 3f)
+                    TerrainArDiagnostics.recordFrame((System.nanoTime() - frameStartNanos).coerceAtLeast(0L) / 1_000_000.0)
                 }
                 if (cameraError.isNotBlank()) {
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)

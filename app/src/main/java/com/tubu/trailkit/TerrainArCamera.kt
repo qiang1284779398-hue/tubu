@@ -175,8 +175,33 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             }.getOrDefault(0.0)
         } ?: 0.0
     }
-    val cameraPose = remember(magneticCameraPose, magneticDeclination) {
-        magneticCameraPose?.let { applyArMagneticDeclination(it, magneticDeclination) }
+    LaunchedEffect(location) {
+        val fix = location
+        if (fix != null && fix.hasBearing() && fix.hasSpeed() && fix.speed >= 1.0f) {
+            val course = fix.bearing.toDouble()
+            val previous = previousGpsCourse
+            stableGpsCourseCycles = if (previous != null &&
+                kotlin.math.abs(signedTurnAngle(previous, course)) <= 10.0
+            ) stableGpsCourseCycles + 1 else 1
+            previousGpsCourse = course
+        } else {
+            stableGpsCourseCycles = 0
+            previousGpsCourse = null
+        }
+    }
+    val cameraPose = remember(magneticCameraPose, magneticDeclination, location, stableGpsCourseCycles, gyroMagnitudeRadPerSec) {
+        magneticCameraPose?.let { magneticPose ->
+            val truePose = applyArMagneticDeclination(magneticPose, magneticDeclination)
+            val fix = location
+            if (fix != null && fix.hasBearing() && fix.hasSpeed()) {
+                val aligned = kotlin.math.abs(signedTurnAngle(truePose.headingDegrees, fix.bearing.toDouble())) <= 25.0
+                val corrected = fuseArGpsCourse(
+                    truePose.headingDegrees, fix.bearing.toDouble(), fix.speed.toDouble(),
+                    stableGpsCourseCycles, aligned, gyroMagnitudeRadPerSec > 0.6, 0.08
+                )
+                applyArMagneticDeclination(truePose, signedTurnAngle(truePose.headingDegrees, corrected))
+            } else truePose
+        }
     }
     val heading = (cameraPose?.headingDegrees ?: Double.NaN).toFloat()
     val pitch = (cameraPose?.pitchDegrees ?: Double.NaN).toFloat()
@@ -392,10 +417,28 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val listener = object : SensorEventListener {
             private val rotation = FloatArray(9)
             override fun onSensorChanged(event: SensorEvent) {
-                SensorManager.getRotationMatrixFromVector(rotation, event.values)
-                val rawPose = arCameraPoseFromRotationMatrix(rotation, windowManager.defaultDisplay.rotation)
-                magneticCameraPose = rawPose?.let(cameraPoseFilter::apply)
-                sensorReady = magneticCameraPose != null
+                when (event.sensor.type) {
+                    Sensor.TYPE_GYROSCOPE -> {
+                        gyroMagnitudeRadPerSec = kotlin.math.sqrt(
+                            event.values.take(3).sumOf { it.toDouble() * it.toDouble() }
+                        )
+                    }
+                    Sensor.TYPE_MAGNETIC_FIELD -> {
+                        magneticFieldMagnitudeMicroTesla = kotlin.math.sqrt(
+                            event.values.take(3).sumOf { it.toDouble() * it.toDouble() }
+                        )
+                    }
+                    Sensor.TYPE_ROTATION_VECTOR -> {
+                        SensorManager.getRotationMatrixFromVector(rotation, event.values)
+                        val rawPose = arCameraPoseFromRotationMatrix(rotation, windowManager.defaultDisplay.rotation)
+                        magneticCameraPose = rawPose?.let {
+                            cameraPoseFilter.applyAdaptive(
+                                it, gyroMagnitudeRadPerSec, magneticFieldMagnitudeMicroTesla, sensorAccuracy
+                            )
+                        }
+                        sensorReady = magneticCameraPose != null
+                    }
+                }
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
                 sensorAccuracy = accuracy

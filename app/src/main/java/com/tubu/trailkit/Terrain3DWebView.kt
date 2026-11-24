@@ -1,6 +1,18 @@
 package com.tubu.trailkit
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
+import android.os.Looper
 import android.os.SystemClock
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
@@ -16,10 +28,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -28,6 +45,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 internal fun Terrain3DDialog(
@@ -54,6 +74,8 @@ internal fun Terrain3DDialog(
     var status by remember { mutableStateOf("正在整理路线与航点数据…") }
     var selectedWaypoint by remember { mutableStateOf<JSONObject?>(null) }
     var walkingMode by remember { mutableStateOf(false) }
+    var fullscreen by remember { mutableStateOf(false) }
+    var navEnabled by remember { mutableStateOf(false) }
     val isWalkingMode by rememberUpdatedState(walkingMode)
     val webView = remember(context, projectId) { WebView(context) }
     DisposableEffect(tileCache, webView) {
@@ -72,7 +94,9 @@ internal fun Terrain3DDialog(
                 tileCache = tileCache,
                 onStatus = { status = it },
                 onWaypoint = { raw -> selectedWaypoint = runCatching { JSONObject(raw) }.getOrNull() },
-                onWalk = { walkingMode = true }
+                onWalk = { walkingMode = true },
+                onNavToggle = { enabled -> navEnabled = enabled },
+                onFullscreenToggle = { fullscreen = !fullscreen }
             )
         }
     }
@@ -100,6 +124,103 @@ internal fun Terrain3DDialog(
         } else {
             webView.onResume()
             webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.resume()", null)
+        }
+    }
+
+    // Navigation: while the page's nav toggle is on (and the native walk mode is
+    // not covering the lab), stream GPS fixes + a heading to the page. Heading
+    // prefers the GPS course while moving and falls back to the compass when
+    // standing still, so the on-map arrow points where the user faces.
+    DisposableEffect(navEnabled, walkingMode, webView) {
+        if (!navEnabled || walkingMode) return@DisposableEffect onDispose { }
+        val appContext = context.applicationContext
+        val fine = ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(appContext, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) {
+            status = "定位权限未开启：请在系统设置中允许 TrailKit 使用精确位置"
+            webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.navError('定位权限未开启，请在系统设置中允许 TrailKit 使用精确位置')", null)
+            return@DisposableEffect onDispose { }
+        }
+        val locationManager = appContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val sensorManager = appContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        var lastLocation: Location? = null
+        var compassDeg: Double? = null
+        var lastPushAt = 0L
+        fun push(force: Boolean) {
+            val loc = lastLocation ?: return
+            val now = SystemClock.elapsedRealtime()
+            if (!force && now - lastPushAt < 400) return
+            lastPushAt = now
+            val heading: Double? = when {
+                loc.hasBearing() && loc.speed >= 1.0f -> loc.bearing.toDouble()
+                else -> compassDeg
+            }
+            val headingArg = heading?.let { (((it % 360.0) + 360.0) % 360.0).toString() } ?: "null"
+            val script = "window.TerrainLab&&window.TerrainLab.setMyLocation(${loc.longitude},${loc.latitude},$headingArg,${loc.accuracy})"
+            webView.post { webView.evaluateJavascript(script, null) }
+        }
+        val locationListener = object : LocationListener {
+            override fun onLocationChanged(location: Location) { lastLocation = location; push(true) }
+            @Deprecated("Deprecated in Java") override fun onStatusChanged(provider: String?, providerStatus: Int, extras: Bundle?) { }
+            override fun onProviderEnabled(provider: String) { }
+            override fun onProviderDisabled(provider: String) { }
+        }
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 2f, locationListener, Looper.getMainLooper())
+            }
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 5f, locationListener, Looper.getMainLooper())
+            }
+            lastLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            push(true)
+            status = "导航定位已开启，正在等待 GPS 信号…"
+        } catch (error: SecurityException) {
+            status = "定位权限被系统拒绝"
+        }
+        val accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val magnetSensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
+        var gravity: FloatArray? = null
+        var geomagnetic: FloatArray? = null
+        var smoothSin = 0.0
+        var smoothCos = 1.0
+        var hasSmooth = false
+        val sensorListener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                when (event.sensor.type) {
+                    Sensor.TYPE_ACCELEROMETER -> gravity = event.values.clone()
+                    Sensor.TYPE_MAGNETIC_FIELD -> geomagnetic = event.values.clone()
+                }
+                val g = gravity
+                val m = geomagnetic
+                if (g != null && m != null) {
+                    val rotation = FloatArray(9)
+                    val orientation = FloatArray(3)
+                    if (SensorManager.getRotationMatrix(rotation, null, g, m)) {
+                        SensorManager.getOrientation(rotation, orientation)
+                        val azimuth = ((Math.toDegrees(orientation[0].toDouble()) % 360.0) + 360.0) % 360.0
+                        val rad = Math.toRadians(azimuth)
+                        if (!hasSmooth) {
+                            smoothSin = sin(rad); smoothCos = cos(rad); hasSmooth = true
+                        } else {
+                            smoothSin = smoothSin * 0.85 + sin(rad) * 0.15
+                            smoothCos = smoothCos * 0.85 + cos(rad) * 0.15
+                        }
+                        compassDeg = ((Math.toDegrees(atan2(smoothSin, smoothCos)) % 360.0) + 360.0) % 360.0
+                        push(false)
+                    }
+                }
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) { }
+        }
+        if (accelSensor != null && magnetSensor != null) {
+            sensorManager.registerListener(sensorListener, accelSensor, SensorManager.SENSOR_DELAY_UI)
+            sensorManager.registerListener(sensorListener, magnetSensor, SensorManager.SENSOR_DELAY_UI)
+        }
+        onDispose {
+            runCatching { locationManager.removeUpdates(locationListener) }
+            runCatching { sensorManager.unregisterListener(sensorListener) }
         }
     }
 
@@ -135,9 +256,33 @@ internal fun Terrain3DDialog(
 
     Dialog(
         onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        // decorFitsSystemWindows must stay true: with false the dialog window is
+        // taller than the visible display, which pushed the bottom status strip
+        // (and the web page's own bottom bar) off the bottom of the screen.
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)
     ) {
+        val dialogView = LocalView.current
+        val dialogWindow = remember(dialogView) {
+            var view: android.view.View? = dialogView
+            var found: android.view.Window? = null
+            while (view != null) {
+                if (view is DialogWindowProvider) { found = view.window; break }
+                view = view.parent as? android.view.View
+            }
+            found
+        }
+        LaunchedEffect(fullscreen, dialogWindow) {
+            val window = dialogWindow ?: return@LaunchedEffect
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            if (fullscreen) {
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            if (!fullscreen) {
             Surface(tonalElevation = 3.dp) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp),
@@ -150,6 +295,7 @@ internal fun Terrain3DDialog(
                     TextButton(onClick = { walkingMode = true }) { Text("原生行走") }
                     TextButton(onClick = onClose) { Text("关闭") }
                 }
+            }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 val readyBridge = bridge
@@ -229,8 +375,10 @@ internal fun Terrain3DDialog(
                     }
                 }
             }
+            if (!fullscreen) {
             Surface {
                 Text(status, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.bodySmall)
+            }
             }
         }
     }
@@ -245,7 +393,9 @@ private class TerrainLabBridge(
     private val tileCache: TerrainTileCache,
     private val onStatus: (String) -> Unit,
     private val onWaypoint: (String) -> Unit,
-    private val onWalk: () -> Unit
+    private val onWalk: () -> Unit,
+    private val onNavToggle: (Boolean) -> Unit,
+    private val onFullscreenToggle: () -> Unit
 ) {
     private val payloadDispatchStarted = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -281,6 +431,12 @@ private class TerrainLabBridge(
     }
     @JavascriptInterface fun onWalkRequested() {
         webView.post { onWalk() }
+    }
+    @JavascriptInterface fun onNavToggle(enabled: Boolean) {
+        webView.post { onNavToggle(enabled) }
+    }
+    @JavascriptInterface fun onFullscreenToggle() {
+        webView.post { onFullscreenToggle() }
     }
     @JavascriptInterface fun getCacheStats(): String = tileCache.statsJson()
 }

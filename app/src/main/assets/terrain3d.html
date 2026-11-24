@@ -47,6 +47,7 @@ button:active{background:#39664d}
    <button id="layers">图层：卫星+晕渲</button><button id="contours">等高线：关</button>
   </div>
   <div class="row"><button id="walk">原生行走模式</button></div>
+  <div class="row"><button id="nav">导航：关</button><button id="fullscreen">全屏</button></div>
   <div id="readout" class="panel">Z -- · 方位 --° · 俯仰 --°</div>
  </div>
 </div>
@@ -103,7 +104,8 @@ button:active{background:#39664d}
    'route-line':{type:'geojson',data:empty},
    'route-points':{type:'geojson',data:empty},
    waypoints:{type:'geojson',data:empty},
-   'selected-waypoint':{type:'geojson',data:empty}
+   'selected-waypoint':{type:'geojson',data:empty},
+   'my-location':{type:'geojson',data:empty}
   },
   layers:[
    {id:'satellite',type:'raster',source:'imagery',paint:{'raster-opacity':1}},
@@ -112,9 +114,12 @@ button:active{background:#39664d}
    {id:'route-ribbon-fill',type:'fill',source:'route-ribbon',filter:['==',['get','lod'],'overview'],paint:{'fill-color':'#ff9a3c','fill-opacity':.32}},
    {id:'route-casing',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#171d19','line-width':7,'line-opacity':.92}},
    {id:'route-main',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffad43','line-width':4,'line-opacity':1}},
-   {id:'route-endpoints',type:'symbol',source:'route-points',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-size':.72,'symbol-sort-key':0}},
-   {id:'waypoint-labels',type:'symbol',source:'waypoints',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.62,'symbol-sort-key':['get','priority']}},
-   {id:'selected-waypoint-label',type:'symbol',source:'selected-waypoint',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.78,'symbol-sort-key':-1}}
+   {id:'route-endpoints',type:'symbol',source:'route-points',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-size':.9,'symbol-sort-key':0}},
+   {id:'waypoint-labels',type:'symbol',source:'waypoints',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.72,'symbol-sort-key':['get','priority']}},
+   {id:'selected-waypoint-label',type:'symbol',source:'selected-waypoint',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.78,'symbol-sort-key':-1}},
+   {id:'my-location-halo',type:'circle',source:'my-location',paint:{'circle-radius':12,'circle-color':'#ffffff','circle-opacity':.92}},
+   {id:'my-location-arrow',type:'symbol',source:'my-location',filter:['==',['get','hasHeading'],true],layout:{'icon-image':'nav-arrow','icon-size':.8,'icon-rotate':['get','bearing'],'icon-rotation-alignment':'map','icon-allow-overlap':true,'icon-ignore-placement':true}},
+   {id:'my-location-core',type:'circle',source:'my-location',paint:{'circle-radius':7,'circle-color':'#2f7bff','circle-stroke-color':'#ffffff','circle-stroke-width':2.5}}
   ]
  };
  try{
@@ -164,6 +169,8 @@ button:active{background:#39664d}
    step('手势控制',()=>{map.touchZoomRotate.enable();map.touchPitch.enable();map.doubleClickZoom.enable();});
    // Keep start/end labels above selected and ordinary waypoint labels.
    step('起终点图层优先级',()=>map.moveLayer('route-endpoints'));
+   step('导航箭头图标',()=>{if(!map.hasImage('nav-arrow'))map.addImage('nav-arrow',navArrowSprite(),{pixelRatio:2});});
+   step('导航标记置顶',()=>{map.moveLayer('my-location-halo');map.moveLayer('my-location-arrow');map.moveLayer('my-location-core');});
    step('航点点击事件',()=>map.on('click','waypoint-labels',e=>{
     const feature=e.features&&e.features[0];if(!feature)return;
     selectedWaypointId=String((feature.properties||{}).id||feature.id||'');
@@ -218,6 +225,17 @@ button:active{background:#39664d}
   return ctxCanvas;
  }
  function addSprite(id,text,kind){if(map.hasImage(id))map.removeImage(id);map.addImage(id,labelSprite(text,kind),{pixelRatio:2});}
+ function navArrowSprite(){
+  const scale=2,size=96,ctxCanvas=document.createElement('canvas'),ctx=ctxCanvas.getContext('2d');
+  ctxCanvas.width=size*scale;ctxCanvas.height=size*scale;ctx.scale(scale,scale);
+  // Navigation arrow pointing straight up (north at bearing 0); the map rotates
+  // it by the heading via icon-rotate with icon-rotation-alignment 'map'.
+  ctx.beginPath();
+  ctx.moveTo(48,4);ctx.lineTo(80,86);ctx.lineTo(48,66);ctx.lineTo(16,86);ctx.closePath();
+  ctx.lineJoin='round';ctx.lineWidth=5;ctx.strokeStyle='#ffffff';ctx.stroke();
+  ctx.fillStyle='#2f7bff';ctx.fill();
+  return ctxCanvas;
+ }
  function selectLod(){
   if(!map.getLayer('route-main'))return;
   const z=map.getZoom();const lod=z<9?'overview':z<12?'mid':z<15?'near':'full';
@@ -331,6 +349,23 @@ button:active{background:#39664d}
   if(contoursVisible)queueContours();
  });
  document.getElementById('walk').addEventListener('click',()=>{try{TrailKitBridge.onWalkRequested();}catch(_){}});
+ let navOn=false,navFollowing=false,navFixSeen=false;
+ try{map.on('dragstart',()=>{navFollowing=false;});}catch(_){}
+ try{map.getCanvas().addEventListener('touchstart',()=>{navFollowing=false;},{passive:true});}catch(_){}
+ document.getElementById('nav').addEventListener('click',()=>{
+  navOn=!navOn;navFollowing=navOn;navFixSeen=false;
+  document.getElementById('nav').textContent='导航：'+(navOn?'开':'关');
+  try{TrailKitBridge.onNavToggle(navOn);}catch(_){}
+  if(!navOn){try{map.getSource('my-location').setData(empty);}catch(_){}}
+  else say('导航已开启，正在定位…');
+ });
+ let fullscreenOn=false;
+ document.getElementById('fullscreen').addEventListener('click',()=>{
+  fullscreenOn=!fullscreenOn;
+  document.getElementById('fullscreen').textContent=fullscreenOn?'退出全屏':'全屏';
+  try{TrailKitBridge.onFullscreenToggle();}catch(_){}
+  setTimeout(forceSize,350);setTimeout(forceSize,900);
+ });
  document.getElementById('exSlider').addEventListener('input',event=>{
   const value=Number(event.target.value);document.getElementById('exValue').textContent=value.toFixed(2)+'×';
   map.setTerrain({source:'dem',exaggeration:value});
@@ -387,6 +422,21 @@ button:active{background:#39664d}
    if(map&&map.getSource('selected-waypoint'))map.getSource('selected-waypoint').setData(empty);
    if(map&&map.getLayer('waypoint-labels'))map.setFilter('waypoint-labels',null);
   },
+  setMyLocation(lon,lat,heading,accuracy){
+   try{
+    if(!map||!map.getSource('my-location'))return;
+    if(!map.hasImage('nav-arrow'))map.addImage('nav-arrow',navArrowSprite(),{pixelRatio:2});
+    const hasHeading=typeof heading==='number'&&isFinite(heading);
+    map.getSource('my-location').setData({type:'FeatureCollection',features:[{type:'Feature',properties:{bearing:hasHeading?heading:0,hasHeading},geometry:{type:'Point',coordinates:[lon,lat]}}]});
+    if(navOn&&navFollowing){
+     const target={center:[lon,lat],duration:600};
+     if(!navFixSeen&&map.getZoom()<14.5)target.zoom=15;
+     map.easeTo(target);
+     navFixSeen=true;
+    }
+   }catch(e){say('定位更新异常：'+((e&&e.message)||e),true);}
+  },
+  navError(message){say(String(message||'定位不可用'),true);},
   pause(){if(map)map.stop();},
   resume(){if(map){map.resize();map.triggerRepaint();}},
   getCacheStats(){try{return TrailKitBridge.getCacheStats();}catch(_){return '{}';}}

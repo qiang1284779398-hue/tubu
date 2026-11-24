@@ -129,25 +129,22 @@ button:active{background:#39664d}
   try{
    step('DEM 地形',()=>map.setTerrain({source:'dem',exaggeration:1.35}));
    step('手势控制',()=>{map.touchZoomRotate.enable();map.touchPitch.enable();map.doubleClickZoom.enable();});
-   map.addLayer({id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{
-    'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d',
-    'hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315
-   }});
    // Keep start/end labels above selected and ordinary waypoint labels.
-   map.moveLayer('route-endpoints');
-   map.on('click','waypoint-labels',e=>{
+   step('起终点图层优先级',()=>map.moveLayer('route-endpoints'));
+   step('航点点击事件',()=>map.on('click','waypoint-labels',e=>{
     const feature=e.features&&e.features[0];if(!feature)return;
     selectedWaypointId=String((feature.properties||{}).id||feature.id||'');
     map.getSource('selected-waypoint').setData({type:'FeatureCollection',features:[feature]});
     map.setFilter('waypoint-labels',['!=',['get','id'],selectedWaypointId]);
     try{TrailKitBridge.onWaypointClick(JSON.stringify(feature.properties||{}));}catch(_){}
-   });
-   map.on('mouseenter','waypoint-labels',()=>map.getCanvas().style.cursor='pointer');
-   map.on('mouseleave','waypoint-labels',()=>map.getCanvas().style.cursor='');
-   map.on('moveend',()=>{updateReadout();if(contoursVisible)queueContours();});
-   map.on('zoomend',()=>{updateReadout();selectLod();if(contoursVisible)queueContours();});
-   map.on('rotateend',updateReadout);map.on('pitchend',updateReadout);
-   map.on('idle',()=>{
+   }));
+   step('航点悬停进入事件',()=>map.on('mouseenter','waypoint-labels',()=>map.getCanvas().style.cursor='pointer'));
+   step('航点悬停离开事件',()=>map.on('mouseleave','waypoint-labels',()=>map.getCanvas().style.cursor=''));
+   step('地图平移结束事件',()=>map.on('moveend',()=>{updateReadout();if(contoursVisible)queueContours();}));
+   step('地图缩放结束事件',()=>map.on('zoomend',()=>{updateReadout();selectLod();if(contoursVisible)queueContours();}));
+   step('地图旋转结束事件',()=>map.on('rotateend',updateReadout));
+   step('地图俯仰结束事件',()=>map.on('pitchend',updateReadout));
+   step('地图空闲与瓦片诊断事件',()=>map.on('idle',()=>{
     if(!loaded)return;
     let cacheText='缓存统计暂不可用';
     let missingDem=0,missingImagery=0;
@@ -161,8 +158,8 @@ button:active{background:#39664d}
     }else{
      say('三维地形已就绪 · DEM z14 · '+cacheText);
     }
-   });
-   loaded=true;updateReadout();say('地图样式初始化结束，等待路线数据…');
+   }));
+   loaded=true;step('相机读数更新',updateReadout);say('地图样式初始化结束，等待路线数据…');
   }catch(e){say('地图初始化主流程异常：'+((e&&e.stack)||e),true);}
   finally{
    loaded=true;
@@ -201,11 +198,12 @@ button:active{background:#39664d}
  function fitAll(){
   const full=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full');
   const coords=full&&full.geometry&&full.geometry.coordinates;
-  if(!coords||coords.length<2){say('当前项目没有可显示的有效 GPX 轨迹。',true);return;}
+  if(!coords||coords.length<2){say('当前项目没有可显示的有效 GPX 轨迹。',true);return false;}
   let west=Infinity,south=Infinity,east=-Infinity,north=-Infinity;
   coords.forEach(p=>{west=Math.min(west,p[0]);east=Math.max(east,p[0]);south=Math.min(south,p[1]);north=Math.max(north,p[1]);});
   if(west===east){west-=.001;east+=.001;}if(south===north){south-=.001;north+=.001;}
   map.fitBounds([[west,south],[east,north]],{padding:{top:85,bottom:85,left:45,right:45},duration:650,maxZoom:14});
+  return true;
  }
  function updateContours(){
   if(!contoursVisible||!map||!map.getSource('terrain-contours'))return;
@@ -245,36 +243,43 @@ button:active{background:#39664d}
   document.getElementById('layers').textContent='图层：'+['卫星','晕渲','卫星+晕渲'][layerMode];
  }
  function setData(raw){
+  const step=(name,fn)=>{try{fn();say('路线数据步骤完成：'+name);}catch(e){say('路线数据步骤异常 ['+name+']：'+((e&&e.stack)||e),true);}};
+  let data;
   try{
    say('路线 setData：开始解析 JSON…');
-   const data=typeof raw==='string'?JSON.parse(raw):raw;
+   data=typeof raw==='string'?JSON.parse(raw):raw;
    if(!data||!data.routeLine||!data.routeRibbon||!data.waypoints)throw new Error('路线数据缺少 routeLine/routeRibbon/waypoints');
-   say('路线 setData：JSON 解析完成，准备写入 GeoJSON 源…');
-   routeLineData=data.routeLine||empty;routeRibbonData=data.routeRibbon||empty;waypointData=data.waypoints||empty;
-   if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('route-points')||!map.getSource('waypoints')||!map.getSource('selected-waypoint')){
-    pendingData=raw;say('路线数据已接收，等待地图样式与本地数据源就绪…');return;
-   }
-   map.getSource('route-line').setData(routeLineData);
-   map.getSource('route-ribbon').setData(routeRibbonData);
-   say('路线 setData：轨迹线与缎带已提交，正在注册航点图标…');
-   const endpoints=[];
-   if(Array.isArray(data.start))endpoints.push({type:'Feature',properties:{spriteId:'endpoint-start'},geometry:{type:'Point',coordinates:data.start}});
-   if(Array.isArray(data.end))endpoints.push({type:'Feature',properties:{spriteId:'endpoint-end'},geometry:{type:'Point',coordinates:data.end}});
-   addSprite('endpoint-start','起点','endpoint');addSprite('endpoint-end','终点','endpoint');
-   map.getSource('route-points').setData({type:'FeatureCollection',features:endpoints});
-   waypointData.features.forEach(feature=>{
-    const p=feature.properties||{};const name=(p.name||'途经点').slice(0,24);
-    addSprite(p.spriteId||('wp-'+p.id),name,'waypoint');
-   });
-   map.getSource('waypoints').setData(waypointData);
-   say('路线 setData：航点已提交，正在执行全线 fitBounds…');
+   if(!Array.isArray(data.routeLine.features)||!Array.isArray(data.routeRibbon.features)||!Array.isArray(data.waypoints.features))throw new Error('路线 GeoJSON features 格式错误');
+  }catch(e){say('路线 setData 解析异常：'+((e&&e.stack)||e),true);return;}
+  routeLineData=data.routeLine;routeRibbonData=data.routeRibbon;waypointData=data.waypoints;
+  if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('route-points')||!map.getSource('waypoints')||!map.getSource('selected-waypoint')){
+   pendingData=raw;say('路线数据已接收，等待地图样式与本地数据源就绪…');return;
+  }
+  step('轨迹线 GeoJSON',()=>map.getSource('route-line').setData(routeLineData));
+  step('轨迹缎带 GeoJSON',()=>map.getSource('route-ribbon').setData(routeRibbonData));
+  const endpoints=[];
+  if(Array.isArray(data.start)&&data.start.length>=2)endpoints.push({type:'Feature',properties:{spriteId:'endpoint-start'},geometry:{type:'Point',coordinates:data.start}});
+  if(Array.isArray(data.end)&&data.end.length>=2)endpoints.push({type:'Feature',properties:{spriteId:'endpoint-end'},geometry:{type:'Point',coordinates:data.end}});
+  step('起点图标注册',()=>addSprite('endpoint-start','起点','endpoint'));
+  step('终点图标注册',()=>addSprite('endpoint-end','终点','endpoint'));
+  step('起终点 GeoJSON',()=>map.getSource('route-points').setData({type:'FeatureCollection',features:endpoints}));
+  let spriteSuccess=0,spriteFailure=0;
+  waypointData.features.forEach((feature,index)=>{
+   const p=feature.properties||{},name=(p.name||'途经点').slice(0,24),id=p.spriteId||('wp-'+p.id);
+   try{addSprite(id,name,'waypoint');spriteSuccess++;}
+   catch(e){spriteFailure++;say('航点图标异常 ['+name+']：'+((e&&e.stack)||e),true);}
+  });
+  say('航点图标注册：成功 '+spriteSuccess+' · 失败 '+spriteFailure);
+  step('途经点 GeoJSON',()=>map.getSource('waypoints').setData(waypointData));
+  step('清除选中航点状态',()=>{
    selectedWaypointId=null;
    map.getSource('selected-waypoint').setData(empty);
    map.setFilter('waypoint-labels',null);
-   selectLod();fitAll();
-   const rawCount=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full')?.geometry.coordinates.length||0;
-   say('路线 setData 完成 · '+rawCount+' 个轨迹点 · '+waypointData.features.length+' 个途经点 · 已执行全线定位');
-  }catch(e){const detail=(e&&e.stack)||((e&&e.message)||String(e));say('路线 setData 异常：'+detail,true);}
+  });
+  step('路线 LOD 切换',selectLod);
+  step('全线相机定位',()=>{if(!fitAll())throw new Error('当前项目没有可显示的有效 GPX 轨迹');});
+  const rawCount=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full')?.geometry.coordinates.length||0;
+  say('路线 setData 结束 · '+rawCount+' 个轨迹点 · '+waypointData.features.length+' 个途经点 · 图标失败 '+spriteFailure+' · 已尝试全线定位');
  }
  document.getElementById('fit').addEventListener('click',fitAll);
  document.getElementById('north').addEventListener('click',()=>map.easeTo({bearing:0,duration:420}));

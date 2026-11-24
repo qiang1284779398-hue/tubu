@@ -4,8 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.concurrent.Executors
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -23,24 +23,33 @@ class TerrainTileCacheTest {
     }
 
     @Test fun sameUrlRequestsShareOneInFlightDownload() {
-        val executor = Executors.newFixedThreadPool(4)
+        val loaderExecutor = Executors.newFixedThreadPool(4)
+        val callers = Executors.newFixedThreadPool(8)
         try {
             val coalescer = TerrainRequestCoalescer()
             val count = AtomicInteger()
-            val results = (0 until 8).map {
-                executor.submit<ByteArray?> {
-                    coalescer.load("same-tile", executor) {
+            val ready = CountDownLatch(8)
+            val start = CountDownLatch(1)
+            val futures = (0 until 8).map {
+                callers.submit<ByteArray?> {
+                    ready.countDown()
+                    start.await(2, TimeUnit.SECONDS)
+                    coalescer.load("same-tile", loaderExecutor) {
                         count.incrementAndGet()
-                        Thread.sleep(80)
+                        Thread.sleep(500)
                         byteArrayOf(1, 2, 3)
                     }
                 }
-            }.map { it.get() }
+            }
+            assertTrue(ready.await(2, TimeUnit.SECONDS))
+            start.countDown()
+            val values = futures.map { it.get() }
             assertEquals(1, count.get())
             assertEquals(8, values.size)
             assertEquals(3, values.first()?.size)
         } finally {
-            executor.shutdownNow()
+            callers.shutdownNow()
+            loaderExecutor.shutdownNow()
         }
     }
 }

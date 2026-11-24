@@ -3,6 +3,46 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+private const val TERRAIN_MAPLIBRE_VERSION = "5.6.2"
+
+val ensureTerrainMapLibreAssets by tasks.registering {
+    val assetDir = file("src/main/assets")
+    val jsFile = assetDir.resolve("maplibre-gl.js")
+    val cssFile = assetDir.resolve("maplibre-gl.css")
+    outputs.files(jsFile, cssFile)
+    doLast {
+        assetDir.mkdirs()
+        listOf(
+            "maplibre-gl.js" to jsFile,
+            "maplibre-gl.css" to cssFile
+        ).forEach { (name, target) ->
+            if (!target.isFile || target.length() < 1024L) {
+                val url = java.net.URL("https://unpkg.com/maplibre-gl@$TERRAIN_MAPLIBRE_VERSION/dist/$name")
+                val connection = url.openConnection().apply {
+                    connectTimeout = 15_000
+                    readTimeout = 45_000
+                }
+                val temporary = assetDir.resolve("$name.download")
+                try {
+                    connection.getInputStream().use { input ->
+                        temporary.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    check(temporary.length() >= 1024L) { "Downloaded MapLibre asset is empty: $name" }
+                    check(temporary.renameTo(target) || temporary.copyTo(target, overwrite = true).let { temporary.delete(); true }) {
+                        "Cannot install MapLibre asset: $name"
+                    }
+                } finally {
+                    temporary.delete()
+                }
+            }
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(ensureTerrainMapLibreAssets)
+}
 android {
     namespace = "com.tubu.trailkit"
     compileSdk = 35

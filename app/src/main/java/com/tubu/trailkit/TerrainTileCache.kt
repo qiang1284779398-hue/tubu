@@ -56,7 +56,7 @@ internal class TerrainTileCache(context: Context) {
         DEM("dem", 256L * 1024L * 1024L),
         IMAGERY("imagery", 512L * 1024L * 1024L)
     }
-    private val root = File(context.cacheDir, "terrain_tile_cache")
+    private val root = File(context.filesDir, "terrain_tile_cache")
     private val memory = TerrainTileMemoryStore(64L * 1024L * 1024L)
     private val coalescer = TerrainRequestCoalescer()
     private val executor = Executors.newFixedThreadPool(4) { runnable ->
@@ -71,13 +71,21 @@ internal class TerrainTileCache(context: Context) {
     private val imageryMisses = AtomicLong()
     private val demBytes = AtomicLong()
     private val imageryBytes = AtomicLong()
+    private val demOfflineMissing = AtomicLong()
+    private val imageryOfflineMissing = AtomicLong()
+    private val demDownloads = AtomicLong()
+    private val imageryDownloads = AtomicLong()
     private val appContext = context.applicationContext
 
     fun intercept(url: String): WebResourceResponse? {
         val kind = kindFor(url) ?: return null
         val key = sha256(url)
-        memory.get(key)?.let { recordHit(kind); return response(it, 200, "OK") }
         val diskFile = File(File(root, kind.folder), "$key.tile")
+        memory.get(key)?.let {
+            diskFile.setLastModified(System.currentTimeMillis())
+            recordHit(kind)
+            return response(it, 200, "OK")
+        }
         if (diskFile.isFile && diskFile.length() > 0L) {
             val bytes = runCatching { diskFile.readBytes() }.getOrNull()
             if (bytes != null && bytes.isNotEmpty()) {
@@ -88,8 +96,15 @@ internal class TerrainTileCache(context: Context) {
             }
         }
         recordMiss(kind)
-        if (!hasInternet()) return missingResponse()
-        val bytes = coalescer.load(url, executor) { download(url, kind, key) } ?: return missingResponse()
+        if (!hasInternet()) {
+            recordOfflineMissing(kind)
+            return missingResponse()
+        }
+        val bytes = coalescer.load(url, executor) { download(url, kind, key) }
+        if (bytes == null) {
+            recordOfflineMissing(kind)
+            return missingResponse()
+        }
         memory.put(key, bytes)
         return response(bytes, 200, "OK")
     }
@@ -122,6 +137,7 @@ internal class TerrainTileCache(context: Context) {
                 val bytes = result.body?.bytes() ?: return null
                 if (bytes.isEmpty() || bytes.size > 4 * 1024 * 1024) return null
                 writeDisk(kind, key, bytes)
+                recordDownload(kind)
                 bytes
             }
         } catch (_: Exception) { null }
@@ -155,9 +171,15 @@ internal class TerrainTileCache(context: Context) {
     }
     private fun recordHit(kind: Kind) { if (kind == Kind.DEM) demHits.incrementAndGet() else imageryHits.incrementAndGet() }
     private fun recordMiss(kind: Kind) { if (kind == Kind.DEM) demMisses.incrementAndGet() else imageryMisses.incrementAndGet() }
+    private fun recordOfflineMissing(kind: Kind) {
+        if (kind == Kind.DEM) demOfflineMissing.incrementAndGet() else imageryOfflineMissing.incrementAndGet()
+    }
+    private fun recordDownload(kind: Kind) {
+        if (kind == Kind.DEM) demDownloads.incrementAndGet() else imageryDownloads.incrementAndGet()
+    }
 
     fun statsJson(): String =
-        """{"dem":{"hits":${demHits.get()},"misses":${demMisses.get()},"bytesWritten":${demBytes.get()}},"imagery":{"hits":${imageryHits.get()},"misses":${imageryMisses.get()},"bytesWritten":${imageryBytes.get()}},"memoryBytes":${memory.sizeBytes()},"memoryEntries":${memory.sizeEntries()}}"""
+        """{"dem":{"hits":${demHits.get()},"misses":${demMisses.get()},"offlineMissing":${demOfflineMissing.get()},"downloads":${demDownloads.get()},"bytesWritten":${demBytes.get()}},"imagery":{"hits":${imageryHits.get()},"misses":${imageryMisses.get()},"offlineMissing":${imageryOfflineMissing.get()},"downloads":${imageryDownloads.get()},"bytesWritten":${imageryBytes.get()}},"memoryBytes":${memory.sizeBytes()},"memoryEntries":${memory.sizeEntries()}}"""
 
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }

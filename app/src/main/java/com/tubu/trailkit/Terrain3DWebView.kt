@@ -5,6 +5,7 @@ import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -53,6 +54,7 @@ internal fun Terrain3DDialog(
     var status by remember { mutableStateOf("正在启动 MapLibre 三维地形…") }
     var selectedWaypoint by remember { mutableStateOf<JSONObject?>(null) }
     var walkingMode by remember { mutableStateOf(false) }
+    val isWalkingMode by rememberUpdatedState(walkingMode)
     val webView = remember(context) { WebView(context) }
     val bridge = remember(webView, payload) {
         TerrainLabBridge(
@@ -83,8 +85,12 @@ internal fun Terrain3DDialog(
                     webView.onPause()
                 }
                 Lifecycle.Event.ON_START -> {
-                    webView.onResume()
-                    webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.resume()", null)
+                    if (isWalkingMode) {
+                        webView.onPause()
+                    } else {
+                        webView.onResume()
+                        webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.resume()", null)
+                    }
                 }
                 else -> Unit
             }
@@ -93,6 +99,7 @@ internal fun Terrain3DDialog(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             webView.stopLoading()
+            webView.onPause()
             webView.removeJavascriptInterface("TrailKitBridge")
             webView.loadUrl("about:blank")
             webView.destroy()
@@ -134,10 +141,16 @@ internal fun Terrain3DDialog(
                             settings.javaScriptCanOpenWindowsAutomatically = false
                             addJavascriptInterface(bridge, "TrailKitBridge")
                             webViewClient = object : androidx.webkit.WebViewClientCompat() {
-                                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest) =
-                                    tileCache.intercept(request.url.toString())
-                                        ?: assetLoader.shouldInterceptRequest(request.url)
+                                override fun shouldInterceptRequest(
+                                    view: WebView?,
+                                    request: WebResourceRequest
+                                ): WebResourceResponse? {
+                                    if (request.method.equals("GET", ignoreCase = true)) {
+                                        tileCache.intercept(request.url.toString())?.let { return it }
+                                    }
+                                    return assetLoader.shouldInterceptRequest(request.url)
                                         ?: super.shouldInterceptRequest(view, request)
+                                }
                             }
                             webChromeClient = object : WebChromeClient() {
                                 override fun onConsoleMessage(message: ConsoleMessage): Boolean {
@@ -162,7 +175,10 @@ internal fun Terrain3DDialog(
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(waypoint.optString("name", "途经点"), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                                TextButton(onClick = { selectedWaypoint = null }) { Text("收起") }
+                                TextButton(onClick = {
+                                    selectedWaypoint = null
+                                    webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.clearSelectedWaypoint()", null)
+                                }) { Text("收起") }
                             }
                             val description = waypoint.optString("description")
                             if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodyMedium)
@@ -190,12 +206,24 @@ private class TerrainLabBridge(
     private val onWaypoint: (String) -> Unit,
     private val onWalk: () -> Unit
 ) {
+    private val payloadDispatchStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+
     @JavascriptInterface fun onReady() {
+        if (!payloadDispatchStarted.compareAndSet(false, true)) return
         webView.post {
+            // Keep each WebView IPC message comfortably below Binder transaction limits.
+            val chunks = payload.chunked(48 * 1024)
+            fun sendChunk(index: Int) {
+                if (index >= chunks.size) {
+                    webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.finishDataTransfer()", null)
+                    return
+                }
+                val script = "window.TerrainLab&&window.TerrainLab.appendDataChunk($index,${JSONObject.quote(chunks[index])})"
+                webView.evaluateJavascript(script) { sendChunk(index + 1) }
+            }
             webView.evaluateJavascript(
-                "window.TerrainLab&&window.TerrainLab.setData(${JSONObject.quote(payload)})",
-                null
-            )
+                "window.TerrainLab&&window.TerrainLab.beginDataTransfer(${chunks.size})"
+            ) { sendChunk(0) }
         }
     }
     @JavascriptInterface fun onStatus(message: String) {
@@ -206,9 +234,6 @@ private class TerrainLabBridge(
     }
     @JavascriptInterface fun onWalkRequested() {
         webView.post { onWalk() }
-    }
-    @JavascriptInterface fun onViewportChanged(zoom: Double, bearing: Double, pitch: Double) {
-        webView.post { onStatus("视角：z${"%.1f".format(zoom)} · 方位 ${bearing.toInt()}° · 俯仰 ${pitch.toInt()}°") }
     }
     @JavascriptInterface fun getCacheStats(): String = tileCache.statsJson()
 }

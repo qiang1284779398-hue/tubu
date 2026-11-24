@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>TrailKit 3D Terrain Lab</title>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css">
+<link rel="stylesheet" href="maplibre-gl.css">
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
@@ -52,17 +52,18 @@ button:active{background:#39664d}
  <label id="exaggeration" class="panel">地形夸张 <span id="exValue">1.35×</span><input id="exSlider" type="range" min="1" max="2" step="0.05" value="1.35"></label>
 </div>
 <div id="attrib">© Esri World Imagery · AWS Terrain Tiles</div>
-<script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
+<script src="maplibre-gl.js"></script>
 <script>
 (function(){
  'use strict';
  const status=document.getElementById('status');
  const readout=document.getElementById('readout');
+ let transferChunks=null;
  const say=(message,error)=>{status.textContent=message;status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}};
- if(!window.maplibregl){say('MapLibre JS 加载失败。首次启动需要网络加载地图引擎。',true);return;}
+ if(!window.maplibregl){say('MapLibre 本地引擎未能加载，请检查 APK 资源包。',true);return;}
  const empty={type:'FeatureCollection',features:[]};
  let routeLineData=empty,routeRibbonData=empty,waypointData=empty;
- let map=null,loaded=false,contoursVisible=false,layerMode=2,contourTimer=0;
+ let map=null,loaded=false,contoursVisible=false,layerMode=2,contourTimer=0,selectedWaypointId=null;
  const mapStyle={
   version:8,
   sources:{
@@ -75,7 +76,8 @@ button:active{background:#39664d}
   map=new maplibregl.Map({
    container:'map',style:mapStyle,center:[98.88,28.45],zoom:10.5,pitch:58,bearing:-18,maxPitch:75,minZoom:4,maxZoom:18,
    attributionControl:true,hash:false,failIfMajorPerformanceCaveat:false,preserveDrawingBuffer:false,
-   dragPan:{linearity:.18,maxSpeed:1200,deceleration:2500}
+   touchZoomRotate:true,touchPitch:true,doubleClickZoom:true,
+   dragPan:{linearity:.18,maxSpeed:1100,deceleration:2600}
   });
  }catch(e){say('地图初始化失败：'+(e.message||e),true);return;}
  map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-left');
@@ -87,6 +89,7 @@ button:active{background:#39664d}
  map.on('load',()=>{
   try{
    map.setTerrain({source:'dem',exaggeration:1.35});
+   map.touchZoomRotate.enable();map.touchPitch.enable();map.doubleClickZoom.enable();
    map.addLayer({id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{
     'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d',
     'hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315
@@ -109,8 +112,17 @@ button:active{background:#39664d}
     'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.62,
     'symbol-sort-key':['get','priority']
    }});
+   map.addSource('selected-waypoint',{type:'geojson',data:empty});
+   map.addLayer({id:'selected-waypoint-label',type:'symbol',source:'selected-waypoint',layout:{
+    'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,
+    'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.78,
+    'symbol-sort-key':-1
+   }});
    map.on('click','waypoint-labels',e=>{
     const feature=e.features&&e.features[0];if(!feature)return;
+    selectedWaypointId=String((feature.properties||{}).id||feature.id||'');
+    map.getSource('selected-waypoint').setData({type:'FeatureCollection',features:[feature]});
+    map.setFilter('waypoint-labels',['!=',['get','id'],selectedWaypointId]);
     try{TrailKitBridge.onWaypointClick(JSON.stringify(feature.properties||{}));}catch(_){}
    });
    map.on('mouseenter','waypoint-labels',()=>map.getCanvas().style.cursor='pointer');
@@ -121,11 +133,17 @@ button:active{background:#39664d}
    map.on('idle',()=>{
     if(!loaded)return;
     let cacheText='缓存统计暂不可用';
+    let missingDem=0,missingImagery=0;
     try{
      const c=JSON.parse(TrailKitBridge.getCacheStats());
-     cacheText='DEM 命中 '+c.dem.hits+' / '+c.dem.misses+' · 影像命中 '+c.imagery.hits+' / '+c.imagery.misses;
+     missingDem=c.dem.offlineMissing||0;missingImagery=c.imagery.offlineMissing||0;
+     cacheText='DEM 命中 '+c.dem.hits+' / 未命中 '+c.dem.misses+' · 卫星命中 '+c.imagery.hits+' / 未命中 '+c.imagery.misses;
     }catch(_){}
-    say('三维地形已就绪 · DEM z14 · '+cacheText);
+    if(missingDem+missingImagery>0){
+     say('瓦片缺失或网络获取失败：DEM '+missingDem+' 张、卫星影像 '+missingImagery+' 张。请联网浏览该区域完成缓存，再尝试离线使用。',true);
+    }else{
+     say('三维地形已就绪 · DEM z14 · '+cacheText);
+    }
    });
    loaded=true;updateReadout();say('地形引擎已就绪，等待原生路线数据…');
    try{TrailKitBridge.onReady();}catch(_){}
@@ -155,7 +173,6 @@ button:active{background:#39664d}
  function updateReadout(){
   if(!map)return;
   readout.textContent='Z '+map.getZoom().toFixed(1)+' · 方位 '+Math.round((map.getBearing()+360)%360)+'° · 俯仰 '+Math.round(map.getPitch())+'°';
-  try{TrailKitBridge.onViewportChanged(map.getZoom(),map.getBearing(),map.getPitch());}catch(_){}
  }
  function fitAll(){
   const full=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full');
@@ -219,6 +236,9 @@ button:active{background:#39664d}
     addSprite(p.spriteId||('wp-'+p.id),name,'waypoint');
    });
    map.getSource('waypoints').setData(waypointData);
+   selectedWaypointId=null;
+   map.getSource('selected-waypoint').setData(empty);
+   map.setFilter('waypoint-labels',null);
    selectLod();fitAll();
    say('路线载入完成 · '+(routeLineData.features.find(f=>f.properties.lod==='full')?.geometry.coordinates.length||0)+' 个原始轨迹点 · '+waypointData.features.length+' 个途经点');
   }catch(e){say('路线数据转换失败：'+(e.message||e),true);}
@@ -241,8 +261,33 @@ button:active{background:#39664d}
   if(document.hidden){if(map)map.stop();}
   else if(map){map.resize();map.triggerRepaint();}
  });
+ function beginDataTransfer(count){
+  if(!Number.isInteger(count)||count<1||count>2048)throw new Error('路线数据分块数量无效');
+  transferChunks=new Array(count);
+ }
+ function appendDataChunk(index,chunk){
+  if(!transferChunks||index<0||index>=transferChunks.length)return;
+  transferChunks[index]=String(chunk);
+ }
+ function finishDataTransfer(){
+  let valid=!!transferChunks;
+  if(valid){
+   for(let i=0;i<transferChunks.length;i++){
+    if(typeof transferChunks[i]!=='string'){valid=false;break;}
+   }
+  }
+  if(!valid){
+   transferChunks=null;say('路线数据传输不完整，请重新打开三维地形。',true);return;
+  }
+  const raw=transferChunks.join('');transferChunks=null;setData(raw);
+ }
  window.TerrainLab={
-  setData,
+  setData,beginDataTransfer,appendDataChunk,finishDataTransfer,
+  clearSelectedWaypoint(){
+   selectedWaypointId=null;
+   if(map&&map.getSource('selected-waypoint'))map.getSource('selected-waypoint').setData(empty);
+   if(map&&map.getLayer('waypoint-labels'))map.setFilter('waypoint-labels',null);
+  },
   pause(){if(map)map.stop();},
   resume(){if(map){map.resize();map.triggerRepaint();}},
   getCacheStats(){try{return TrailKitBridge.getCacheStats();}catch(_){return '{}';}}

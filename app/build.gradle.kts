@@ -1,10 +1,12 @@
+import java.net.URL
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-private const val TERRAIN_MAPLIBRE_VERSION = "5.6.2"
+val terrainMapLibreVersion = "5.6.2"
 
 val ensureTerrainMapLibreAssets by tasks.registering {
     val assetDir = file("src/main/assets")
@@ -18,7 +20,7 @@ val ensureTerrainMapLibreAssets by tasks.registering {
             "maplibre-gl.css" to cssFile
         ).forEach { (name, target) ->
             if (!target.isFile || target.length() < 1024L) {
-                val url = java.net.URL("https://unpkg.com/maplibre-gl@$TERRAIN_MAPLIBRE_VERSION/dist/$name")
+                val url = URL("https://unpkg.com/maplibre-gl@$terrainMapLibreVersion/dist/$name")
                 val connection = url.openConnection().apply {
                     connectTimeout = 15_000
                     readTimeout = 45_000

@@ -71,16 +71,16 @@ internal fun Terrain3DDialog(
 
     LaunchedEffect(projectId, trackCoordinates, elevations, waypoints) {
         val startedAt = SystemClock.elapsedRealtime()
-        status = "路线构建开始：\${trackCoordinates.size} 个 GPX 点 · \${waypoints.size} 个航点"
+        status = "路线构建开始：${trackCoordinates.size} 个 GPX 点 · ${waypoints.size} 个航点"
         try {
             val built = withContext(Dispatchers.Default) {
                 buildTerrainLabPayload(projectId, trackCoordinates, elevations, waypoints)
             }
             payload = built
             val chunks = terrainPayloadChunks(built)
-            status = "路线构建完成：\${trackCoordinates.size} 点 · \${built.length} 字符 · \${chunks.size} 块 · \${(SystemClock.elapsedRealtime() - startedAt)} ms"
+            status = "路线构建完成：${trackCoordinates.size} 点 · ${built.length} 字符 · ${chunks.size} 块 · ${(SystemClock.elapsedRealtime() - startedAt)} ms"
         } catch (error: Throwable) {
-            status = "路线构建异常：\${error.stackTraceToString().take(900)}"
+            status = "路线构建异常：${error.stackTraceToString().take(900)}"
             payload = null
         }
     }
@@ -243,23 +243,23 @@ private class TerrainLabBridge(
         if (!payloadDispatchStarted.compareAndSet(false, true)) return
         webView.post {
             val chunks = terrainPayloadChunks(payload)
-            onStatus("路线传输开始：\${payload.length} 字符 · \${chunks.size} 块（每块不超过 48 Ki 字符）")
+            onStatus("路线传输开始：${payload.length} 字符 · ${chunks.size} 块（每块不超过 48 Ki 字符）")
             fun sendChunk(index: Int) {
                 if (index >= chunks.size) {
-                    onStatus("路线分块发送完成：\${chunks.size}/\${chunks.size}，等待页面校验与 setData…")
+                    onStatus("路线分块发送完成：${chunks.size}/${chunks.size}，等待页面校验与 setData…")
                     webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.finishDataTransfer()", null)
                     return
                 }
-                val script = "window.TerrainLab&&window.TerrainLab.appendDataChunk($index,\${JSONObject.quote(chunks[index])})"
+                val script = "window.TerrainLab&&window.TerrainLab.appendDataChunk($index,${JSONObject.quote(chunks[index])})"
                 webView.evaluateJavascript(script) {
                     if (index == 0 || (index + 1) % 10 == 0 || index + 1 == chunks.size) {
-                        onStatus("路线分块发送：\${index + 1}/\${chunks.size}")
+                        onStatus("路线分块发送：${index + 1}/${chunks.size}")
                     }
                     sendChunk(index + 1)
                 }
             }
             webView.evaluateJavascript(
-                "window.TerrainLab&&window.TerrainLab.beginDataTransfer(\${chunks.size})"
+                "window.TerrainLab&&window.TerrainLab.beginDataTransfer(${chunks.size})"
             ) { sendChunk(0) }
         }
     }

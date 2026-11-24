@@ -38,7 +38,30 @@ class TerrainRouteGeometryTest {
         assertEquals("冰湖", snapshot[0].name)
         assertEquals("高山湖泊", snapshot[0].description)
         assertEquals(3900.0, snapshot[0].elevation!!, 0.0)
+        assertEquals(1, snapshot[0].priority)
         assertEquals("途经点 2", snapshot[1].name)
+        assertEquals(2, snapshot[1].priority)
+    }
+
+
+    @Test fun ribbonHasRealWorldWidthOnStraightTrack() {
+        val coordinates = listOf(
+            28.0 to 98.0,
+            28.0 to 98.001,
+            28.0 to 98.002
+        )
+        val ribbon = TerrainRouteGeometry.buildLods(coordinates, emptyList(), emptyList()).last().ribbon
+        fun distanceMeters(a: Pair<Double, Double>, b: Pair<Double, Double>): Double {
+            val lat1 = Math.toRadians(a.second)
+            val lat2 = Math.toRadians(b.second)
+            val dLat = lat2 - lat1
+            val dLon = Math.toRadians(b.first - a.first)
+            val h = sin(dLat / 2).pow(2) + cos(lat1) * cos(lat2) * sin(dLon / 2).pow(2)
+            return 2.0 * 6371000.0 * asin(sqrt(h.coerceIn(0.0, 1.0)))
+        }
+        // Ring order is left side forward, then right side backward.
+        assertEquals(2.5, distanceMeters(ribbon[0], ribbon[5]), 0.05)
+        assertEquals(ribbon.first(), ribbon.last())
     }
 
     @Test fun handlesLongTrackWithoutFixedTileOrPointLimit() {

@@ -120,7 +120,7 @@ button:active{background:#39664d}
  };
  try{
   map=new maplibregl.Map({
-   container:'map',style:mapStyle,center:[0,20],zoom:1.5,pitch:0,bearing:0,maxPitch:75,minZoom:4,maxZoom:18,
+   container:'map',style:mapStyle,center:[0,20],zoom:1.5,pitch:0,bearing:0,maxPitch:75,minZoom:4,maxZoom:18,pixelRatio:2,
    attributionControl:true,hash:false,failIfMajorPerformanceCaveat:false,preserveDrawingBuffer:false,
    touchZoomRotate:true,touchPitch:true,doubleClickZoom:true,
    dragPan:{linearity:.18,maxSpeed:1100,deceleration:2600}
@@ -369,7 +369,7 @@ button:active{background:#39664d}
  document.getElementById('walk').addEventListener('click',()=>{try{TrailKitBridge.onWalkRequested();}catch(_){}});
  let navOn=false,navFollowing=false,navFixSeen=false;
  try{map.on('dragstart',()=>{navFollowing=false;});}catch(_){}
- try{map.getCanvas().addEventListener('touchstart',()=>{navFollowing=false;},{passive:true});}catch(_){}
+ try{map.getCanvas().addEventListener('touchstart',()=>{navFollowing=false;try{map.stop();}catch(_){}},{passive:true});}catch(_){}
  document.getElementById('nav').addEventListener('click',()=>{
   let result;
   try{result=TrailKitBridge.onNavToggle(!navOn);}catch(e){say('导航开关失败：'+((e&&e.message)||e),true);return;}

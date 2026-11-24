@@ -3,241 +3,250 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="maplibre-gl.css">
+<title>TrailKit 3D Terrain Lab</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.css">
 <style>
+:root{color-scheme:dark}
 *{box-sizing:border-box}
-html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17221d;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17231d;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
 #map{position:absolute;inset:0}
-#legend{position:absolute;z-index:4;top:12px;left:12px;padding:8px 11px;border-radius:9px;background:rgba(15,27,21,.86);color:#f1f5ef;font-size:12px;line-height:1.5;pointer-events:none}
-#status{position:absolute;z-index:5;left:12px;right:12px;bottom:18px;padding:10px 13px;border:1px solid rgba(255,255,255,.14);border-radius:10px;background:rgba(15,27,21,.92);color:#f1f5ef;font-size:12px;line-height:1.5;pointer-events:none}
-#status.error{background:rgba(85,28,22,.95)}
-#gltest-toggle{position:fixed;z-index:1000;right:12px;top:12px;min-width:140px;min-height:48px;padding:12px 14px;border:2px solid rgba(255,255,255,.7);border-radius:12px;background:#176b4b;color:#fff;font-size:13px;font-weight:700;box-shadow:0 3px 14px rgba(0,0,0,.45);pointer-events:auto;touch-action:manipulation}
-#gltest-canvas{display:none;position:absolute;z-index:15;inset:0;width:100%;height:100%;pointer-events:none}
+#top{position:absolute;z-index:5;top:10px;left:10px;right:10px;display:flex;gap:7px;align-items:flex-start;pointer-events:none}
+.panel{pointer-events:auto;background:rgba(12,24,19,.88);color:#f4f1e6;border:1px solid rgba(255,255,255,.14);border-radius:12px;box-shadow:0 3px 14px #0005;backdrop-filter:blur(8px)}
+#legend{padding:8px 11px;font-size:11px;line-height:1.45;min-width:118px}
+#controls{margin-left:auto;display:flex;flex-direction:column;gap:6px;max-width:56%}
+button{border:1px solid #ffffff30;border-radius:10px;background:#203b2e;color:#fff;padding:9px 11px;font-size:12px;font-weight:650;min-height:36px;touch-action:manipulation}
+button:active{background:#39664d}
+.row{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+#readout{padding:6px 9px;font-size:11px;text-align:right}
+#bottom{position:absolute;z-index:5;left:10px;right:10px;bottom:10px;display:flex;align-items:flex-end;gap:8px;pointer-events:none}
+#status{padding:7px 10px;font-size:11px;line-height:1.4;max-width:72%;pointer-events:auto}
+#exaggeration{padding:7px 10px;margin-left:auto;display:flex;align-items:center;gap:6px;font-size:10px;pointer-events:auto}
+#exaggeration input{width:76px;accent-color:#e8bd4b}
+#error{color:#ffd3c9}
+#attrib{position:absolute;z-index:4;right:8px;bottom:0;color:#fff;background:#0008;padding:2px 5px;font-size:9px;pointer-events:none}
 .maplibregl-ctrl-group{border-radius:10px!important;overflow:hidden}
 .maplibregl-ctrl-attrib{font-size:9px!important}
+.maplibregl-ctrl-bottom-right{bottom:32px}
 </style>
+<script>
+(function(){const d=window.devicePixelRatio||1;try{Object.defineProperty(window,'devicePixelRatio',{configurable:true,get:()=>Math.min(d,2)});}catch(_){}})();
+</script>
 </head>
 <body>
 <div id="map"></div>
-<div id="legend">雨崩 · DEM 真实三维地形<br>Esri 卫星影像 · GPX 轨迹</div>
-<button id="gltest-toggle" type="button">WebGL 立方体自检</button>
-<canvas id="gltest-canvas"></canvas><div id="gltest-diagnostic" style="display:none;position:fixed;z-index:30;left:50%;top:50%;transform:translate(-50%,-50%);max-width:92%;padding:12px 16px;border-radius:10px;color:#fff;font-size:12px;line-height:1.5;pointer-events:none;box-shadow:0 3px 16px #0008"></div>
-<div id="status">网页正在启动…</div>
-<script src="maplibre-gl.js" onload="window.__mapLibreScriptLoaded=true;" onerror="document.getElementById('status').textContent='本地地图引擎文件加载失败：maplibre-gl.js';document.getElementById('status').className='error';try{TrailKitBridge.report('本地 maplibre-gl.js 加载失败');}catch(e){}"></script>
+<div id="top">
+ <div id="legend" class="panel">3D TERRAIN LAB<br><b>真实 DEM 山体</b><br>单指平移 · 双指调视角</div>
+ <div id="controls">
+  <div class="row">
+   <button id="fit">全线复位</button><button id="north">指北</button>
+  </div>
+  <div class="row">
+   <button id="layers">图层：卫星+晕渲</button><button id="contours">等高线：关</button>
+  </div>
+  <div class="row"><button id="walk">原生行走模式</button></div>
+  <div id="readout" class="panel">Z -- · 方位 --° · 俯仰 --°</div>
+ </div>
+</div>
+<div id="bottom">
+ <div id="status" class="panel">正在加载 MapLibre 地形引擎…</div>
+ <label id="exaggeration" class="panel">地形夸张 <span id="exValue">1.35×</span><input id="exSlider" type="range" min="1" max="2" step="0.05" value="1.35"></label>
+</div>
+<div id="attrib">© Esri World Imagery · AWS Terrain Tiles</div>
+<script src="https://unpkg.com/maplibre-gl@5.6.2/dist/maplibre-gl.js"></script>
 <script>
 (function(){
+ 'use strict';
  const status=document.getElementById('status');
- let fatalError='';
- let tileErrors=[];
- let sourceStats={imagery:{loaded:0,total:0},dem:{loaded:0,total:0}};
- const say=(message,error)=>{
-  if(fatalError&&!error)return;
-  if(error)fatalError=message;
-  status.textContent=message;
-  status.className=error?'error':'';
-  try{if(window.TrailKitBridge)window.TrailKitBridge.report((error?'错误：':'')+message);}catch(_){}
+ const readout=document.getElementById('readout');
+ const say=(message,error)=>{status.textContent=message;status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}};
+ if(!window.maplibregl){say('MapLibre JS 加载失败。首次启动需要网络加载地图引擎。',true);return;}
+ const empty={type:'FeatureCollection',features:[]};
+ let routeLineData=empty,routeRibbonData=empty,waypointData=empty;
+ let map=null,loaded=false,contoursVisible=false,layerMode=2,contourTimer=0;
+ const mapStyle={
+  version:8,
+  sources:{
+   imagery:{type:'raster',tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19,attribution:'© Esri'},
+   dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,maxzoom:14,encoding:'terrarium',attribution:'AWS Terrain Tiles'}
+  },
+  layers:[{id:'satellite',type:'raster',source:'imagery',paint:{'raster-opacity':1}}]
  };
- window.addEventListener('error',e=>say('JavaScript 运行错误：'+(e.message||'未知错误'),true));
- window.addEventListener('unhandledrejection',e=>say('异步任务失败：'+(e.reason&&e.reason.message?e.reason.message:String(e.reason)),true));
- say('JavaScript 已运行，正在检查 WebGL…');
- if(!window.maplibregl){say('MapLibre 引擎没有加载。检查 APK 内置 JS 文件。',true);return;}
  try{
-  // Only inspect support without creating a context; MapLibre must own the first GL context.
-  const testCanvas=document.createElement('canvas');
-  const supported=!!(window.WebGL2RenderingContext||window.WebGLRenderingContext);
-  if(!supported){say('WebView 没有提供 WebGL API。',true);return;}
-  testCanvas.width=1;testCanvas.height=1;
-  say('WebGL 可用，正在创建地图…');
- }catch(e){say('WebGL 检查失败：'+(e.message||e),true);return;}
- try{
-  const map=new maplibregl.Map({
-   container:'map',
-   center:[98.88,28.45],
-   zoom:11.2,
-   pitch:68,
-   bearing:-22,
-   maxPitch:85,
-   minZoom:5,
-   maxZoom:17,
-   hash:false,
-   attributionControl:true,
-   failIfMajorPerformanceCaveat:false,
-   preserveDrawingBuffer:false,
-   style:{
-    version:8,
-    sources:{
-     imagery:{
-      type:'raster',
-      tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-      tileSize:256,
-      maxzoom:19,
-      attribution:'Esri World Imagery'
-     },
-     dem:{
-      type:'raster-dem',
-      tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-      tileSize:256,
-      maxzoom:15,
-      encoding:'terrarium',
-      attribution:'AWS Terrain Tiles'
-     }
-    },
-    layers:[{id:'satellite',type:'raster',source:'imagery'}]
-   }
+  map=new maplibregl.Map({
+   container:'map',style:mapStyle,center:[98.88,28.45],zoom:10.5,pitch:58,bearing:-18,maxPitch:75,minZoom:4,maxZoom:18,
+   attributionControl:true,hash:false,failIfMajorPerformanceCaveat:false,preserveDrawingBuffer:false,
+   dragPan:{linearity:.18,maxSpeed:1200,deceleration:2500}
   });
-  say('地图实例创建成功，正在请求卫星影像和高程瓦片…');
-  map.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-right');
-  map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-right');
-  map.on('load',function(){
-   try{
-    map.setTerrain({source:'dem',exaggeration:1.45});
-    map.addLayer({id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{
-     'hillshade-exaggeration':0.42,
-     'hillshade-shadow-color':'#26352d',
-     'hillshade-highlight-color':'#fff4d6',
-     'hillshade-illumination-direction':315
-    }});
-    map.addSource('trail-route',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-    map.addLayer({id:'trail-route-casing',type:'line',source:'trail-route',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#20251f','line-width':7,'line-opacity':0.88}});
-    map.addLayer({id:'trail-route-line',type:'line',source:'trail-route',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':'#ffb547','line-width':4,'line-opacity':1}});
-    window.setTrailRoute=function(feature){
-     const src=map.getSource('trail-route');
-     if(!src)return;
-     src.setData({type:'FeatureCollection',features:[feature]});
-     const cs=feature.geometry&&feature.geometry.coordinates;
-     if(cs&&cs.length>1){
-      const bounds=cs.reduce((b,p)=>b.extend(p),new maplibregl.LngLatBounds(cs[0],cs[0]));
-      map.fitBounds(bounds,{padding:{top:90,bottom:100,left:48,right:48},maxZoom:14,duration:900});
-     }
-    };
-    if(window.__trailkitPendingRoute)window.setTrailRoute(window.__trailkitPendingRoute);
-    say('DEM 三维地形与地图图层已初始化，正在完成首屏渲染。');
-   }catch(e){say('DEM 地形初始化失败：'+(e.message||e),true);}
-  });
-  map.on('error',function(e){
-   const msg=e&&e.error&&e.error.message?e.error.message:'资源加载异常';
-   const source=e&&e.sourceId?e.sourceId:'未知数据源';
-   tileErrors.push(source+': '+msg);
-   if(tileErrors.length>4)tileErrors.shift();
-   say('地图数据加载错误（'+source+'）：'+msg,true);
-  });
-  map.on('sourcedata',function(e){
-   if(!e.sourceId||!sourceStats[e.sourceId])return;
-   const st=sourceStats[e.sourceId];
-   if(e.isSourceLoaded)st.loaded=1;
-   if(e.sourceDataType==='content')st.total++;
-  });
-  map.on('webglcontextlost',function(){say('WebGL 图形上下文丢失：手机网页渲染器无法继续绘制地图。',true);});
-  map.on('webglcontextrestored',function(){say('WebGL 上下文已恢复，正在重绘…');});
-  map.on('idle',function(){
-   if(fatalError)return;
-   const canvas=map.getCanvas();
-   const imageryLoaded=map.isSourceLoaded('imagery');
-   const demLoaded=map.isSourceLoaded('dem');
-   const dims=canvas.width+'×'+canvas.height;
-   if(!imageryLoaded||!demLoaded){
-    say('地图引擎已启动（画布 '+dims+'），但数据未全部就绪：卫星影像 '+(imageryLoaded?'已加载':'未加载')+'；高程 DEM '+(demLoaded?'已加载':'未加载')+'。请检查网络或瓦片服务。');
-   }else{
-    say('影像与 DEM 数据已加载，画布 '+dims+'。如果画面仍黑，问题在手机 WebView 的 WebGL 绘制/合成环节。');
-   }
-  });
-  window.__trailkitMap=map;
- }catch(e){say('地图初始化失败：'+(e.message||e),true);}
-})();
-</script>
-
-<script>
-(function(){
- const button=document.getElementById('gltest-toggle');
- const glCanvas=document.getElementById('gltest-canvas');
- const diagnostic=document.getElementById('gltest-diagnostic');
- let gl=null, raf=0, started=false, angleLoc=null;
- const vertices=[
-  -1,-1,1, 1,-1,1, 1,1,1, -1,-1,1, 1,1,1, -1,1,1,
-  -1,-1,-1, -1,1,-1, 1,1,-1, -1,-1,-1, 1,1,-1, 1,-1,-1,
-  -1,-1,-1, -1,-1,1, -1,1,1, -1,-1,-1, -1,1,1, -1,1,-1,
-  1,-1,-1, 1,1,-1, 1,1,1, 1,-1,-1, 1,1,1, 1,-1,1,
-  -1,1,-1, -1,1,1, 1,1,1, -1,1,-1, 1,1,1, 1,1,-1,
-  -1,-1,-1, 1,-1,-1, 1,-1,1, -1,-1,-1, 1,-1,1, -1,-1,1
- ];
- const vertexSourceV1='attribute vec3 p; uniform float a; varying vec3 c; void main(){float x=p.x*cos(a)-p.z*sin(a);float z=p.x*sin(a)+p.z*cos(a);float y=p.y*cos(a*0.73)-z*sin(a*0.73);z=p.y*sin(a*0.73)+z*cos(a*0.73);gl_Position=vec4(x*0.65,y*0.65,z*0.22,1.0);c=abs(p)*0.55+vec3(0.2,0.25,0.15);}';
- const fragmentSourceV1='precision mediump float; varying vec3 c; void main(){gl_FragColor=vec4(c,1.0);}';
- const vertexSourceV2='#version 300 es\nin vec3 p; uniform float a; out vec3 c; void main(){float x=p.x*cos(a)-p.z*sin(a);float z=p.x*sin(a)+p.z*cos(a);float y=p.y*cos(a*0.73)-z*sin(a*0.73);z=p.y*sin(a*0.73)+z*cos(a*0.73);gl_Position=vec4(x*0.65,y*0.65,z*0.22,1.0);c=abs(p)*0.55+vec3(0.2,0.25,0.15);}';
- const fragmentSourceV2='#version 300 es\nprecision mediump float; in vec3 c; out vec4 outColor; void main(){outColor=vec4(c,1.0);}';
- function report(msg,error){
-  diagnostic.textContent=msg;
-  diagnostic.style.display='block';
-  diagnostic.style.background=error?'rgba(105,27,23,.96)':'rgba(12,48,34,.96)';
-  try{if(window.TrailKitBridge)TrailKitBridge.report(msg);}catch(_){}
- }
- function shader(type,src){
-  const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
-  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error('Shader 编译失败：'+gl.getShaderInfoLog(s));
-  return s;
- }
- function draw(t){
-  if(glCanvas.style.display==='none'||!gl)return;
-  const w=Math.max(1,glCanvas.clientWidth),h=Math.max(1,glCanvas.clientHeight);
-  const dpr=Math.min(window.devicePixelRatio||1,1.5);
-  const pw=Math.max(1,Math.floor(w*dpr)),ph=Math.max(1,Math.floor(h*dpr));
-  if(glCanvas.width!==pw||glCanvas.height!==ph){glCanvas.width=pw;glCanvas.height=ph;}
-  gl.viewport(0,0,pw,ph);
-  gl.clearColor(0.035,0.16,0.105,1.0);
-  gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  gl.uniform1f(angleLoc,t*0.0007);
-  gl.drawArrays(gl.TRIANGLES,0,36);
-  if(gl.getError()!==gl.NO_ERROR){report('WebGL 已创建，但 GPU 绘制返回错误。请把这条提示发给我。',true);cancelAnimationFrame(raf);return;}
-  raf=requestAnimationFrame(draw);
- }
- function start(){
-  if(started)return;started=true;
-  try{
-   glCanvas.style.display='block';
-   glCanvas.width=Math.max(1,glCanvas.clientWidth||window.innerWidth);
-   glCanvas.height=Math.max(1,glCanvas.clientHeight||window.innerHeight);
-   gl=glCanvas.getContext('webgl2',{alpha:false,antialias:false,depth:true,preserveDrawingBuffer:true})
-     ||glCanvas.getContext('webgl',{alpha:false,antialias:false,depth:true,preserveDrawingBuffer:true})
-     ||glCanvas.getContext('experimental-webgl',{alpha:false,antialias:false,depth:true,preserveDrawingBuffer:true});
-   if(!gl)throw Error('WebGL 上下文创建失败（WebGL1/2 都返回 null）');
-   const version=gl.getParameter(gl.VERSION);
-   const renderer=gl.getParameter(gl.RENDERER);
-   const isWebGL2=typeof WebGL2RenderingContext!=='undefined' && gl instanceof WebGL2RenderingContext;
-   const prog=gl.createProgram();
-   gl.attachShader(prog,shader(gl.VERTEX_SHADER,isWebGL2?vertexSourceV2:vertexSourceV1));
-   gl.attachShader(prog,shader(gl.FRAGMENT_SHADER,isWebGL2?fragmentSourceV2:fragmentSourceV1));
-   gl.linkProgram(prog);
-   if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error('Shader 链接失败：'+gl.getProgramInfoLog(prog));
-   gl.useProgram(prog);
-   const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
-   gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.STATIC_DRAW);
-   const loc=gl.getAttribLocation(prog,'p');
-   if(loc<0)throw Error('GPU 没有找到立方体顶点属性');
-   gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,3,gl.FLOAT,false,0,0);
-   angleLoc=gl.getUniformLocation(prog,'a');
-   if(!angleLoc)throw Error('GPU 没有找到旋转参数');
-   gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);
-   gl.clearColor(0.035,0.16,0.105,1.0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-   gl.uniform1f(angleLoc,0.35);gl.drawArrays(gl.TRIANGLES,0,36);gl.finish();
-   const pixels=new Uint8Array(4*64*64);
-   gl.readPixels(Math.max(0,Math.floor(glCanvas.width/2)-32),Math.max(0,Math.floor(glCanvas.height/2)-32),64,64,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
-   let colored=0;
-   for(let i=0;i<pixels.length;i+=4){if(pixels[i]>35||pixels[i+1]>65||pixels[i+2]>35)colored++;}
-   report('WebGL 已创建：'+version+'；GPU像素检测 '+colored+'/4096；渲染器 '+renderer+'。若仍看不到绿色底色，问题在 WebView 合成输出。',false);
-   raf=requestAnimationFrame(draw);
-  }catch(e){
-   report('WebGL 自检失败：'+(e&&e.message?e.message:String(e)),true);
-   button.textContent='自检失败 · 查看诊断';
-  }
- }
- button.addEventListener('click',function(){
-  if(glCanvas.style.display==='block'){
-   glCanvas.style.display='none';cancelAnimationFrame(raf);button.textContent='WebGL 立方体自检';
-   report('已关闭 WebGL 自检画面。',false);
-  }else{
-   button.textContent='关闭自检画面';start();
-   if(gl&&angleLoc)raf=requestAnimationFrame(draw);
-  }
+ }catch(e){say('地图初始化失败：'+(e.message||e),true);return;}
+ map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-left');
+ map.addControl(new maplibregl.NavigationControl({showCompass:false,visualizePitch:true}),'bottom-right');
+ map.on('error',e=>{
+  const message=e&&e.error&&e.error.message?e.error.message:'瓦片加载异常';
+  if(/terrain|dem|tile|image|network/i.test(message))say('部分瓦片暂不可用；已缓存区域仍可显示。',false);
  });
+ map.on('load',()=>{
+  try{
+   map.setTerrain({source:'dem',exaggeration:1.35});
+   map.addLayer({id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{
+    'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d',
+    'hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315
+   }});
+   map.addSource('terrain-contours',{type:'geojson',data:empty});
+   map.addLayer({id:'terrain-contours-line',type:'line',source:'terrain-contours',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#f1d99a','line-width':1,'line-opacity':.72}});
+   map.addSource('route-ribbon',{type:'geojson',data:empty});
+   map.addLayer({id:'route-ribbon-fill',type:'fill',source:'route-ribbon',filter:['==',['get','lod'],'overview'],paint:{'fill-color':'#ff9a3c','fill-opacity':.32}});
+   map.addSource('route-line',{type:'geojson',data:empty});
+   map.addLayer({id:'route-casing',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#171d19','line-width':7,'line-opacity':.92}});
+   map.addLayer({id:'route-main',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffad43','line-width':4,'line-opacity':1}});
+   map.addSource('route-points',{type:'geojson',data:empty});
+   map.addLayer({id:'route-endpoints',type:'symbol',source:'route-points',layout:{
+    'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,
+    'icon-pitch-alignment':'viewport','icon-size':.72,'symbol-sort-key':0
+   }});
+   map.addSource('waypoints',{type:'geojson',data:empty});
+   map.addLayer({id:'waypoint-labels',type:'symbol',source:'waypoints',layout:{
+    'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':false,'icon-ignore-placement':false,
+    'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.62,
+    'symbol-sort-key':['get','priority']
+   }});
+   map.on('click','waypoint-labels',e=>{
+    const feature=e.features&&e.features[0];if(!feature)return;
+    try{TrailKitBridge.onWaypointClick(JSON.stringify(feature.properties||{}));}catch(_){}
+   });
+   map.on('mouseenter','waypoint-labels',()=>map.getCanvas().style.cursor='pointer');
+   map.on('mouseleave','waypoint-labels',()=>map.getCanvas().style.cursor='');
+   map.on('moveend',()=>{updateReadout();if(contoursVisible)queueContours();});
+   map.on('zoomend',()=>{updateReadout();selectLod();if(contoursVisible)queueContours();});
+   map.on('rotateend',updateReadout);map.on('pitchend',updateReadout);
+   map.on('idle',()=>{
+    if(!loaded)return;
+    let cacheText='缓存统计暂不可用';
+    try{
+     const c=JSON.parse(TrailKitBridge.getCacheStats());
+     cacheText='DEM 命中 '+c.dem.hits+' / '+c.dem.misses+' · 影像命中 '+c.imagery.hits+' / '+c.imagery.misses;
+    }catch(_){}
+    say('三维地形已就绪 · DEM z14 · '+cacheText);
+   });
+   loaded=true;updateReadout();say('地形引擎已就绪，等待原生路线数据…');
+   try{TrailKitBridge.onReady();}catch(_){}
+  }catch(e){say('地形图层初始化失败：'+(e.message||e),true);}
+ });
+ function roundedRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+ function labelSprite(text,kind){
+  const scale=2,ctxCanvas=document.createElement('canvas'),ctx=ctxCanvas.getContext('2d');
+  ctx.font='bold 25px system-ui,"Noto Sans CJK SC",sans-serif';
+  const width=Math.ceil(ctx.measureText(text).width+30),height=48;
+  ctxCanvas.width=width*scale;ctxCanvas.height=height*scale;ctx.scale(scale,scale);
+  roundedRect(ctx,1,1,width-2,height-2,10);
+  ctx.fillStyle=kind==='endpoint'?'rgba(17,34,25,.96)':'rgba(12,22,18,.88)';ctx.fill();
+  ctx.lineWidth=3;ctx.strokeStyle=kind==='endpoint'?'#f4c85c':'#090e0b';ctx.stroke();
+  ctx.font='bold 25px system-ui,"Noto Sans CJK SC",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.lineJoin='round';ctx.lineWidth=4;ctx.strokeStyle='#090d0b';ctx.strokeText(text,width/2,height/2+1);
+  ctx.fillStyle=kind==='endpoint'?'#fff0a6':'#ffd65d';ctx.fillText(text,width/2,height/2+1);
+  return ctxCanvas;
+ }
+ function addSprite(id,text,kind){if(map.hasImage(id))map.removeImage(id);map.addImage(id,labelSprite(text,kind),{pixelRatio:2});}
+ function selectLod(){
+  if(!map.getLayer('route-main'))return;
+  const z=map.getZoom();const lod=z<9?'overview':z<12?'mid':z<15?'near':'full';
+  const filter=['==',['get','lod'],lod];
+  map.setFilter('route-ribbon-fill',filter);map.setFilter('route-casing',filter);map.setFilter('route-main',filter);
+ }
+ function updateReadout(){
+  if(!map)return;
+  readout.textContent='Z '+map.getZoom().toFixed(1)+' · 方位 '+Math.round((map.getBearing()+360)%360)+'° · 俯仰 '+Math.round(map.getPitch())+'°';
+  try{TrailKitBridge.onViewportChanged(map.getZoom(),map.getBearing(),map.getPitch());}catch(_){}
+ }
+ function fitAll(){
+  const full=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full');
+  const coords=full&&full.geometry&&full.geometry.coordinates;
+  if(!coords||coords.length<2){say('当前项目没有可显示的有效 GPX 轨迹。',true);return;}
+  let west=Infinity,south=Infinity,east=-Infinity,north=-Infinity;
+  coords.forEach(p=>{west=Math.min(west,p[0]);east=Math.max(east,p[0]);south=Math.min(south,p[1]);north=Math.max(north,p[1]);});
+  if(west===east){west-=.001;east+=.001;}if(south===north){south-=.001;north+=.001;}
+  map.fitBounds([[west,south],[east,north]],{padding:{top:85,bottom:85,left:45,right:45},duration:650,maxZoom:14});
+ }
+ function updateContours(){
+  if(!contoursVisible||!map||!map.getSource('terrain-contours'))return;
+  const bounds=map.getBounds(),rows=38,cols=38;
+  const grid=Array.from({length:rows+1},()=>Array(cols+1).fill(null));
+  let min=Infinity,max=-Infinity;
+  for(let y=0;y<=rows;y++)for(let x=0;x<=cols;x++){
+   const lon=bounds.getWest()+(bounds.getEast()-bounds.getWest())*x/cols;
+   const lat=bounds.getNorth()-(bounds.getNorth()-bounds.getSouth())*y/rows;
+   const h=map.queryTerrainElevation([lon,lat]);
+   if(Number.isFinite(h)){grid[y][x]=h;min=Math.min(min,h);max=Math.max(max,h);}
+  }
+  const features=[];if(!Number.isFinite(min)||!Number.isFinite(max)){say('DEM 尚未加载完成，等高线稍后生成。');return;}
+  const first=Math.ceil(min/100)*100,last=Math.floor(max/100)*100;
+  function crossing(a,b,ha,hb,level){if(ha===null||hb===null||(ha-level)*(hb-level)>0||ha===hb)return null;const t=(level-ha)/(hb-ha);return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t];}
+  for(let level=first;level<=last;level+=100){
+   for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+    const lon0=bounds.getWest()+(bounds.getEast()-bounds.getWest())*x/cols;
+    const lon1=bounds.getWest()+(bounds.getEast()-bounds.getWest())*(x+1)/cols;
+    const lat0=bounds.getNorth()-(bounds.getNorth()-bounds.getSouth())*y/rows;
+    const lat1=bounds.getNorth()-(bounds.getNorth()-bounds.getSouth())*(y+1)/rows;
+    const corners=[[[lon0,lat0],grid[y][x]],[[lon1,lat0],grid[y][x+1]],[[lon1,lat1],grid[y+1][x+1]],[[lon0,lat1],grid[y+1][x]]];
+    const hits=[];
+    for(let k=0;k<4;k++){const next=(k+1)%4;const p=crossing(corners[k][0],corners[next][0],corners[k][1],corners[next][1],level);if(p)hits.push(p);}
+    if(hits.length>=2)features.push({type:'Feature',properties:{elevation:level},geometry:{type:'LineString',coordinates:hits.slice(0,2)}});
+   }
+  }
+  map.getSource('terrain-contours').setData({type:'FeatureCollection',features});
+  say('等高线已生成 · 100 m 间隔 · '+features.length+' 段');
+ }
+ function queueContours(){clearTimeout(contourTimer);contourTimer=setTimeout(updateContours,350);}
+ function setLayerMode(mode){
+  layerMode=mode%3;
+  const satellite=layerMode!==1,shade=layerMode!==0;
+  map.setLayoutProperty('satellite','visibility',satellite?'visible':'none');
+  map.setLayoutProperty('terrain-hillshade','visibility',shade?'visible':'none');
+  document.getElementById('layers').textContent='图层：'+['卫星','晕渲','卫星+晕渲'][layerMode];
+ }
+ function setData(raw){
+  try{
+   const data=typeof raw==='string'?JSON.parse(raw):raw;
+   routeLineData=data.routeLine||empty;routeRibbonData=data.routeRibbon||empty;waypointData=data.waypoints||empty;
+   map.getSource('route-line').setData(routeLineData);
+   map.getSource('route-ribbon').setData(routeRibbonData);
+   const endpoints=[];
+   if(Array.isArray(data.start))endpoints.push({type:'Feature',properties:{spriteId:'endpoint-start'},geometry:{type:'Point',coordinates:data.start}});
+   if(Array.isArray(data.end))endpoints.push({type:'Feature',properties:{spriteId:'endpoint-end'},geometry:{type:'Point',coordinates:data.end}});
+   addSprite('endpoint-start','起点','endpoint');addSprite('endpoint-end','终点','endpoint');
+   map.getSource('route-points').setData({type:'FeatureCollection',features:endpoints});
+   waypointData.features.forEach(feature=>{
+    const p=feature.properties||{};const name=(p.name||'途经点').slice(0,24);
+    addSprite(p.spriteId||('wp-'+p.id),name,'waypoint');
+   });
+   map.getSource('waypoints').setData(waypointData);
+   selectLod();fitAll();
+   say('路线载入完成 · '+(routeLineData.features.find(f=>f.properties.lod==='full')?.geometry.coordinates.length||0)+' 个原始轨迹点 · '+waypointData.features.length+' 个途经点');
+  }catch(e){say('路线数据转换失败：'+(e.message||e),true);}
+ }
+ document.getElementById('fit').addEventListener('click',fitAll);
+ document.getElementById('north').addEventListener('click',()=>map.easeTo({bearing:0,duration:420}));
+ document.getElementById('layers').addEventListener('click',()=>setLayerMode(layerMode+1));
+ document.getElementById('contours').addEventListener('click',()=>{
+  contoursVisible=!contoursVisible;
+  map.setLayoutProperty('terrain-contours-line','visibility',contoursVisible?'visible':'none');
+  document.getElementById('contours').textContent='等高线：'+(contoursVisible?'开':'关');
+  if(contoursVisible)queueContours();
+ });
+ document.getElementById('walk').addEventListener('click',()=>{try{TrailKitBridge.onWalkRequested();}catch(_){}});
+ document.getElementById('exSlider').addEventListener('input',event=>{
+  const value=Number(event.target.value);document.getElementById('exValue').textContent=value.toFixed(2)+'×';
+  map.setTerrain({source:'dem',exaggeration:value});
+ });
+ document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){if(map)map.stop();}
+  else if(map){map.resize();map.triggerRepaint();}
+ });
+ window.TerrainLab={
+  setData,
+  pause(){if(map)map.stop();},
+  resume(){if(map){map.resize();map.triggerRepaint();}},
+  getCacheStats(){try{return TrailKitBridge.getCacheStats();}catch(_){return '{}';}}
+ };
 })();
 </script>
 </body>

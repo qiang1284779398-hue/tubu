@@ -27,7 +27,7 @@ import javax.microedition.khronos.opengles.GL10
 import kotlin.math.*
 
 @Composable
-internal fun Terrain3DDialog(projectName:String,encodedTrack:String,visible:Boolean,onClose:()->Unit){
+internal fun NativeTerrainWalkDialog(projectName:String,encodedTrack:String,visible:Boolean,onClose:()->Unit){
  if(!visible)return
  val points=remember(encodedTrack){decodeTrackPoints(encodedTrack)}
  var status by remember{mutableStateOf("正在启动高分辨率 DEM 地形…")}
@@ -38,10 +38,10 @@ internal fun Terrain3DDialog(projectName:String,encodedTrack:String,visible:Bool
   Column(Modifier.fillMaxSize()){
    Surface(color=MaterialTheme.colorScheme.surface,tonalElevation=4.dp){Column(Modifier.fillMaxWidth().padding(14.dp)){
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
-     Column(Modifier.weight(1f)){Text("NATIVE OPENGL ES · TERRAIN",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary);Text("$projectName · 全轨迹三维地形",style=MaterialTheme.typography.titleMedium)}
+     Column(Modifier.weight(1f)){Text("NATIVE OPENGL ES · TERRAIN",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary);Text("$projectName · 原生 OpenGL 行走模式",style=MaterialTheme.typography.titleMedium)}
      TextButton(onClick=onClose){Text("关闭")}
     }
-    Text("沉浸式山地视角 · 单指转头 · 双指行走 · 捏合变焦",style=MaterialTheme.typography.bodySmall)
+    Text("第一人称山地行走 · 单指转向 · 双指移动 · 捏合变焦",style=MaterialTheme.typography.bodySmall)
    }}
    AndroidView(factory={view},modifier=Modifier.weight(1f).fillMaxWidth())
    Surface(color=MaterialTheme.colorScheme.surface){Text(status,Modifier.fillMaxWidth().padding(12.dp),style=MaterialTheme.typography.bodySmall)}

@@ -176,7 +176,8 @@ data class ArRouteSample(
     val latitude: Double,
     val longitude: Double,
     val progressMeters: Double,
-    val elevationMeters: Double?
+    val elevationMeters: Double?,
+    val occlusionAlpha: Float = 1f
 )
 
 private fun arInterpolateRoutePoint(
@@ -544,3 +545,26 @@ fun cleanArRoutePoints(points: List<Pair<Double, Double>>): List<Pair<Double, Do
     return cleaned
 }
 
+
+/** Spatially smooths DEM visibility confidence across a 15–20 m boundary band. */
+fun smoothArOcclusionAlphas(
+    samples: List<ArRouteSample>,
+    rawAlphas: List<Float>,
+    transitionMeters: Double = 18.0
+): List<Float> {
+    if (samples.isEmpty() || rawAlphas.size != samples.size) return List(samples.size) { 1f }
+    val radius = transitionMeters.coerceIn(15.0, 20.0)
+    return samples.indices.map { index ->
+        var weighted = 0.0
+        var totalWeight = 0.0
+        for (other in samples.indices) {
+            val distance = kotlin.math.abs(samples[other].progressMeters - samples[index].progressMeters)
+            if (distance <= radius) {
+                val weight = 1.0 - distance / (radius + 1e-6)
+                weighted += rawAlphas[other].coerceIn(0f, 1f) * weight
+                totalWeight += weight
+            }
+        }
+        if (totalWeight > 0.0) (weighted / totalWeight).toFloat().coerceIn(0.05f, 1f) else 1f
+    }
+}

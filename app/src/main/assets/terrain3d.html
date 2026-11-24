@@ -100,6 +100,7 @@ button:active{background:#39664d}
    imagery:{type:'raster',tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19,attribution:'© Esri'},
    dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,maxzoom:14,encoding:'terrarium',attribution:'AWS Terrain Tiles'},
    'terrain-contours':{type:'geojson',data:empty},
+   'terrain-contour-labels':{type:'geojson',data:empty},
    'route-ribbon':{type:'geojson',data:empty},
    'route-line':{type:'geojson',data:empty},
    'route-points':{type:'geojson',data:empty},
@@ -111,6 +112,7 @@ button:active{background:#39664d}
    {id:'satellite',type:'raster',source:'imagery',paint:{'raster-opacity':1}},
    {id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d','hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315}},
    {id:'terrain-contours-line',type:'line',source:'terrain-contours',layout:{'line-join':'round','line-cap':'round','visibility':'none'},paint:{'line-color':'#f1d99a','line-width':1,'line-opacity':.72}},
+   {id:'terrain-contour-labels',type:'symbol',source:'terrain-contour-labels',layout:{'icon-image':['get','spriteId'],'icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-size':.6,'visibility':'none'}},
    {id:'route-ribbon-fill',type:'fill',source:'route-ribbon',filter:['==',['get','lod'],'overview'],paint:{'fill-color':'#ff9a3c','fill-opacity':.32}},
    {id:'route-casing',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#171d19','line-width':7,'line-opacity':.92}},
    {id:'route-main',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffad43','line-width':4,'line-opacity':1}},
@@ -147,7 +149,12 @@ button:active{background:#39664d}
   // Zoom-coupled auto-tilt (Ovi-style drone view): zooming in leans the camera
   // toward the viewer, zooming out relaxes it. A gesture in which the user
   // pitched manually (dp > 2) is respected and left alone.
-  if(Math.abs(dz)<0.05||dp>2)return;
+  const dzAbs=Math.abs(dz);
+  if(dzAbs<0.05)return;
+  // Zoom-dominant: a real zoom gesture always re-tilts to the zoom target even
+  // if the fingers also drifted the pitch; only pitch-led gestures (little
+  // zoom change) keep the user's manual pitch.
+  if(dp>2&&dzAbs<0.3)return;
   const target=targetPitchForZoom(map.getZoom());
   if(target===null)return;
   if(Math.abs(map.getPitch()-target)>3){try{map.easeTo({pitch:target,duration:450});}catch(_){}}
@@ -290,7 +297,22 @@ button:active{background:#39664d}
    }
   }
   map.getSource('terrain-contours').setData({type:'FeatureCollection',features});
-  say('等高线已生成 · 100 m 间隔 · '+features.length+' 段');
+  // Elevation numbers: a few label sprites per level, placed at segment
+  // midpoints spread across that level's segments (Canvas sprites, no glyphs).
+  const byLevel={};
+  features.forEach(f=>{const lv=f.properties.elevation;(byLevel[lv]=byLevel[lv]||[]).push(f);});
+  const labelFeatures=[];
+  Object.keys(byLevel).forEach(key=>{
+   const list=byLevel[key],level=Number(key),spriteId='contour-'+level;
+   try{if(!map.hasImage(spriteId))map.addImage(spriteId,labelSprite(String(level),'contour'),{pixelRatio:2});}catch(_){}
+   [0.25,0.55,0.85].forEach(t=>{
+    const f=list[Math.floor(list.length*t)];if(!f)return;
+    const c=f.geometry.coordinates;
+    labelFeatures.push({type:'Feature',properties:{spriteId},geometry:{type:'Point',coordinates:[(c[0][0]+c[1][0])/2,(c[0][1]+c[1][1])/2]}});
+   });
+  });
+  if(map.getSource('terrain-contour-labels'))map.getSource('terrain-contour-labels').setData({type:'FeatureCollection',features:labelFeatures});
+  say('等高线已生成 · 100 m 间隔 · '+features.length+' 段 · 高程注记 '+labelFeatures.length+' 个');
  }
  function queueContours(){clearTimeout(contourTimer);contourTimer=setTimeout(updateContours,350);}
  function setLayerMode(mode){
@@ -345,6 +367,7 @@ button:active{background:#39664d}
  document.getElementById('contours').addEventListener('click',()=>{
   contoursVisible=!contoursVisible;
   map.setLayoutProperty('terrain-contours-line','visibility',contoursVisible?'visible':'none');
+  if(map.getLayer('terrain-contour-labels'))map.setLayoutProperty('terrain-contour-labels','visibility',contoursVisible?'visible':'none');
   document.getElementById('contours').textContent='等高线：'+(contoursVisible?'开':'关');
   if(contoursVisible)queueContours();
  });
@@ -353,17 +376,19 @@ button:active{background:#39664d}
  try{map.on('dragstart',()=>{navFollowing=false;});}catch(_){}
  try{map.getCanvas().addEventListener('touchstart',()=>{navFollowing=false;},{passive:true});}catch(_){}
  document.getElementById('nav').addEventListener('click',()=>{
-  navOn=!navOn;navFollowing=navOn;navFixSeen=false;
+  let result;
+  try{result=TrailKitBridge.onNavToggle(!navOn);}catch(e){say('导航开关失败：'+((e&&e.message)||e),true);return;}
+  navOn=!!result;navFollowing=navOn;navFixSeen=false;
   document.getElementById('nav').textContent='导航：'+(navOn?'开':'关');
-  try{TrailKitBridge.onNavToggle(navOn);}catch(_){}
   if(!navOn){try{map.getSource('my-location').setData(empty);}catch(_){}}
   else say('导航已开启，正在定位…');
  });
  let fullscreenOn=false;
  document.getElementById('fullscreen').addEventListener('click',()=>{
-  fullscreenOn=!fullscreenOn;
+  let result;
+  try{result=TrailKitBridge.onFullscreenToggle();}catch(e){say('全屏切换失败：'+((e&&e.message)||e),true);return;}
+  fullscreenOn=!!result;
   document.getElementById('fullscreen').textContent=fullscreenOn?'退出全屏':'全屏';
-  try{TrailKitBridge.onFullscreenToggle();}catch(_){}
   setTimeout(forceSize,350);setTimeout(forceSize,900);
  });
  document.getElementById('exSlider').addEventListener('input',event=>{

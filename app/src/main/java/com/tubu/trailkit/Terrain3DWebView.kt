@@ -27,13 +27,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -95,8 +92,12 @@ internal fun Terrain3DDialog(
                 onStatus = { status = it },
                 onWaypoint = { raw -> selectedWaypoint = runCatching { JSONObject(raw) }.getOrNull() },
                 onWalk = { walkingMode = true },
-                onNavToggle = { enabled -> navEnabled = enabled },
-                onFullscreenToggle = { fullscreen = !fullscreen }
+                onNavToggle = { enabled ->
+                    navEnabled = enabled
+                    status = if (enabled) "导航已开启，等待定位…" else "导航已关闭"
+                    enabled
+                },
+                onFullscreenToggle = { fullscreen = !fullscreen; fullscreen }
             )
         }
     }
@@ -254,34 +255,32 @@ internal fun Terrain3DDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = onClose,
-        // decorFitsSystemWindows must stay true: with false the dialog window is
-        // taller than the visible display, which pushed the bottom status strip
-        // (and the web page's own bottom bar) off the bottom of the screen.
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = true)
-    ) {
-        val dialogView = LocalView.current
-        val dialogWindow = remember(dialogView) {
-            var view: android.view.View? = dialogView
-            var found: android.view.Window? = null
-            while (view != null) {
-                if (view is DialogWindowProvider) { found = view.window; break }
-                view = view.parent as? android.view.View
-            }
-            found
+    // The lab is rendered as an overlay inside the activity's own content tree,
+    // NOT in a Dialog: the dialog window measured taller than the visible
+    // display on the user's phone, which pushed the bottom status strip (and
+    // the web page's own bottom bar) off-screen in every dialog-based build.
+    // The activity window is sized correctly, and its insets controller is the
+    // reliable path for fullscreen.
+    BackHandler(enabled = true) { onClose() }
+    val activityWindow = remember(context) { (context as? android.app.Activity)?.window }
+    LaunchedEffect(fullscreen, activityWindow) {
+        val window = activityWindow ?: return@LaunchedEffect
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        if (fullscreen) {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
         }
-        LaunchedEffect(fullscreen, dialogWindow) {
-            val window = dialogWindow ?: return@LaunchedEffect
-            val controller = WindowInsetsControllerCompat(window, window.decorView)
-            if (fullscreen) {
-                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                controller.hide(WindowInsetsCompat.Type.systemBars())
-            } else {
-                controller.show(WindowInsetsCompat.Type.systemBars())
+    }
+    DisposableEffect(activityWindow) {
+        onDispose {
+            activityWindow?.let { window ->
+                runCatching { WindowInsetsControllerCompat(window, window.decorView).show(WindowInsetsCompat.Type.systemBars()) }
             }
         }
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             if (!fullscreen) {
             Surface(tonalElevation = 3.dp) {
                 Row(
@@ -381,7 +380,6 @@ internal fun Terrain3DDialog(
             }
             }
         }
-    }
     if (walkingMode) {
         NativeTerrainWalkDialog(projectName, trackCoordinates, true) { walkingMode = false }
     }
@@ -394,8 +392,8 @@ private class TerrainLabBridge(
     private val onStatus: (String) -> Unit,
     private val onWaypoint: (String) -> Unit,
     private val onWalk: () -> Unit,
-    private val onNavToggle: (Boolean) -> Unit,
-    private val onFullscreenToggle: () -> Unit
+    private val onNavToggle: (Boolean) -> Boolean,
+    private val onFullscreenToggle: () -> Boolean
 ) {
     private val payloadDispatchStarted = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -432,12 +430,11 @@ private class TerrainLabBridge(
     @JavascriptInterface fun onWalkRequested() {
         webView.post { onWalk() }
     }
-    @JavascriptInterface fun onNavToggle(enabled: Boolean) {
-        webView.post { onNavToggle(enabled) }
-    }
-    @JavascriptInterface fun onFullscreenToggle() {
-        webView.post { onFullscreenToggle() }
-    }
+    // Toggles run synchronously (no webView.post) so the page gets the applied
+    // state back as the return value and can keep its button labels in sync.
+    // Writing Compose snapshot state from the bridge thread is safe.
+    @JavascriptInterface fun onNavToggle(enabled: Boolean): Boolean = onNavToggle.invoke(enabled)
+    @JavascriptInterface fun onFullscreenToggle(): Boolean = onFullscreenToggle.invoke()
     @JavascriptInterface fun getCacheStats(): String = tileCache.statsJson()
 }
 

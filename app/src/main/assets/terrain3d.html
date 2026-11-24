@@ -59,14 +59,23 @@ button:active{background:#39664d}
 (function(){
  'use strict';
  let transferChunks=null,transferReceived=0;
- window.addEventListener('error',event=>{
-  const detail=(event.message||'未知异常')+' @ '+(event.filename||'')+':'+(event.lineno||0)+':'+(event.colno||0);
-  say('JavaScript 异常：'+detail,true);
- });
- window.addEventListener('unhandledrejection',event=>{
-  const reason=event.reason;const detail=reason&&(reason.stack||reason.message)||String(reason||'未处理 Promise 异常');
-  say('JavaScript Promise 异常：'+detail,true);
- });
+ // Diagnostic forwarding: count every uncaught error and send its column
+  // number + stack to the native strip. The column offset into the bundle's
+  // single giant line identifies the exact throwing call site.
+  let pageErrorCount=0;
+  window.addEventListener('error',event=>{
+   pageErrorCount++;
+   const detail=(event.message||'未知异常')+' @ '+(event.filename||'')+':'+(event.lineno||0)+':'+(event.colno||0);
+   const stack=event.error&&event.error.stack?String(event.error.stack).slice(0,420):'';
+   const text='页面异常 ×'+pageErrorCount+'：'+detail+(stack?' || '+stack:'');
+   say(text,true);
+   if(pageErrorCount<=5)setTimeout(()=>say(text,true),800);
+  });
+  window.addEventListener('unhandledrejection',event=>{
+   pageErrorCount++;
+   const reason=event.reason;const detail=reason&&(reason.stack||reason.message)||String(reason||'未处理 Promise 异常');
+   say('页面异步异常 ×'+pageErrorCount+'：'+String(detail).slice(0,420),true);
+  });
  const say=(message,error)=>{
   // No in-page status panel (the user wants a clean map): messages only go to
   // the native status strip under the WebView via the bridge.

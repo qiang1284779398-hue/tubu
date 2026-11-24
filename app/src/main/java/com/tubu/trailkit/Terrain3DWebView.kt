@@ -1,6 +1,7 @@
 package com.tubu.trailkit
 
 import android.graphics.Color
+import android.os.SystemClock
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -55,6 +56,14 @@ internal fun Terrain3DDialog(
     var walkingMode by remember { mutableStateOf(false) }
     val isWalkingMode by rememberUpdatedState(walkingMode)
     val webView = remember(context, projectId) { WebView(context) }
+    DisposableEffect(tileCache, webView) {
+        tileCache.onTileCached = { kind ->
+            webView.post {
+                webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.refreshTiles('$kind')", null)
+            }
+        }
+        onDispose { tileCache.onTileCached = null }
+    }
     val bridge = remember(webView, payload) {
         payload?.let { readyPayload ->
             TerrainLabBridge(
@@ -69,11 +78,19 @@ internal fun Terrain3DDialog(
     }
 
     LaunchedEffect(projectId, trackCoordinates, elevations, waypoints) {
-        status = "正在后台整理路线、缎带与航点数据…"
-        payload = withContext(Dispatchers.Default) {
-            buildTerrainLabPayload(projectId, trackCoordinates, elevations, waypoints)
+        val startedAt = SystemClock.elapsedRealtime()
+        status = "路线构建开始：${trackCoordinates.size} 个 GPX 点 · ${waypoints.size} 个航点"
+        try {
+            val built = withContext(Dispatchers.Default) {
+                buildTerrainLabPayload(projectId, trackCoordinates, elevations, waypoints)
+            }
+            payload = built
+            val chunks = terrainPayloadChunks(built)
+            status = "路线构建完成：${trackCoordinates.size} 点 · ${built.length} 字符 · ${chunks.size} 块 · ${(SystemClock.elapsedRealtime() - startedAt)} ms"
+        } catch (error: Throwable) {
+            status = "路线构建异常：${error.stackTraceToString().take(900)}"
+            payload = null
         }
-        status = "路线数据已准备，正在启动 MapLibre 三维地形…"
     }
 
     LaunchedEffect(walkingMode) {
@@ -166,7 +183,7 @@ internal fun Terrain3DDialog(
                                 webChromeClient = object : WebChromeClient() {
                                     override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                                         if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
-                                            status = "地图引擎：${message.message().take(180)}"
+                                            status = "地图 JS 控制台异常：${message.message().take(900)}"
                                         }
                                         return true
                                     }
@@ -233,15 +250,21 @@ private class TerrainLabBridge(
     @JavascriptInterface fun onReady() {
         if (!payloadDispatchStarted.compareAndSet(false, true)) return
         webView.post {
-            // Keep each WebView IPC message comfortably below Binder transaction limits.
-            val chunks = payload.chunked(48 * 1024)
+            val chunks = terrainPayloadChunks(payload)
+            onStatus("路线传输开始：${payload.length} 字符 · ${chunks.size} 块（每块不超过 48 Ki 字符）")
             fun sendChunk(index: Int) {
                 if (index >= chunks.size) {
+                    onStatus("路线分块发送完成：${chunks.size}/${chunks.size}，等待页面校验与 setData…")
                     webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.finishDataTransfer()", null)
                     return
                 }
                 val script = "window.TerrainLab&&window.TerrainLab.appendDataChunk($index,${JSONObject.quote(chunks[index])})"
-                webView.evaluateJavascript(script) { sendChunk(index + 1) }
+                webView.evaluateJavascript(script) {
+                    if (index == 0 || (index + 1) % 10 == 0 || index + 1 == chunks.size) {
+                        onStatus("路线分块发送：${index + 1}/${chunks.size}")
+                    }
+                    sendChunk(index + 1)
+                }
             }
             webView.evaluateJavascript(
                 "window.TerrainLab&&window.TerrainLab.beginDataTransfer(${chunks.size})"
@@ -249,7 +272,7 @@ private class TerrainLabBridge(
         }
     }
     @JavascriptInterface fun onStatus(message: String) {
-        webView.post { onStatus(message.take(220)) }
+        webView.post { onStatus(message.take(900)) }
     }
     @JavascriptInterface fun onWaypointClick(properties: String) {
         webView.post { onWaypoint(properties) }
@@ -260,7 +283,13 @@ private class TerrainLabBridge(
     @JavascriptInterface fun getCacheStats(): String = tileCache.statsJson()
 }
 
-private fun buildTerrainLabPayload(
+
+internal fun terrainPayloadChunks(payload: String, maxChars: Int = 48 * 1024): List<String> {
+    require(maxChars > 0) { "maxChars must be positive" }
+    return payload.chunked(maxChars)
+}
+
+internal fun buildTerrainLabPayload(
     projectId: String,
     coordinates: List<Pair<Double, Double>>,
     elevations: List<Double?>,

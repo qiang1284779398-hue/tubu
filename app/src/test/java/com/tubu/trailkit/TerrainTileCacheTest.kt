@@ -22,33 +22,28 @@ class TerrainTileCacheTest {
         assertEquals(4L, store.sizeBytes())
     }
 
-    @Test fun sameUrlRequestsShareOneInFlightDownload() {
+    @Test fun sameUrlRequestsShareOneAsyncDownloadWithoutBlockingCallers() {
         val loaderExecutor = Executors.newFixedThreadPool(4)
-        val callers = Executors.newFixedThreadPool(8)
         try {
             val coalescer = TerrainRequestCoalescer()
             val count = AtomicInteger()
-            val ready = CountDownLatch(8)
-            val start = CountDownLatch(1)
-            val futures = (0 until 8).map {
-                callers.submit<ByteArray?> {
-                    ready.countDown()
-                    start.await(2, TimeUnit.SECONDS)
-                    coalescer.load("same-tile", loaderExecutor) {
-                        count.incrementAndGet()
-                        Thread.sleep(500)
-                        byteArrayOf(1, 2, 3)
-                    }
-                }
+            val callbacks = CountDownLatch(1)
+            coalescer.loadAsync("same-tile", loaderExecutor, {
+                count.incrementAndGet()
+                Thread.sleep(150)
+                byteArrayOf(1, 2, 3)
+            }) { bytes, error ->
+                assertEquals(null, error)
+                assertEquals(3, bytes?.size)
+                callbacks.countDown()
             }
-            assertTrue(ready.await(2, TimeUnit.SECONDS))
-            start.countDown()
-            val values = futures.map { it.get() }
+            coalescer.loadAsync("same-tile", loaderExecutor, {
+                count.incrementAndGet()
+                byteArrayOf(9)
+            }) { _, _ -> }
+            assertTrue(callbacks.await(2, TimeUnit.SECONDS))
             assertEquals(1, count.get())
-            assertEquals(8, values.size)
-            assertEquals(3, values.first()?.size)
         } finally {
-            callers.shutdownNow()
             loaderExecutor.shutdownNow()
         }
     }

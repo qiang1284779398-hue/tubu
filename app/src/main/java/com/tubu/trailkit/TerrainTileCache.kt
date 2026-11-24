@@ -40,18 +40,32 @@ internal class TerrainTileMemoryStore(private val maxBytes: Long) {
 
 internal class TerrainRequestCoalescer {
     private val pending = HashMap<String, CompletableFuture<ByteArray?>>()
-    fun load(key: String, executor: ExecutorService, loader: () -> ByteArray?): ByteArray? {
-        val future = synchronized(pending) {
-            pending[key] ?: CompletableFuture.supplyAsync({ loader() }, executor).also { created ->
-                pending[key] = created
-                created.whenComplete { _, _ -> synchronized(pending) { pending.remove(key, created) } }
+    fun loadAsync(
+        key: String,
+        executor: ExecutorService,
+        loader: () -> ByteArray?,
+        onComplete: (ByteArray?, Throwable?) -> Unit
+    ) {
+        synchronized(pending) {
+            if (pending.containsKey(key)) return
+            val created = CompletableFuture.supplyAsync({ loader() }, executor)
+            pending[key] = created
+            created.whenComplete { bytes, error ->
+                synchronized(pending) { pending.remove(key, created) }
+                onComplete(bytes, error)
             }
         }
-        return try { future.get(14, TimeUnit.SECONDS) } catch (_: Exception) { null }
     }
+
 }
 
 internal class TerrainTileCache(context: Context) {
+    companion object {
+        private val PLACEHOLDER_PNG = android.util.Base64.decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p1sAAAAASUVORK5CYII=",
+            android.util.Base64.DEFAULT
+        )
+    }
     private enum class Kind(val folder: String, val limitBytes: Long) {
         DEM("dem", 256L * 1024L * 1024L),
         IMAGERY("imagery", 512L * 1024L * 1024L)
@@ -63,8 +77,8 @@ internal class TerrainTileCache(context: Context) {
         Thread(runnable, "TerrainTileCache").apply { isDaemon = true }
     }
     private val client = OkHttpClient.Builder()
-        .connectTimeout(4, TimeUnit.SECONDS).readTimeout(7, TimeUnit.SECONDS)
-        .callTimeout(12, TimeUnit.SECONDS).retryOnConnectionFailure(true).build()
+        .connectTimeout(12, TimeUnit.SECONDS).readTimeout(45, TimeUnit.SECONDS)
+        .callTimeout(90, TimeUnit.SECONDS).retryOnConnectionFailure(true).build()
     private val demHits = AtomicLong()
     private val imageryHits = AtomicLong()
     private val demMisses = AtomicLong()
@@ -73,9 +87,14 @@ internal class TerrainTileCache(context: Context) {
     private val imageryBytes = AtomicLong()
     private val demOfflineMissing = AtomicLong()
     private val imageryOfflineMissing = AtomicLong()
+    private val demFailures = AtomicLong()
+    private val imageryFailures = AtomicLong()
+    private val demFallbacks = AtomicLong()
+    private val imageryFallbacks = AtomicLong()
     private val demDownloads = AtomicLong()
     private val imageryDownloads = AtomicLong()
     private val appContext = context.applicationContext
+    @Volatile var onTileCached: ((String) -> Unit)? = null
 
     fun intercept(url: String): WebResourceResponse? {
         val kind = kindFor(url) ?: return null
@@ -96,17 +115,26 @@ internal class TerrainTileCache(context: Context) {
             }
         }
         recordMiss(kind)
-        if (!hasInternet()) {
-            recordOfflineMissing(kind)
-            return missingResponse()
+        recordFallback(kind)
+        // Do not block Chromium's tile request thread on cache I/O.
+        // null delegates the actual tile request to WebView's native network stack.
+        // A separate bounded worker opportunistically persists a second fetch.
+        try {
+            coalescer.loadAsync(url, executor, { download(url, kind, key) }) { bytes, error ->
+                if (bytes != null && bytes.isNotEmpty()) {
+                    memory.put(key, bytes)
+                    runCatching { onTileCached?.invoke(kind.name) }
+                } else {
+                    recordFailure(kind)
+                    if (!hasInternet()) recordOfflineMissing(kind)
+                }
+            }
+        } catch (_: Exception) {
+            recordFailure(kind)
         }
-        val bytes = coalescer.load(url, executor) { download(url, kind, key) }
-        if (bytes == null) {
-            recordOfflineMissing(kind)
-            return missingResponse()
-        }
-        memory.put(key, bytes)
-        return response(bytes, 200, "OK")
+        // Return a successful, non-cacheable placeholder immediately; the source is reloaded
+        // when the background fetch has persisted the real tile. Never poison GL JS with 504.
+        return placeholderResponse()
     }
 
     private fun kindFor(url: String): Kind? {
@@ -174,12 +202,18 @@ internal class TerrainTileCache(context: Context) {
     private fun recordOfflineMissing(kind: Kind) {
         if (kind == Kind.DEM) demOfflineMissing.incrementAndGet() else imageryOfflineMissing.incrementAndGet()
     }
+    private fun recordFailure(kind: Kind) {
+        if (kind == Kind.DEM) demFailures.incrementAndGet() else imageryFailures.incrementAndGet()
+    }
+    private fun recordFallback(kind: Kind) {
+        if (kind == Kind.DEM) demFallbacks.incrementAndGet() else imageryFallbacks.incrementAndGet()
+    }
     private fun recordDownload(kind: Kind) {
         if (kind == Kind.DEM) demDownloads.incrementAndGet() else imageryDownloads.incrementAndGet()
     }
 
     fun statsJson(): String =
-        """{"dem":{"hits":${demHits.get()},"misses":${demMisses.get()},"offlineMissing":${demOfflineMissing.get()},"downloads":${demDownloads.get()},"bytesWritten":${demBytes.get()}},"imagery":{"hits":${imageryHits.get()},"misses":${imageryMisses.get()},"offlineMissing":${imageryOfflineMissing.get()},"downloads":${imageryDownloads.get()},"bytesWritten":${imageryBytes.get()}},"memoryBytes":${memory.sizeBytes()},"memoryEntries":${memory.sizeEntries()}}"""
+        """{"dem":{"hits":${demHits.get()},"misses":${demMisses.get()},"fallbacks":${demFallbacks.get()},"failures":${demFailures.get()},"offlineMissing":${demOfflineMissing.get()},"downloads":${demDownloads.get()},"bytesWritten":${demBytes.get()}},"imagery":{"hits":${imageryHits.get()},"misses":${imageryMisses.get()},"fallbacks":${imageryFallbacks.get()},"failures":${imageryFailures.get()},"offlineMissing":${imageryOfflineMissing.get()},"downloads":${imageryDownloads.get()},"bytesWritten":${imageryBytes.get()}},"memoryBytes":${memory.sizeBytes()},"memoryEntries":${memory.sizeEntries()}}"""
 
     private fun sha256(value: String): String =
         MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
@@ -190,21 +224,14 @@ internal class TerrainTileCache(context: Context) {
         ByteArrayInputStream(bytes)
     )
 
+    private fun placeholderResponse() = WebResourceResponse(
+        "image/png", null, 200, "OK",
+        mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store", "X-Terrain-Placeholder" to "true"),
+        ByteArrayInputStream(PLACEHOLDER_PNG)
+    )
+
     private fun mimeType(bytes: ByteArray): String =
         if (bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() && bytes[2] == 0xFF.toByte()) "image/jpeg" else "image/png"
 
-    private fun missingResponse() = WebResourceResponse(
-        "image/png", null, 504, "Terrain Tile Missing",
-        mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store", "X-Terrain-Cache-Miss" to "true"),
-        ByteArrayInputStream(TRANSPARENT_PNG)
-    )
-
     fun close() { executor.shutdownNow() }
-
-    companion object {
-        private val TRANSPARENT_PNG = android.util.Base64.decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p1sAAAAASUVORK5CYII=",
-            android.util.Base64.DEFAULT
-        )
-    }
 }

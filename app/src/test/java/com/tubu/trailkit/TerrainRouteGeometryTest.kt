@@ -79,4 +79,14 @@ class TerrainRouteGeometryTest {
         assertTrue(lods.first().line.size < lods.last().line.size)
         assertTrue(lods.all { it.ribbon.isNotEmpty() && it.ribbon.all { p -> p.first.isFinite() && p.second.isFinite() } })
     }
+    @Test fun payloadChunkingPreservesExactOrderAndContentAt48KiBoundary() {
+        val payload = buildString {
+            repeat(120_000) { append(('a'.code + (it % 26)).toChar()) }
+        }
+        val chunks = terrainPayloadChunks(payload)
+        assertEquals(3, chunks.size)
+        assertTrue(chunks.all { it.length <= 48 * 1024 })
+        assertEquals(payload, chunks.joinToString(""))
+    }
+
 }

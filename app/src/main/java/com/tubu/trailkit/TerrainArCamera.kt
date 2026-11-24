@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -60,11 +62,20 @@ private data class ArTerrainSnapshot(
     val elevationFallbackRatio: Double = 1.0
 )
 private data class CameraRibbonPoint(
-    val center: ArScreenPoint?,
+    val centerWorld: ArVector3,
     val leftWorld: ArVector3,
     val rightWorld: ArVector3,
     val progressMeters: Double,
     val occlusionAlpha: Float
+)
+
+private data class ArProjectedRibbonSegment(
+    val polygon: List<ArScreenPoint>,
+    val centerStart: ArScreenPoint?,
+    val centerEnd: ArScreenPoint?,
+    val progressStart: Double,
+    val progressEnd: Double,
+    val alpha: Float
 )
 
 private data class ArFrameSnapshot(
@@ -126,6 +137,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     var locationError by remember { mutableStateOf("") }
     var activeCameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var cameraSessionActive by remember { mutableStateOf(true) }
+    var arViewSize by remember { mutableStateOf(IntSize.Zero) }
     val navigationPrefs = remember(projectId) { context.getSharedPreferences("trailkit_navigation", Context.MODE_PRIVATE) }
     var cameraHeightMeters by remember(projectId) {
         mutableFloatStateOf(navigationPrefs.getFloat("ar_camera_height_$projectId", 1.45f).coerceIn(1.1f, 1.9f))
@@ -411,6 +423,74 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             arReferenceElevation, cameraHeightMeters.toDouble(), cameraIntrinsics, gpsWeak, gpsArUsable
         )
     }
+    // Prepare immutable projected ribbon segments before Canvas drawing.
+    val projectedRibbonSegments = remember(frameSnapshot, arViewSize) {
+        val frame = frameSnapshot
+        val fix = frame.location
+        val match = frame.match
+        val pose = frame.pose
+        val width = arViewSize.width.toDouble()
+        val height = arViewSize.height.toDouble()
+        if (fix == null || match == null || pose == null || !frame.gpsUsable ||
+            frame.samples.size < 2 || width <= 0.0 || height <= 0.0
+        ) emptyList() else {
+            val focal = frame.intrinsics.focalPixels(width, height)
+            val ribbonPoints = frame.samples.mapIndexed { index, sample ->
+                val previous = frame.samples[(index - 1).coerceAtLeast(0)]
+                val next = frame.samples[(index + 1).coerceAtMost(frame.samples.lastIndex)]
+                val incoming = bearingToPoint(previous.latitude to previous.longitude, sample.latitude to sample.longitude)
+                val outgoing = bearingToPoint(sample.latitude to sample.longitude, next.latitude to next.longitude)
+                val turn = kotlin.math.abs(signedTurnAngle(incoming, outgoing))
+                val miterRatio = 1.0 / kotlin.math.cos(Math.toRadians(turn * 0.5)).coerceAtLeast(0.01)
+                // Miter limit 2.0: over-limit corners use bevel-style cross-sections and narrower half-width.
+                val halfWidth = if (miterRatio > 2.0) 0.35 else 0.65
+                val tangent = bearingToPoint(previous.latitude to previous.longitude, next.latitude to next.longitude)
+                val leftGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent - 90.0, halfWidth)
+                val rightGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent + 90.0, halfWidth)
+                val leftWorld = arRouteSampleWorldVectorFromAnchor(
+                    match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
+                    sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
+                    frame.referenceElevationMeters, frame.cameraHeightMeters
+                )
+                val rightWorld = arRouteSampleWorldVectorFromAnchor(
+                    match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
+                    sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
+                    frame.referenceElevationMeters, frame.cameraHeightMeters
+                )
+                val centerWorld = arRouteSampleWorldVectorFromAnchor(
+                    match.snappedLat, match.snappedLon, fix.latitude, fix.longitude, sample,
+                    frame.referenceElevationMeters, frame.cameraHeightMeters
+                )
+                CameraRibbonPoint(centerWorld, leftWorld, rightWorld, sample.progressMeters, sample.occlusionAlpha)
+            }
+            (1 until ribbonPoints.size).map { index ->
+                val a = ribbonPoints[index - 1]
+                val b = ribbonPoints[index]
+                val distanceAlong = (a.progressMeters + b.progressMeters) * 0.5 - match.progressMeters
+                val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f) *
+                    minOf(a.occlusionAlpha, b.occlusionAlpha).coerceIn(0.05f, 1f) *
+                    if (frame.gpsWeak) 0.48f else 1f
+                ArProjectedRibbonSegment(
+                    polygon = projectArWorldPolygon(
+                        listOf(a.leftWorld, a.rightWorld, b.rightWorld, b.leftWorld),
+                        pose, focal, width, height, 0.5,
+                        frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
+                    ),
+                    centerStart = projectArWorldPoint(
+                        a.centerWorld.east, a.centerWorld.north, a.centerWorld.up,
+                        pose, focal, width, height, frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
+                    ),
+                    centerEnd = projectArWorldPoint(
+                        b.centerWorld.east, b.centerWorld.north, b.centerWorld.up,
+                        pose, focal, width, height, frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
+                    ),
+                    progressStart = a.progressMeters,
+                    progressEnd = b.progressMeters,
+                    alpha = alpha
+                )
+            }
+        }
+    }
     LaunchedEffect(location, routeMatch, activeTerrainSnapshot, cameraIntrinsics, ageRefresh, arRouteSamples) {
         val count = arRouteSamples.size
         TerrainArDiagnostics.recordState(
@@ -677,7 +757,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         previewView
                     }
                 )
-                Canvas(Modifier.fillMaxSize()) {
+                Canvas(Modifier.fillMaxSize().onSizeChanged { arViewSize = it }) {
                     val frameStartNanos = System.nanoTime()
                     val frame = frameSnapshot
                     val fix = frame.location
@@ -686,79 +766,32 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     if (fix != null && match != null && frame.gpsUsable && projectionReady &&
                         pose != null && route != null && routePoints.size > 1
                     ) {
-                        val samples = frame.samples
-                        val referenceElevation = frame.referenceElevationMeters
-                        val focalPixels = frame.intrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
-                        val ribbonPoints = samples.mapIndexed { index, sample ->
-                            val previous = samples[(index - 1).coerceAtLeast(0)]
-                            val next = samples[(index + 1).coerceAtMost(samples.lastIndex)]
-                            val incoming = bearingToPoint(previous.latitude to previous.longitude, sample.latitude to sample.longitude)
-                            val outgoing = bearingToPoint(sample.latitude to sample.longitude, next.latitude to next.longitude)
-                            val turn = kotlin.math.abs(signedTurnAngle(incoming, outgoing))
-                            val halfWidth = if (turn > 120.0) 0.35 else 0.65
-                            val tangent = bearingToPoint(
-                                previous.latitude to previous.longitude,
-                                next.latitude to next.longitude
-                            )
-                            val leftGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent - 90.0, halfWidth)
-                            val rightGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent + 90.0, halfWidth)
-                            val leftWorld = arRouteSampleWorldVectorFromAnchor(
-                                match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
-                                sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
-                                referenceElevation, cameraHeightMeters.toDouble()
-                            )
-                            val rightWorld = arRouteSampleWorldVectorFromAnchor(
-                                match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
-                                sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
-                                referenceElevation, cameraHeightMeters.toDouble()
-                            )
-                            val center = projectArRouteSampleFromAnchor(
-                                match.snappedLat, match.snappedLon, fix.latitude, fix.longitude, sample,
-                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels,
-                                size.width.toDouble(), size.height.toDouble(),
-                                frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
-                            )
-                            CameraRibbonPoint(center, leftWorld, rightWorld, sample.progressMeters, sample.occlusionAlpha)
-                        }
-
-                        for (i in 1 until ribbonPoints.size) {
-                            val a = ribbonPoints[i - 1]
-                            val b = ribbonPoints[i]
-                            val distanceAlong = (a.progressMeters + b.progressMeters) * 0.5 - match.progressMeters
-                            val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f) *
-                                minOf(a.occlusionAlpha, b.occlusionAlpha).coerceIn(0.05f, 1f) *
-                                if (frame.gpsWeak) 0.48f else 1f
-                            val clippedQuad = projectArWorldPolygon(
-                                listOf(a.leftWorld, a.rightWorld, b.rightWorld, b.leftWorld),
-                                pose, focalPixels, size.width.toDouble(), size.height.toDouble(),
-                                0.5, frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
-                            )
-                            if (clippedQuad.size >= 3) {
-                                val quad = Path().apply {
-                                    moveTo(clippedQuad.first().x, clippedQuad.first().y)
-                                    clippedQuad.drop(1).forEach { lineTo(it.x, it.y) }
+                        projectedRibbonSegments.forEach { segment ->
+                            if (segment.polygon.size >= 3) {
+                                val path = Path().apply {
+                                    moveTo(segment.polygon.first().x, segment.polygon.first().y)
+                                    segment.polygon.drop(1).forEach { lineTo(it.x, it.y) }
                                     close()
                                 }
-                                drawPath(quad, Color(0xFF052A43).copy(alpha = 0.54f * alpha))
-                                drawPath(quad, Color(0xFF168CFF).copy(alpha = 0.72f * alpha))
+                                drawPath(path, Color(0xFF052A43).copy(alpha = 0.54f * segment.alpha))
+                                drawPath(path, Color(0xFF168CFF).copy(alpha = 0.72f * segment.alpha))
                             }
-                            if (a.center != null && b.center != null) {
+                            val a = segment.centerStart
+                            val b = segment.centerEnd
+                            if (a != null && b != null) {
                                 drawLine(
-                                    Color(0xFFBDEEFF).copy(alpha = 0.92f * alpha),
-                                    androidx.compose.ui.geometry.Offset(a.center.x, a.center.y),
-                                    androidx.compose.ui.geometry.Offset(b.center.x, b.center.y),
+                                    Color(0xFFBDEEFF).copy(alpha = 0.92f * segment.alpha),
+                                    androidx.compose.ui.geometry.Offset(a.x, a.y),
+                                    androidx.compose.ui.geometry.Offset(b.x, b.y),
                                     2.2f
                                 )
-                                if ((a.progressMeters / 24.0).toInt() != (b.progressMeters / 24.0).toInt()) {
-                                    val dx = b.center.x - a.center.x
-                                    val dy = b.center.y - a.center.y
+                                if ((segment.progressStart / 24.0).toInt() != (segment.progressEnd / 24.0).toInt()) {
+                                    val dx = b.x - a.x
+                                    val dy = b.y - a.y
                                     val length = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
                                     val ux = dx / length
                                     val uy = dy / length
-                                    val mid = androidx.compose.ui.geometry.Offset(
-                                        (a.center.x + b.center.x) * 0.5f,
-                                        (a.center.y + b.center.y) * 0.5f
-                                    )
+                                    val mid = androidx.compose.ui.geometry.Offset((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f)
                                     val arrowLength = 10f.coerceAtLeast((length * 0.38f).coerceAtMost(24f))
                                     val tip = androidx.compose.ui.geometry.Offset(mid.x + ux * arrowLength, mid.y + uy * arrowLength)
                                     val base = androidx.compose.ui.geometry.Offset(mid.x - ux * arrowLength * 0.55f, mid.y - uy * arrowLength * 0.55f)
@@ -770,7 +803,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                         lineTo(base.x - perpX, base.y - perpY)
                                         close()
                                     }
-                                    drawPath(arrow, Color.White.copy(alpha = 0.94f * alpha))
+                                    drawPath(arrow, Color.White.copy(alpha = 0.94f * segment.alpha))
                                 }
                             }
                         }

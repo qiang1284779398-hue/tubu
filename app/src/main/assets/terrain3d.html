@@ -81,7 +81,7 @@ button:active{background:#39664d}
  const say=(message,error)=>{status.textContent=message;status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}};
  if(!window.maplibregl){say('MapLibre 本地引擎未能加载，请检查 APK 资源包。',true);return;}
  const empty={type:'FeatureCollection',features:[]};
- let routeLineData=empty,routeRibbonData=empty,waypointData=empty;
+ let routeLineData=empty,routeRibbonData=empty,waypointData=empty,pendingData=null;
  let map=null,loaded=false,contoursVisible=false,layerMode=2,contourTimer=0,selectedWaypointId=null;
  const mapStyle={
   version:8,
@@ -98,7 +98,7 @@ button:active{background:#39664d}
   layers:[
    {id:'satellite',type:'raster',source:'imagery',paint:{'raster-opacity':1}},
    {id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d','hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315}},
-   {id:'terrain-contours-line',type:'line',source:'terrain-contours',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#f1d99a','line-width':1,'line-opacity':.72},layout:{visibility:'none'}},
+   {id:'terrain-contours-line',type:'line',source:'terrain-contours',layout:{'line-join':'round','line-cap':'round','visibility':'none'},paint:{'line-color':'#f1d99a','line-width':1,'line-opacity':.72}},
    {id:'route-ribbon-fill',type:'fill',source:'route-ribbon',filter:['==',['get','lod'],'overview'],paint:{'fill-color':'#ff9a3c','fill-opacity':.32}},
    {id:'route-casing',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#171d19','line-width':7,'line-opacity':.92}},
    {id:'route-main',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffad43','line-width':4,'line-opacity':1}},
@@ -251,6 +251,9 @@ button:active{background:#39664d}
    say('路线 setData：JSON 解析完成，准备写入 GeoJSON 源…');
    routeLineData=data.routeLine||empty;routeRibbonData=data.routeRibbon||empty;waypointData=data.waypoints||empty;
    if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('waypoints'))throw new Error('MapLibre 路线数据源尚未初始化');
+   if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('route-points')||!map.getSource('waypoints')||!map.getSource('selected-waypoint')){
+    pendingData=raw;say('路线数据已接收，等待地图样式与本地数据源就绪…');return;
+   }
    map.getSource('route-line').setData(routeLineData);
    map.getSource('route-ribbon').setData(routeRibbonData);
    say('路线 setData：轨迹线与缎带已提交，正在注册航点图标…');

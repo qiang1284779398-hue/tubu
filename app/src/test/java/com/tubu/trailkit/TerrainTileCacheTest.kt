@@ -47,4 +47,24 @@ class TerrainTileCacheTest {
             loaderExecutor.shutdownNow()
         }
     }
+
+    @Test fun demPlaceholderPngDecodesToZeroElevation() {
+        // Regression guard for the black-screen bug: the DEM placeholder served on a
+        // cache miss must decode (Terrarium) to 0 m. A transparent placeholder pixel
+        // (RGB 0,0,0) decodes to -10000 m and sinks the whole terrain scene.
+        val bytes = java.util.Base64.getDecoder()
+            .decode(TerrainTilePlaceholders.DEM_ZERO_ELEVATION_PNG_BASE64)
+        val image = javax.imageio.ImageIO.read(bytes.inputStream())
+        assertNotNull(image)
+        assertEquals(1, image.width)
+        assertEquals(1, image.height)
+        val rgb = image.getRGB(0, 0)
+        val red = (rgb shr 16) and 0xff
+        val green = (rgb shr 8) and 0xff
+        val blue = rgb and 0xff
+        assertEquals(1, red)
+        assertEquals(134, green)
+        assertEquals(160, blue)
+        assertEquals(0.0, TerrainTilePlaceholders.terrariumElevationMeters(red, green, blue), 0.001)
+    }
 }

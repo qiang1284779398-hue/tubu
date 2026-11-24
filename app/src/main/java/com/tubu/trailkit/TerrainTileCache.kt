@@ -59,10 +59,32 @@ internal class TerrainRequestCoalescer {
 
 }
 
+internal object TerrainTilePlaceholders {
+    /**
+     * 1x1 PNG whose single pixel is RGB(1, 134, 160).
+     *
+     * Terrarium DEM decoding is elevation = -10000 + (R*65536 + G*256 + B) * 0.1,
+     * so this pixel decodes to exactly 0 m. A transparent (RGB 0,0,0) placeholder
+     * would decode to -10000 m: with terrain enabled, MapLibre projects the whole
+     * scene (terrain, imagery, route, labels) onto that sunken surface and the map
+     * renders uniformly black until every real DEM tile has downloaded. The DEM
+     * placeholder must therefore encode 0 m, never transparency.
+     */
+    const val DEM_ZERO_ELEVATION_PNG_BASE64 =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgbFsAAAGzASgo2PpvAAAAAElFTkSuQmCC"
+
+    fun terrariumElevationMeters(red: Int, green: Int, blue: Int): Double =
+        -10000.0 + (red * 65536 + green * 256 + blue) * 0.1
+}
+
 internal class TerrainTileCache(context: Context) {
     companion object {
         private val PLACEHOLDER_PNG = android.util.Base64.decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p1sAAAAASUVORK5CYII=",
+            android.util.Base64.DEFAULT
+        )
+        private val DEM_PLACEHOLDER_PNG = android.util.Base64.decode(
+            TerrainTilePlaceholders.DEM_ZERO_ELEVATION_PNG_BASE64,
             android.util.Base64.DEFAULT
         )
     }
@@ -134,7 +156,9 @@ internal class TerrainTileCache(context: Context) {
         }
         // Return a successful, non-cacheable placeholder immediately; the source is reloaded
         // when the background fetch has persisted the real tile. Never poison GL JS with 504.
-        return placeholderResponse()
+        // DEM placeholders must encode 0 m elevation (see TerrainTilePlaceholders), otherwise
+        // the terrain scene sinks 10 km below the camera and renders black.
+        return placeholderResponse(kind)
     }
 
     private fun kindFor(url: String): Kind? {
@@ -224,10 +248,10 @@ internal class TerrainTileCache(context: Context) {
         ByteArrayInputStream(bytes)
     )
 
-    private fun placeholderResponse() = WebResourceResponse(
+    private fun placeholderResponse(kind: Kind) = WebResourceResponse(
         "image/png", null, 200, "OK",
         mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "no-store", "X-Terrain-Placeholder" to "true"),
-        ByteArrayInputStream(PLACEHOLDER_PNG)
+        ByteArrayInputStream(if (kind == Kind.DEM) DEM_PLACEHOLDER_PNG else PLACEHOLDER_PNG)
     )
 
     private fun mimeType(bytes: ByteArray): String =

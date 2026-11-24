@@ -40,15 +40,6 @@ internal class TerrainTileMemoryStore(private val maxBytes: Long) {
 
 internal class TerrainRequestCoalescer {
     private val pending = HashMap<String, CompletableFuture<ByteArray?>>()
-    fun load(key: String, executor: ExecutorService, loader: () -> ByteArray?): ByteArray? {
-        val future = synchronized(pending) {
-            pending[key] ?: CompletableFuture.supplyAsync({ loader() }, executor).also { created ->
-                pending[key] = created
-                created.whenComplete { _, _ -> synchronized(pending) { pending.remove(key, created) } }
-            }
-        }
-        return try { future.get(14, TimeUnit.SECONDS) } catch (_: Exception) { null }
-    }
     fun loadAsync(
         key: String,
         executor: ExecutorService,

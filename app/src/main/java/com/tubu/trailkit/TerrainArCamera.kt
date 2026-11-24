@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -55,13 +57,37 @@ private val ArLime = Color(0xFFB8D5A8)
 private data class ArTerrainSnapshot(
     val progressMeters: Double,
     val routeElevations: List<Double?>,
-    val currentGroundElevationMeters: Double
+    val currentGroundElevationMeters: Double,
+    val occlusionAlphas: List<Float> = emptyList(),
+    val elevationFallbackRatio: Double = 1.0
 )
 private data class CameraRibbonPoint(
-    val center: ArScreenPoint,
-    val left: ArScreenPoint,
-    val right: ArScreenPoint,
-    val progressMeters: Double
+    val centerWorld: ArVector3,
+    val leftWorld: ArVector3,
+    val rightWorld: ArVector3,
+    val progressMeters: Double,
+    val occlusionAlpha: Float
+)
+
+private data class ArProjectedRibbonSegment(
+    val polygon: List<ArScreenPoint>,
+    val centerStart: ArScreenPoint?,
+    val centerEnd: ArScreenPoint?,
+    val progressStart: Double,
+    val progressEnd: Double,
+    val alpha: Float
+)
+
+private data class ArFrameSnapshot(
+    val location: Location?,
+    val match: RouteMatch?,
+    val pose: ArCameraPose?,
+    val samples: List<ArRouteSample>,
+    val referenceElevationMeters: Double?,
+    val cameraHeightMeters: Double,
+    val intrinsics: ArCameraIntrinsics,
+    val gpsWeak: Boolean,
+    val gpsUsable: Boolean
 )
 
 private data class CameraTurn(val angleDegrees: Double, val distanceMeters: Double) {
@@ -102,6 +128,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     var location by remember { mutableStateOf<Location?>(null) }
     var sensorReady by remember { mutableStateOf(false) }
     var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM) }
+    var gyroMagnitudeRadPerSec by remember { mutableDoubleStateOf(0.0) }
+    var magneticFieldMagnitudeMicroTesla by remember { mutableDoubleStateOf<Double?>(null) }
     var magneticCameraPose by remember { mutableStateOf<ArCameraPose?>(null) }
     val cameraPoseFilter = remember { ArCameraPoseFilter() }
     var cameraIntrinsics by remember { mutableStateOf(ArCameraIntrinsics(4.2, 5.6, 4.2, false)) }
@@ -109,9 +137,14 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     var locationError by remember { mutableStateOf("") }
     var activeCameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var cameraSessionActive by remember { mutableStateOf(true) }
+    var arViewSize by remember { mutableStateOf(IntSize.Zero) }
     val navigationPrefs = remember(projectId) { context.getSharedPreferences("trailkit_navigation", Context.MODE_PRIVATE) }
+    var cameraHeightMeters by remember(projectId) {
+        mutableFloatStateOf(navigationPrefs.getFloat("ar_camera_height_$projectId", 1.45f).coerceIn(1.1f, 1.9f))
+    }
+    LaunchedEffect(context) { ArTerrainDem.initialize(context) }
     val reverseRoute = remember(projectId) { navigationPrefs.getBoolean("reverse_$projectId", false) }
-    val baseRoutePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
+    val baseRoutePoints = remember(encodedTrack) { cleanArRoutePoints(decodeTrackPoints(encodedTrack)) }
     val routePoints = remember(baseRoutePoints, reverseRoute) { if (reverseRoute) baseRoutePoints.asReversed() else baseRoutePoints }
     val route = remember(routePoints) { if (routePoints.size >= 2) prepareRoute(routePoints) else null }
     val routeProgressKey = "progress_${projectId}_${encodedTrack.hashCode()}_${if (reverseRoute) "rev" else "fwd"}"
@@ -141,10 +174,14 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     } ?: Long.MAX_VALUE
     val gpsQualityOk = location != null &&
         location!!.provider == android.location.LocationManager.GPS_PROVIDER &&
-        location!!.hasAccuracy() && location!!.accuracy <= 25f && gpsAgeMillis <= 10_000L
+        location!!.hasAccuracy() && location!!.accuracy <= 20f && gpsAgeMillis <= 15_000L
     val routeSnapLimitMeters = location?.let { (it.accuracy.toDouble() * 1.25).coerceIn(8.0, 28.0) } ?: 12.0
     val offRoute = gpsQualityOk && routeMatchCandidate != null && routeMatch == null
-    val gpsReliable = gpsQualityOk && routeMatch != null
+    val gpsReliable = location != null && location!!.hasAccuracy() &&
+        location!!.accuracy <= 10f && gpsAgeMillis <= 5_000L && routeMatch != null
+    val gpsWeak = location != null && location!!.hasAccuracy() &&
+        location!!.accuracy <= 20f && gpsAgeMillis <= 15_000L && routeMatch != null && !gpsReliable
+    val gpsArUsable = gpsReliable || gpsWeak
     // Show a nearby route-joining guide even when the loose GPS snap tolerance
     // currently considers the fix "on route".
     val rejoinMinimumMeters = location?.let {
@@ -165,8 +202,33 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             }.getOrDefault(0.0)
         } ?: 0.0
     }
-    val cameraPose = remember(magneticCameraPose, magneticDeclination) {
-        magneticCameraPose?.let { applyArMagneticDeclination(it, magneticDeclination) }
+    LaunchedEffect(location) {
+        val fix = location
+        if (fix != null && fix.hasBearing() && fix.hasSpeed() && fix.speed >= 1.0f) {
+            val course = fix.bearing.toDouble()
+            val previous = previousGpsCourse
+            stableGpsCourseCycles = if (previous != null &&
+                kotlin.math.abs(signedTurnAngle(previous, course)) <= 10.0
+            ) stableGpsCourseCycles + 1 else 1
+            previousGpsCourse = course
+        } else {
+            stableGpsCourseCycles = 0
+            previousGpsCourse = null
+        }
+    }
+    val cameraPose = remember(magneticCameraPose, magneticDeclination, location, stableGpsCourseCycles, gyroMagnitudeRadPerSec) {
+        magneticCameraPose?.let { magneticPose ->
+            val truePose = applyArMagneticDeclination(magneticPose, magneticDeclination)
+            val fix = location
+            if (fix != null && fix.hasBearing() && fix.hasSpeed()) {
+                val aligned = kotlin.math.abs(signedTurnAngle(truePose.headingDegrees, fix.bearing.toDouble())) <= 25.0
+                val corrected = fuseArGpsCourse(
+                    truePose.headingDegrees, fix.bearing.toDouble(), fix.speed.toDouble(),
+                    stableGpsCourseCycles, aligned, gyroMagnitudeRadPerSec > 0.6, 0.08
+                )
+                applyArMagneticDeclination(truePose, signedTurnAngle(truePose.headingDegrees, corrected))
+            } else truePose
+        }
     }
     val heading = (cameraPose?.headingDegrees ?: Double.NaN).toFloat()
     val pitch = (cameraPose?.pitchDegrees ?: Double.NaN).toFloat()
@@ -199,7 +261,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val fix = location
         if (navigationFinished || fix == null || route == null || !fix.hasAccuracy() ||
             fix.provider != android.location.LocationManager.GPS_PROVIDER ||
-            fix.accuracy > 25f || gpsAgeMillis > 10_000L
+            fix.accuracy > 20f || gpsAgeMillis > 15_000L
         ) {
             routeMatchCandidate = null
             routeMatch = null
@@ -237,24 +299,53 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         }
     }
 
-    // Prefer ground DEM heights over GPX altitude, which is the height of the recording phone/watch.
-    LaunchedEffect(location, routeMatch, route) {
+    // Sample the route and the snapped ground reference on the same vertical datum.
+    LaunchedEffect(location, routeMatch, route, cameraHeightMeters) {
         val fix = location
         val match = routeMatch
-        if (fix == null || match == null || route == null || !gpsReliable) {
+        val activeRoute = route
+        if (fix == null || match == null || activeRoute == null || !gpsArUsable) {
             terrainSnapshot = null
         } else {
             val requestedProgress = match.progressMeters
-            val samples = sampleArRouteAhead(route, emptyList(), requestedProgress, 120.0, 4.0)
+            val gpxSmoothed = smoothArRouteElevations(routeElevations)
+            val samples = sampleArRouteAheadAdaptive(activeRoute, gpxSmoothed, requestedProgress, 120.0)
             val coordinates = samples.map { it.latitude to it.longitude }
             val dem = withContext(Dispatchers.IO) {
-                ArTerrainDem.elevations(coordinates) to ArTerrainDem.elevation(fix.latitude, fix.longitude)
+                ArTerrainDem.initialize(context)
+                ArTerrainDem.elevations(coordinates) to
+                    ArTerrainDem.elevation(match.snappedLat, match.snappedLon)
             }
-            terrainSnapshot = if (dem.second != null && dem.first.size == samples.size && dem.first.all { it != null }) {
-                ArTerrainSnapshot(requestedProgress, dem.first, dem.second!!)
+            val gpxAnchor = samples.firstOrNull()?.elevationMeters
+            val alignedGpxFallback = if (dem.second != null && gpxAnchor != null) {
+                samples.map { sample ->
+                    sample.elevationMeters?.let { it + (dem.second!! - gpxAnchor) }
+                }
+            } else samples.map { it.elevationMeters }
+            val resolved = if (dem.second != null) {
+                resolveArElevationSamples(dem.first, alignedGpxFallback)
             } else {
-                null
+                alignedGpxFallback
             }
+            val reference = dem.second ?: gpxAnchor
+            val rawOcclusion = if (dem.second != null) {
+                withContext(Dispatchers.IO) {
+                    samples.mapIndexed { index, sample ->
+                        val targetElevation = dem.first.getOrNull(index)
+                        if (targetElevation == null) 1f else ArTerrainDem.occlusionAlpha(
+                            fix.latitude, fix.longitude, dem.second, cameraHeightMeters.toDouble(),
+                            sample.latitude, sample.longitude, targetElevation
+                        )
+                    }
+                }
+            } else List(samples.size) { 1f }
+            val smoothedOcclusion = smoothArOcclusionAlphas(samples, rawOcclusion)
+            terrainSnapshot = if (reference != null) {
+                ArTerrainSnapshot(
+                    requestedProgress, resolved, reference, smoothedOcclusion,
+                    if (dem.first.isEmpty()) 1.0 else dem.first.count { it == null }.toDouble() / dem.first.size
+                )
+            } else null
         }
     }
     // When the GPS fix is outside the snap tolerance, fetch ground heights for a
@@ -298,7 +389,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val activeRoute = route
         val progress = routeMatch?.progressMeters
         if (activeRoute != null && progress != null) {
-            sampleArRouteAhead(activeRoute, smoothedGpxElevations, progress, 120.0, 4.0)
+            sampleArRouteAheadAdaptive(activeRoute, smoothedGpxElevations, progress, 120.0)
         } else {
             emptyList()
         }
@@ -312,7 +403,10 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             activeTerrainSnapshot.routeElevations.size == fallbackRouteSamples.size
         ) {
             fallbackRouteSamples.mapIndexed { index, sample ->
-                sample.copy(elevationMeters = activeTerrainSnapshot.routeElevations[index])
+                sample.copy(
+                    elevationMeters = activeTerrainSnapshot.routeElevations[index],
+                    occlusionAlpha = activeTerrainSnapshot.occlusionAlphas.getOrNull(index) ?: 1f
+                )
             }
         } else {
             fallbackRouteSamples
@@ -320,6 +414,95 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     }
     val arReferenceElevation = activeTerrainSnapshot?.currentGroundElevationMeters
         ?: fallbackRouteSamples.firstOrNull()?.elevationMeters
+    val frameSnapshot = remember(
+        location, routeMatch, cameraPose, arRouteSamples, arReferenceElevation,
+        cameraHeightMeters, cameraIntrinsics, gpsWeak, gpsArUsable
+    ) {
+        ArFrameSnapshot(
+            location?.let { Location(it) }, routeMatch, cameraPose, arRouteSamples.toList(),
+            arReferenceElevation, cameraHeightMeters.toDouble(), cameraIntrinsics, gpsWeak, gpsArUsable
+        )
+    }
+    // Prepare immutable projected ribbon segments before Canvas drawing.
+    val projectedRibbonSegments = remember(frameSnapshot, arViewSize) {
+        val frame = frameSnapshot
+        val fix = frame.location
+        val match = frame.match
+        val pose = frame.pose
+        val width = arViewSize.width.toDouble()
+        val height = arViewSize.height.toDouble()
+        if (fix == null || match == null || pose == null || !frame.gpsUsable ||
+            frame.samples.size < 2 || width <= 0.0 || height <= 0.0
+        ) emptyList() else {
+            val focal = frame.intrinsics.focalPixels(width, height)
+            val ribbonPoints = frame.samples.mapIndexed { index, sample ->
+                val previous = frame.samples[(index - 1).coerceAtLeast(0)]
+                val next = frame.samples[(index + 1).coerceAtMost(frame.samples.lastIndex)]
+                val incoming = bearingToPoint(previous.latitude to previous.longitude, sample.latitude to sample.longitude)
+                val outgoing = bearingToPoint(sample.latitude to sample.longitude, next.latitude to next.longitude)
+                val turn = kotlin.math.abs(signedTurnAngle(incoming, outgoing))
+                val miterRatio = 1.0 / kotlin.math.cos(Math.toRadians(turn * 0.5)).coerceAtLeast(0.01)
+                // Miter limit 2.0: over-limit corners use bevel-style cross-sections and narrower half-width.
+                val halfWidth = if (miterRatio > 2.0) 0.35 else 0.65
+                val tangent = bearingToPoint(previous.latitude to previous.longitude, next.latitude to next.longitude)
+                val leftGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent - 90.0, halfWidth)
+                val rightGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent + 90.0, halfWidth)
+                val leftWorld = arRouteSampleWorldVectorFromAnchor(
+                    match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
+                    sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
+                    frame.referenceElevationMeters, frame.cameraHeightMeters
+                )
+                val rightWorld = arRouteSampleWorldVectorFromAnchor(
+                    match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
+                    sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
+                    frame.referenceElevationMeters, frame.cameraHeightMeters
+                )
+                val centerWorld = arRouteSampleWorldVectorFromAnchor(
+                    match.snappedLat, match.snappedLon, fix.latitude, fix.longitude, sample,
+                    frame.referenceElevationMeters, frame.cameraHeightMeters
+                )
+                CameraRibbonPoint(centerWorld, leftWorld, rightWorld, sample.progressMeters, sample.occlusionAlpha)
+            }
+            (1 until ribbonPoints.size).map { index ->
+                val a = ribbonPoints[index - 1]
+                val b = ribbonPoints[index]
+                val distanceAlong = (a.progressMeters + b.progressMeters) * 0.5 - match.progressMeters
+                val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f) *
+                    minOf(a.occlusionAlpha, b.occlusionAlpha).coerceIn(0.05f, 1f) *
+                    if (frame.gpsWeak) 0.48f else 1f
+                ArProjectedRibbonSegment(
+                    polygon = projectArWorldPolygon(
+                        listOf(a.leftWorld, a.rightWorld, b.rightWorld, b.leftWorld),
+                        pose, focal, width, height, 0.5,
+                        frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
+                    ),
+                    centerStart = projectArWorldPoint(
+                        a.centerWorld.east, a.centerWorld.north, a.centerWorld.up,
+                        pose, focal, width, height, frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
+                    ),
+                    centerEnd = projectArWorldPoint(
+                        b.centerWorld.east, b.centerWorld.north, b.centerWorld.up,
+                        pose, focal, width, height, frame.intrinsics.distortionK1, frame.intrinsics.distortionK2
+                    ),
+                    progressStart = a.progressMeters,
+                    progressEnd = b.progressMeters,
+                    alpha = alpha
+                )
+            }
+        }
+    }
+    LaunchedEffect(location, routeMatch, activeTerrainSnapshot, cameraIntrinsics, ageRefresh, arRouteSamples) {
+        val count = arRouteSamples.size
+        TerrainArDiagnostics.recordState(
+            gpsAccuracyMeters = location?.accuracy?.toDouble(),
+            gpsAgeMillis = gpsAgeMillis,
+            snapDistanceMeters = routeMatch?.distanceMeters,
+            demSampleCount = activeTerrainSnapshot?.routeElevations?.size ?: 0,
+            elevationFallbackRatio = activeTerrainSnapshot?.elevationFallbackRatio ?: 1.0,
+            calibratedIntrinsics = cameraIntrinsics.calibrated,
+            occludedSampleRatio = if (count == 0) 0.0 else arRouteSamples.count { it.occlusionAlpha < 0.99f }.toDouble() / count
+        )
+    }
 
     val displayProjectName = remember(projectName) {
         if (projectName.matches(Regex("""\d{4}-\d{2}-\d{2}.*\d{10,}.*"""))) "当前徒步项目" else projectName
@@ -363,14 +546,34 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     DisposableEffect(context) {
         val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val sensor = manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val gyroSensor = manager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val magneticSensor = manager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val listener = object : SensorEventListener {
             private val rotation = FloatArray(9)
             override fun onSensorChanged(event: SensorEvent) {
-                SensorManager.getRotationMatrixFromVector(rotation, event.values)
-                val rawPose = arCameraPoseFromRotationMatrix(rotation, windowManager.defaultDisplay.rotation)
-                magneticCameraPose = rawPose?.let(cameraPoseFilter::apply)
-                sensorReady = magneticCameraPose != null
+                when (event.sensor.type) {
+                    Sensor.TYPE_GYROSCOPE -> {
+                        gyroMagnitudeRadPerSec = kotlin.math.sqrt(
+                            event.values.take(3).sumOf { it.toDouble() * it.toDouble() }
+                        )
+                    }
+                    Sensor.TYPE_MAGNETIC_FIELD -> {
+                        magneticFieldMagnitudeMicroTesla = kotlin.math.sqrt(
+                            event.values.take(3).sumOf { it.toDouble() * it.toDouble() }
+                        )
+                    }
+                    Sensor.TYPE_ROTATION_VECTOR -> {
+                        SensorManager.getRotationMatrixFromVector(rotation, event.values)
+                        val rawPose = arCameraPoseFromRotationMatrix(rotation, windowManager.defaultDisplay.rotation)
+                        magneticCameraPose = rawPose?.let {
+                            cameraPoseFilter.applyAdaptive(
+                                it, gyroMagnitudeRadPerSec, magneticFieldMagnitudeMicroTesla, sensorAccuracy
+                            )
+                        }
+                        sensorReady = magneticCameraPose != null
+                    }
+                }
             }
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
                 sensorAccuracy = accuracy
@@ -378,6 +581,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         }
         if (sensor != null) manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
         else sensorReady = false
+        gyroSensor?.let { manager.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME) }
+        magneticSensor?.let { manager.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME) }
         onDispose { manager.unregisterListener(listener) }
     }
 
@@ -520,16 +725,28 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                 provider.unbindAll()
                                 val camera = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview)
                                 val camera2Info = Camera2CameraInfo.from(camera.cameraInfo)
+                                // Read characteristics from the Camera2 camera actually bound by CameraX.
                                 val physicalSize = camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
                                 val focalLengths = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                                val pixelArray = camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
+                                val calibrated = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_INTRINSIC_CALIBRATION)
+                                val distortion = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_DISTORTION)
                                 val sensorRotation = camera.cameraInfo.getSensorRotationDegrees(targetRotation)
                                 if (physicalSize != null && focalLengths != null && focalLengths.isNotEmpty()) {
                                     val rotated = sensorRotation % 180 != 0
+                                    val validCalibration = calibrated != null && calibrated.size >= 4 &&
+                                        pixelArray != null && calibrated[0] > 0f && calibrated[1] > 0f
                                     cameraIntrinsics = ArCameraIntrinsics(
                                         if (rotated) physicalSize.height.toDouble() else physicalSize.width.toDouble(),
                                         if (rotated) physicalSize.width.toDouble() else physicalSize.height.toDouble(),
                                         focalLengths.first().toDouble(),
-                                        true
+                                        validCalibration,
+                                        intrinsicFxPixels = if (validCalibration) calibrated!![0].toDouble() else null,
+                                        intrinsicFyPixels = if (validCalibration) calibrated!![1].toDouble() else null,
+                                        sourcePixelWidth = pixelArray?.width?.toDouble(),
+                                        sourcePixelHeight = pixelArray?.height?.toDouble(),
+                                        distortionK1 = distortion?.getOrNull(0)?.toDouble() ?: 0.0,
+                                        distortionK2 = distortion?.getOrNull(1)?.toDouble() ?: 0.0
                                     )
                                 }
                                 cameraError = ""
@@ -540,85 +757,54 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         previewView
                     }
                 )
-                Canvas(Modifier.fillMaxSize()) {
-                    val fix = location
-                    val match = routeMatch
-                    val pose = cameraPose
-                    if (fix != null && match != null && gpsReliable && projectionReady &&
+                Canvas(Modifier.fillMaxSize().onSizeChanged { arViewSize = it }) {
+                    val frameStartNanos = System.nanoTime()
+                    val frame = frameSnapshot
+                    val fix = frame.location
+                    val match = frame.match
+                    val pose = frame.pose
+                    if (fix != null && match != null && frame.gpsUsable && projectionReady &&
                         pose != null && route != null && routePoints.size > 1
                     ) {
-                        val samples = arRouteSamples
-                        val referenceElevation = arReferenceElevation
-                        val focalPixels = cameraIntrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
-                        val ribbonPoints = samples.mapIndexedNotNull { index, sample ->
-                            val previous = samples[(index - 1).coerceAtLeast(0)]
-                            val next = samples[(index + 1).coerceAtMost(samples.lastIndex)]
-                            val tangent = bearingToPoint(
-                                previous.latitude to previous.longitude,
-                                next.latitude to next.longitude
-                            )
-                            val leftGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent - 90.0, 0.65)
-                            val rightGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent + 90.0, 0.65)
-                            val left = projectArRouteSample(
-                                fix.latitude, fix.longitude, sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
-                                referenceElevation, 1.4, pose, focalPixels, size.width.toDouble(), size.height.toDouble()
-                            )
-                            val right = projectArRouteSample(
-                                fix.latitude, fix.longitude, sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
-                                referenceElevation, 1.4, pose, focalPixels, size.width.toDouble(), size.height.toDouble()
-                            )
-                            val center = projectArRouteSample(
-                                fix.latitude, fix.longitude, sample, referenceElevation, 1.4,
-                                pose, focalPixels, size.width.toDouble(), size.height.toDouble()
-                            )
-                            if (left != null && right != null && center != null) {
-                                CameraRibbonPoint(center, left, right, sample.progressMeters)
-                            } else null
-                        }
-
-                        for (i in 1 until ribbonPoints.size) {
-                            val a = ribbonPoints[i - 1]
-                            val b = ribbonPoints[i]
-                            val distanceAlong = (a.progressMeters + b.progressMeters) * 0.5 - match.progressMeters
-                            val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f)
-                            val quad = Path().apply {
-                                moveTo(a.left.x, a.left.y)
-                                lineTo(a.right.x, a.right.y)
-                                lineTo(b.right.x, b.right.y)
-                                lineTo(b.left.x, b.left.y)
-                                close()
-                            }
-                            drawPath(quad, Color(0xFF052A43).copy(alpha = 0.54f * alpha))
-                            drawPath(quad, Color(0xFF168CFF).copy(alpha = 0.72f * alpha))
-                            drawLine(
-                                Color(0xFFBDEEFF).copy(alpha = 0.92f * alpha),
-                                androidx.compose.ui.geometry.Offset(a.center.x, a.center.y),
-                                androidx.compose.ui.geometry.Offset(b.center.x, b.center.y),
-                                2.2f
-                            )
-
-                            if ((a.progressMeters / 24.0).toInt() != (b.progressMeters / 24.0).toInt()) {
-                                val dx = b.center.x - a.center.x
-                                val dy = b.center.y - a.center.y
-                                val length = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
-                                val ux = dx / length
-                                val uy = dy / length
-                                val mid = androidx.compose.ui.geometry.Offset(
-                                    (a.center.x + b.center.x) * 0.5f,
-                                    (a.center.y + b.center.y) * 0.5f
-                                )
-                                val arrowLength = 10f.coerceAtLeast((length * 0.38f).coerceAtMost(24f))
-                                val tip = androidx.compose.ui.geometry.Offset(mid.x + ux * arrowLength, mid.y + uy * arrowLength)
-                                val base = androidx.compose.ui.geometry.Offset(mid.x - ux * arrowLength * 0.55f, mid.y - uy * arrowLength * 0.55f)
-                                val perpX = -uy * arrowLength * 0.5f
-                                val perpY = ux * arrowLength * 0.5f
-                                val arrow = Path().apply {
-                                    moveTo(tip.x, tip.y)
-                                    lineTo(base.x + perpX, base.y + perpY)
-                                    lineTo(base.x - perpX, base.y - perpY)
+                        projectedRibbonSegments.forEach { segment ->
+                            if (segment.polygon.size >= 3) {
+                                val path = Path().apply {
+                                    moveTo(segment.polygon.first().x, segment.polygon.first().y)
+                                    segment.polygon.drop(1).forEach { lineTo(it.x, it.y) }
                                     close()
                                 }
-                                drawPath(arrow, Color.White.copy(alpha = 0.94f * alpha))
+                                drawPath(path, Color(0xFF052A43).copy(alpha = 0.54f * segment.alpha))
+                                drawPath(path, Color(0xFF168CFF).copy(alpha = 0.72f * segment.alpha))
+                            }
+                            val a = segment.centerStart
+                            val b = segment.centerEnd
+                            if (a != null && b != null) {
+                                drawLine(
+                                    Color(0xFFBDEEFF).copy(alpha = 0.92f * segment.alpha),
+                                    androidx.compose.ui.geometry.Offset(a.x, a.y),
+                                    androidx.compose.ui.geometry.Offset(b.x, b.y),
+                                    2.2f
+                                )
+                                if ((segment.progressStart / 24.0).toInt() != (segment.progressEnd / 24.0).toInt()) {
+                                    val dx = b.x - a.x
+                                    val dy = b.y - a.y
+                                    val length = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                                    val ux = dx / length
+                                    val uy = dy / length
+                                    val mid = androidx.compose.ui.geometry.Offset((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f)
+                                    val arrowLength = 10f.coerceAtLeast((length * 0.38f).coerceAtMost(24f))
+                                    val tip = androidx.compose.ui.geometry.Offset(mid.x + ux * arrowLength, mid.y + uy * arrowLength)
+                                    val base = androidx.compose.ui.geometry.Offset(mid.x - ux * arrowLength * 0.55f, mid.y - uy * arrowLength * 0.55f)
+                                    val perpX = -uy * arrowLength * 0.5f
+                                    val perpY = ux * arrowLength * 0.5f
+                                    val arrow = Path().apply {
+                                        moveTo(tip.x, tip.y)
+                                        lineTo(base.x + perpX, base.y + perpY)
+                                        lineTo(base.x - perpX, base.y - perpY)
+                                        close()
+                                    }
+                                    drawPath(arrow, Color.White.copy(alpha = 0.94f * segment.alpha))
+                                }
                             }
                         }
                     }
@@ -643,7 +829,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             projectArRouteSample(
                                 fix.latitude, fix.longitude,
                                 ArRouteSample(latitude, longitude, 0.0, elevation),
-                                referenceGround, 1.4, pose, reconnectFocalPixels,
+                                referenceGround, cameraHeightMeters.toDouble(), pose, reconnectFocalPixels,
                                 size.width.toDouble(), size.height.toDouble()
                             )
                         }
@@ -677,6 +863,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx + 25f, size.height * 0.5f), androidx.compose.ui.geometry.Offset(cx + 42f, size.height * 0.5f), 3f)
                     drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f - 42f), androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f - 25f), 3f)
                     drawLine(ArLime, androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f + 25f), androidx.compose.ui.geometry.Offset(cx, size.height * 0.5f + 42f), 3f)
+                    TerrainArDiagnostics.recordFrame((System.nanoTime() - frameStartNanos).coerceAtLeast(0L) / 1_000_000.0)
                 }
                 if (cameraError.isNotBlank()) {
                     Text(cameraError, Modifier.align(Alignment.Center).padding(16.dp), color = Color.White)
@@ -830,6 +1017,23 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         }
                     } else if (!offRoute) {
                         Text("等待 GPS 定位", color = Color(0xFFFFE082), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("相机高度 ${"%.2f".format(Locale.CHINA, cameraHeightMeters)} m", color = Color(0xFFB9C8BE), fontSize = 11.sp)
+                        Slider(
+                            modifier = Modifier.weight(1f),
+                            value = cameraHeightMeters,
+                            onValueChange = {
+                                cameraHeightMeters = it.coerceIn(1.1f, 1.9f)
+                                navigationPrefs.edit().putFloat("ar_camera_height_$projectId", cameraHeightMeters).apply()
+                            },
+                            valueRange = 1.1f..1.9f,
+                            steps = 7
+                        )
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(

@@ -100,4 +100,87 @@ class ArCameraProjectionTest {
         assertTrue(kotlin.math.abs(smoothed.imageRight.dot(smoothed.imageUp)) < 1e-6)
         assertTrue(kotlin.math.abs(smoothed.forward.dot(smoothed.imageUp)) < 1e-6)
     }
+
+    @Test fun terrariumBilinearInterpolationUsesAllFourPixels() {
+        assertEquals(15.0, ArTerrainDem.bilinear(0.0, 10.0, 20.0, 30.0, 0.5, 0.5), 1e-9)
+        assertEquals(10.0, ArTerrainDem.bilinear(0.0, 10.0, 20.0, 30.0, 1.0, 0.0), 1e-9)
+    }
+
+    @Test fun missingDemSamplesInterpolateNeighboursThenUseGpxFallback() {
+        val resolved = resolveArElevationSamples(
+            listOf(100.0, null, null, 130.0, null),
+            listOf(90.0, 91.0, 92.0, 93.0, 94.0)
+        )
+        assertEquals(110.0, resolved[1]!!, 1e-9)
+        assertEquals(120.0, resolved[2]!!, 1e-9)
+        assertEquals(94.0, resolved[4]!!, 1e-9)
+    }
+
+    @Test fun adaptiveSamplingIsNearDenseAndFarSparseOnStraightRoute() {
+        val route = prepareRoute(listOf(0.0 to 0.0, 0.0 to 0.004))
+        val samples = sampleArRouteAheadAdaptive(route, emptyList(), 0.0, 120.0)
+        val nearGaps = samples.zipWithNext().filter { it.first.progressMeters < 28.0 }
+            .map { it.second.progressMeters - it.first.progressMeters }
+        val farGaps = samples.zipWithNext().filter { it.first.progressMeters > 40.0 }
+            .map { it.second.progressMeters - it.first.progressMeters }
+        assertTrue(nearGaps.isNotEmpty() && nearGaps.all { it <= 2.01 })
+        assertTrue(farGaps.isNotEmpty() && farGaps.all { it <= 3.51 })
+    }
+
+    @Test fun adaptiveSamplingDensifiesAroundSharpRouteBend() {
+        val route = prepareRoute(listOf(0.0 to 0.0, 0.0 to 0.001, 0.001 to 0.001))
+        val samples = sampleArRouteAheadAdaptive(route, emptyList(), 80.0, 60.0)
+        val aroundCorner = samples.zipWithNext().filter {
+            it.first.progressMeters in 106.0..114.0
+        }.map { it.second.progressMeters - it.first.progressMeters }
+        assertTrue("corner should be sampled densely: $aroundCorner", aroundCorner.any { it <= 1.0 })
+    }
+
+    @Test fun nearPlaneClipCreatesIntersectionVerticesInsteadOfDroppingTriangle() {
+        val clipped = clipArPolygonToNearPlane(
+            listOf(
+                ArCameraSpaceVertex(-1.0, -1.0, 0.2),
+                ArCameraSpaceVertex(1.0, -1.0, 2.0),
+                ArCameraSpaceVertex(0.0, 1.0, 2.0)
+            ),
+            0.5
+        )
+        assertEquals(4, clipped.size)
+        assertTrue(clipped.all { it.z >= 0.5 })
+        assertTrue(clipped.count { kotlin.math.abs(it.z - 0.5) < 1e-9 } == 2)
+    }
+
+    @Test fun gpsCourseFusionRequiresStableAlignedNonTurningPhone() {
+        val heading = 10.0
+        assertEquals(heading, fuseArGpsCourse(heading, 40.0, 0.8, 5, true, false), 1e-9)
+        assertEquals(heading, fuseArGpsCourse(heading, 40.0, 1.2, 2, true, false), 1e-9)
+        assertEquals(heading, fuseArGpsCourse(heading, 40.0, 1.2, 3, false, false), 1e-9)
+        assertEquals(heading, fuseArGpsCourse(heading, 40.0, 1.2, 3, true, true), 1e-9)
+        assertTrue(fuseArGpsCourse(10.0, 20.0, 1.2, 3, true, false) > 10.0)
+    }
+
+    @Test fun routeProjectionKeepsRealCameraOffsetFromSnappedAnchor() {
+        val sample = ArRouteSample(0.00009, 0.0, 10.0, 100.0)
+        val cameraLongitude = 0.000018
+        val point = projectArRouteSampleFromAnchor(
+            0.0, 0.0, 0.0, cameraLongitude, sample,
+            100.0, 1.45, northFacingLevelPose, 500.0, 1000.0, 1000.0
+        )
+        assertNotNull(point)
+        assertTrue(point!!.x < 500f)
+    }
+
+    @Test fun isolatedGpsSpikeIsRemovedWithoutSmoothingRealRouteBend() {
+        val points = listOf(
+            0.0 to 0.0,
+            0.0 to 0.0001,
+            0.001 to 0.001,
+            0.0 to 0.00011,
+            0.0 to 0.0002
+        )
+        val cleaned = cleanArRoutePoints(points)
+        assertTrue(cleaned.size < points.size)
+        assertEquals(points.first(), cleaned.first())
+        assertEquals(points.last(), cleaned.last())
+    }
 }

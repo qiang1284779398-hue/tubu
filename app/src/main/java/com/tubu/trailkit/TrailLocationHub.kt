@@ -28,6 +28,9 @@ object TrailLocationHub {
         observers.remove(observer)
     }
 
+    fun hasOtherObservers(except: TrailLocationObserver): Boolean =
+        observers.any { it !== except }
+
     fun publish(location: Location) {
         latestLocation = Location(location)
         observers.forEach { observer ->

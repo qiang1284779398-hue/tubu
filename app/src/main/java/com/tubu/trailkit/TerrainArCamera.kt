@@ -59,6 +59,10 @@ private data class ArTerrainSnapshot(
     val routeElevations: List<Double?>,
     val currentGroundElevationMeters: Double,
     val occlusionAlphas: List<Float> = emptyList(),
+    // The snapshot's OWN samples with DEM elevations resolved for exactly
+    // those points. Consumers must render these, never graft the elevations
+    // onto a freshly regenerated sample list by index.
+    val samples: List<ArRouteSample> = emptyList(),
     val elevationFallbackRatio: Double = 1.0
 )
 private data class CameraRibbonPoint(
@@ -346,6 +350,12 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             terrainSnapshot = if (reference != null) {
                 ArTerrainSnapshot(
                     requestedProgress, resolved, reference, smoothedOcclusion,
+                    samples.mapIndexed { index, sample ->
+                        sample.copy(
+                            elevationMeters = resolved.getOrNull(index),
+                            occlusionAlpha = smoothedOcclusion.getOrNull(index) ?: 1f
+                        )
+                    },
                     if (dem.first.isEmpty()) 1.0 else dem.first.count { it == null }.toDouble() / dem.first.size
                 )
             } else null
@@ -401,19 +411,13 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val progress = routeMatch?.progressMeters
         terrainSnapshot?.takeIf { progress != null && kotlin.math.abs(it.progressMeters - progress) <= 8.0 }
     }
+    // Render the snapshot's OWN samples while it is active: its DEM elevations
+    // were sampled for exactly those points. The old code copied elevations by
+    // index onto freshly regenerated samples whenever the counts happened to
+    // match, mis-pairing elevations by up to the 8 m staleness gate - on slopes
+    // that read as metres of float/sink jumping at every GPS fix.
     val arRouteSamples = remember(fallbackRouteSamples, activeTerrainSnapshot) {
-        if (activeTerrainSnapshot != null &&
-            activeTerrainSnapshot.routeElevations.size == fallbackRouteSamples.size
-        ) {
-            fallbackRouteSamples.mapIndexed { index, sample ->
-                sample.copy(
-                    elevationMeters = activeTerrainSnapshot.routeElevations[index],
-                    occlusionAlpha = activeTerrainSnapshot.occlusionAlphas.getOrNull(index) ?: 1f
-                )
-            }
-        } else {
-            fallbackRouteSamples
-        }
+        activeTerrainSnapshot?.samples?.takeIf { it.isNotEmpty() } ?: fallbackRouteSamples
     }
     val arReferenceElevation = activeTerrainSnapshot?.currentGroundElevationMeters
         ?: fallbackRouteSamples.firstOrNull()?.elevationMeters
@@ -609,6 +613,10 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                 }
             }
             val serviceIntent = android.content.Intent(context, TrailNavigationService::class.java)
+            // The navigation service is shared (the 2D map starts it too). Only
+            // stop it on dispose when no other consumer is using the location
+            // stream; otherwise closing AR would kill navigation/recording.
+            val hadOtherConsumers = TrailLocationHub.hasOtherObservers(observer)
             TrailLocationHub.subscribe(observer)
             try {
                 ContextCompat.startForegroundService(context, serviceIntent)
@@ -617,7 +625,9 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
             }
             onDispose {
                 TrailLocationHub.unsubscribe(observer)
-                runCatching { context.stopService(serviceIntent) }
+                if (!hadOtherConsumers && !TrailLocationHub.hasOtherObservers(observer)) {
+                    runCatching { context.stopService(serviceIntent) }
+                }
             }
         }
     }
@@ -733,7 +743,6 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                 val focalLengths = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
                                 val pixelArray = camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
                                 val calibrated = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_INTRINSIC_CALIBRATION)
-                                val distortion = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_DISTORTION)
                                 val sensorRotation = camera.cameraInfo.getSensorRotationDegrees(targetRotation)
                                 if (physicalSize != null && focalLengths != null && focalLengths.isNotEmpty()) {
                                     val rotated = sensorRotation % 180 != 0
@@ -746,10 +755,19 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                         validCalibration,
                                         intrinsicFxPixels = if (validCalibration) calibrated!![0].toDouble() else null,
                                         intrinsicFyPixels = if (validCalibration) calibrated!![1].toDouble() else null,
-                                        sourcePixelWidth = pixelArray?.width?.toDouble(),
-                                        sourcePixelHeight = pixelArray?.height?.toDouble(),
-                                        distortionK1 = distortion?.getOrNull(0)?.toDouble() ?: 0.0,
-                                        distortionK2 = distortion?.getOrNull(1)?.toDouble() ?: 0.0
+                                        // The pixel array is landscape-ordered; when the sensor
+                                        // rotates into portrait the calibration's source frame
+                                        // rotates with it, so swap width/height exactly like the
+                                        // physical size above. Without this the calibrated focal
+                                        // length comes out ~33% too large in portrait.
+                                        sourcePixelWidth = if (rotated) pixelArray?.height?.toDouble() else pixelArray?.width?.toDouble(),
+                                        sourcePixelHeight = if (rotated) pixelArray?.width?.toDouble() else pixelArray?.height?.toDouble(),
+                                        // LENS_DISTORTION maps distorted -> ideal coordinates
+                                        // and the ISP already corrects the preview stream;
+                                        // applying it as a forward distortion double-warps
+                                        // the overlay, so keep the coefficients at zero.
+                                        distortionK1 = 0.0,
+                                        distortionK2 = 0.0
                                     )
                                 }
                                 cameraError = ""

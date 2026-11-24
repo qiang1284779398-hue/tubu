@@ -19,6 +19,10 @@ internal object ArTerrainDem {
     private const val MAX_CACHED_TILES = 48
     private const val MAX_DISK_BYTES = 300L * 1024L * 1024L
     private val tileCache = LinkedHashMap<Long, Bitmap>(16, 0.75f, true)
+    // Failed fetches are remembered briefly so a dead network does not make
+    // every elevation sample retry the same download in sequence.
+    private val failedTiles = HashMap<Long, Long>()
+    private const val FAILURE_TTL_MS = 60_000L
     @Volatile private var cacheDirectory: File? = null
 
     @Synchronized
@@ -43,12 +47,17 @@ internal object ArTerrainDem {
             val pixelX = ((longitude + 180.0) / 360.0 * worldSize)
             val latRad = Math.toRadians(latitude)
             val pixelY = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / PI) * 0.5 * worldSize
-            val x0 = floor(pixelX).toInt().coerceIn(0, worldSize.toInt() - 1)
-            val y0 = floor(pixelY).toInt().coerceIn(0, worldSize.toInt() - 1)
+            // Terrarium samples live at pixel CENTRES: continuous coordinate p
+            // corresponds to pixel index p - 0.5. Sampling without the -0.5 shift
+            // reads ~half a pixel south-east of the intended point (~4 m at z14).
+            val sampleX = pixelX - 0.5
+            val sampleY = pixelY - 0.5
+            val x0 = floor(sampleX).toInt().coerceIn(0, worldSize.toInt() - 1)
+            val y0 = floor(sampleY).toInt().coerceIn(0, worldSize.toInt() - 1)
             val x1 = (x0 + 1).coerceAtMost(worldSize.toInt() - 1)
             val y1 = (y0 + 1).coerceAtMost(worldSize.toInt() - 1)
-            val fx = (pixelX - floor(pixelX)).coerceIn(0.0, 1.0)
-            val fy = (pixelY - floor(pixelY)).coerceIn(0.0, 1.0)
+            val fx = (sampleX - floor(sampleX)).coerceIn(0.0, 1.0)
+            val fy = (sampleY - floor(sampleY)).coerceIn(0.0, 1.0)
             val h00 = pixelElevation(x0, y0) ?: return null
             val h10 = pixelElevation(x1, y0) ?: return null
             val h01 = pixelElevation(x0, y1) ?: return null
@@ -133,6 +142,8 @@ internal object ArTerrainDem {
     private fun getTile(x: Int, y: Int): Bitmap? {
         val key = (x.toLong() shl 32) or (y.toLong() and 0xffffffffL)
         tileCache[key]?.let { return it }
+        val failedAt = failedTiles[key]
+        if (failedAt != null && System.currentTimeMillis() - failedAt < FAILURE_TTL_MS) return null
         val directory = cacheDirectory
         val file = directory?.let { File(it, "$x-$y.png") }
         if (file != null && file.isFile && file.length() > 0L) {
@@ -140,7 +151,6 @@ internal object ArTerrainDem {
             if (decoded != null && decoded.width == TILE_SIZE && decoded.height == TILE_SIZE) {
                 file.setLastModified(System.currentTimeMillis())
                 remember(key, decoded)
-                directory?.let(::writeIndex)
                 return decoded
             }
             file.delete()
@@ -151,35 +161,44 @@ internal object ArTerrainDem {
         connection.connectTimeout = 8000
         connection.readTimeout = 10000
         connection.setRequestProperty("User-Agent", "TrailKit Outdoor App")
-        return try {
+        val bitmap = try {
             val bytes = connection.inputStream.use { it.readBytes() }
-            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
-            if (bitmap.width != TILE_SIZE || bitmap.height != TILE_SIZE) {
-                bitmap.recycle()
-                return null
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.also { decoded ->
+                if (decoded.width == TILE_SIZE && decoded.height == TILE_SIZE && file != null) {
+                    val temporary = File(file.parentFile, file.name + ".tmp")
+                    if (temporary.writeBytesSafely(bytes) && temporary.renameTo(file)) {
+                        trimDiskCache()
+                        writeIndex(directory!!)
+                    } else temporary.delete()
+                }
             }
-            if (file != null) {
-                val temporary = File(file.parentFile, file.name + ".tmp")
-                if (temporary.writeBytesSafely(bytes) && temporary.renameTo(file)) {
-                    trimDiskCache()
-                    writeIndex(directory!!)
-                } else temporary.delete()
-            }
-            remember(key, bitmap)
-            bitmap
+        } catch (e: Exception) {
+            null
         } finally {
             connection.disconnect()
         }
+        if (bitmap == null || bitmap.width != TILE_SIZE || bitmap.height != TILE_SIZE) {
+            // Never published to the cache, so recycling here is safe.
+            bitmap?.recycle()
+            failedTiles[key] = System.currentTimeMillis()
+            return null
+        }
+        remember(key, bitmap)
+        return bitmap
     }
 
     private fun remember(key: Long, bitmap: Bitmap) {
-        tileCache.put(key, bitmap)?.let { if (it !== bitmap && !it.isRecycled) it.recycle() }
+        // Evicted bitmaps are deliberately NOT recycled: pixel reads happen
+        // outside the getTile lock, so a bitmap handed out earlier may still be
+        // read by a concurrent elevation() call. Recycling it here made those
+        // reads throw, which surfaced as random null elevations (flickering
+        // spikes). The cache is bounded (48 tiles), so GC reclaims them safely.
+        tileCache.put(key, bitmap)
         while (tileCache.size > MAX_CACHED_TILES) {
             val iterator = tileCache.entries.iterator()
             if (!iterator.hasNext()) break
-            val entry = iterator.next()
+            iterator.next()
             iterator.remove()
-            if (!entry.value.isRecycled) entry.value.recycle()
         }
     }
 

@@ -102,6 +102,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     var location by remember { mutableStateOf<Location?>(null) }
     var sensorReady by remember { mutableStateOf(false) }
     var sensorAccuracy by remember { mutableIntStateOf(SensorManager.SENSOR_STATUS_ACCURACY_MEDIUM) }
+    var gyroMagnitudeRadPerSec by remember { mutableDoubleStateOf(0.0) }
+    var magneticFieldMagnitudeMicroTesla by remember { mutableDoubleStateOf<Double?>(null) }
     var magneticCameraPose by remember { mutableStateOf<ArCameraPose?>(null) }
     val cameraPoseFilter = remember { ArCameraPoseFilter() }
     var cameraIntrinsics by remember { mutableStateOf(ArCameraIntrinsics(4.2, 5.6, 4.2, false)) }
@@ -110,6 +112,10 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     var activeCameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var cameraSessionActive by remember { mutableStateOf(true) }
     val navigationPrefs = remember(projectId) { context.getSharedPreferences("trailkit_navigation", Context.MODE_PRIVATE) }
+    var cameraHeightMeters by remember(projectId) {
+        mutableFloatStateOf(navigationPrefs.getFloat("ar_camera_height_$projectId", 1.45f).coerceIn(1.1f, 1.9f))
+    }
+    LaunchedEffect(context) { ArTerrainDem.initialize(context) }
     val reverseRoute = remember(projectId) { navigationPrefs.getBoolean("reverse_$projectId", false) }
     val baseRoutePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
     val routePoints = remember(baseRoutePoints, reverseRoute) { if (reverseRoute) baseRoutePoints.asReversed() else baseRoutePoints }
@@ -141,10 +147,14 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     } ?: Long.MAX_VALUE
     val gpsQualityOk = location != null &&
         location!!.provider == android.location.LocationManager.GPS_PROVIDER &&
-        location!!.hasAccuracy() && location!!.accuracy <= 25f && gpsAgeMillis <= 10_000L
+        location!!.hasAccuracy() && location!!.accuracy <= 20f && gpsAgeMillis <= 15_000L
     val routeSnapLimitMeters = location?.let { (it.accuracy.toDouble() * 1.25).coerceIn(8.0, 28.0) } ?: 12.0
     val offRoute = gpsQualityOk && routeMatchCandidate != null && routeMatch == null
-    val gpsReliable = gpsQualityOk && routeMatch != null
+    val gpsReliable = location != null && location!!.hasAccuracy() &&
+        location!!.accuracy <= 10f && gpsAgeMillis <= 5_000L && routeMatch != null
+    val gpsWeak = location != null && location!!.hasAccuracy() &&
+        location!!.accuracy <= 20f && gpsAgeMillis <= 15_000L && routeMatch != null && !gpsReliable
+    val gpsArUsable = gpsReliable || gpsWeak
     // Show a nearby route-joining guide even when the loose GPS snap tolerance
     // currently considers the fix "on route".
     val rejoinMinimumMeters = location?.let {
@@ -199,7 +209,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val fix = location
         if (navigationFinished || fix == null || route == null || !fix.hasAccuracy() ||
             fix.provider != android.location.LocationManager.GPS_PROVIDER ||
-            fix.accuracy > 25f || gpsAgeMillis > 10_000L
+            fix.accuracy > 20f || gpsAgeMillis > 15_000L
         ) {
             routeMatchCandidate = null
             routeMatch = null
@@ -237,24 +247,37 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         }
     }
 
-    // Prefer ground DEM heights over GPX altitude, which is the height of the recording phone/watch.
+    // Sample the route and the snapped ground reference on the same vertical datum.
     LaunchedEffect(location, routeMatch, route) {
         val fix = location
         val match = routeMatch
-        if (fix == null || match == null || route == null || !gpsReliable) {
+        val activeRoute = route
+        if (fix == null || match == null || activeRoute == null || !gpsArUsable) {
             terrainSnapshot = null
         } else {
             val requestedProgress = match.progressMeters
-            val samples = sampleArRouteAhead(route, emptyList(), requestedProgress, 120.0, 4.0)
+            val gpxSmoothed = smoothArRouteElevations(routeElevations)
+            val samples = sampleArRouteAheadAdaptive(activeRoute, gpxSmoothed, requestedProgress, 120.0)
             val coordinates = samples.map { it.latitude to it.longitude }
             val dem = withContext(Dispatchers.IO) {
-                ArTerrainDem.elevations(coordinates) to ArTerrainDem.elevation(fix.latitude, fix.longitude)
+                ArTerrainDem.elevations(coordinates) to
+                    ArTerrainDem.elevation(match.snappedLat, match.snappedLon)
             }
-            terrainSnapshot = if (dem.second != null && dem.first.size == samples.size && dem.first.all { it != null }) {
-                ArTerrainSnapshot(requestedProgress, dem.first, dem.second!!)
+            val gpxAnchor = samples.firstOrNull()?.elevationMeters
+            val alignedGpxFallback = if (dem.second != null && gpxAnchor != null) {
+                samples.map { sample ->
+                    sample.elevationMeters?.let { it + (dem.second!! - gpxAnchor) }
+                }
+            } else samples.map { it.elevationMeters }
+            val resolved = if (dem.second != null) {
+                resolveArElevationSamples(dem.first, alignedGpxFallback)
             } else {
-                null
+                alignedGpxFallback
             }
+            val reference = dem.second ?: gpxAnchor
+            terrainSnapshot = if (reference != null) {
+                ArTerrainSnapshot(requestedProgress, resolved, reference)
+            } else null
         }
     }
     // When the GPS fix is outside the snap tolerance, fetch ground heights for a
@@ -298,7 +321,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         val activeRoute = route
         val progress = routeMatch?.progressMeters
         if (activeRoute != null && progress != null) {
-            sampleArRouteAhead(activeRoute, smoothedGpxElevations, progress, 120.0, 4.0)
+            sampleArRouteAheadAdaptive(activeRoute, smoothedGpxElevations, progress, 120.0)
         } else {
             emptyList()
         }
@@ -363,6 +386,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     DisposableEffect(context) {
         val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val sensor = manager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val gyroSensor = manager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val magneticSensor = manager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val listener = object : SensorEventListener {
             private val rotation = FloatArray(9)
@@ -378,6 +403,8 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
         }
         if (sensor != null) manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME)
         else sensorReady = false
+        gyroSensor?.let { manager.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME) }
+        magneticSensor?.let { manager.registerListener(listener, it, SensorManager.SENSOR_DELAY_GAME) }
         onDispose { manager.unregisterListener(listener) }
     }
 
@@ -544,7 +571,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     val fix = location
                     val match = routeMatch
                     val pose = cameraPose
-                    if (fix != null && match != null && gpsReliable && projectionReady &&
+                    if (fix != null && match != null && gpsArUsable && projectionReady &&
                         pose != null && route != null && routePoints.size > 1
                     ) {
                         val samples = arRouteSamples
@@ -560,15 +587,15 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             val leftGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent - 90.0, 0.65)
                             val rightGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent + 90.0, 0.65)
                             val left = projectArRouteSample(
-                                fix.latitude, fix.longitude, sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
-                                referenceElevation, 1.4, pose, focalPixels, size.width.toDouble(), size.height.toDouble()
+                                match.snappedLat, match.snappedLon, sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
+                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels, size.width.toDouble(), size.height.toDouble()
                             )
                             val right = projectArRouteSample(
-                                fix.latitude, fix.longitude, sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
-                                referenceElevation, 1.4, pose, focalPixels, size.width.toDouble(), size.height.toDouble()
+                                match.snappedLat, match.snappedLon, sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
+                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels, size.width.toDouble(), size.height.toDouble()
                             )
                             val center = projectArRouteSample(
-                                fix.latitude, fix.longitude, sample, referenceElevation, 1.4,
+                                match.snappedLat, match.snappedLon, sample, referenceElevation, cameraHeightMeters.toDouble(),
                                 pose, focalPixels, size.width.toDouble(), size.height.toDouble()
                             )
                             if (left != null && right != null && center != null) {
@@ -580,7 +607,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             val a = ribbonPoints[i - 1]
                             val b = ribbonPoints[i]
                             val distanceAlong = (a.progressMeters + b.progressMeters) * 0.5 - match.progressMeters
-                            val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f)
+                            val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f) * if (gpsWeak) 0.48f else 1f
                             val quad = Path().apply {
                                 moveTo(a.left.x, a.left.y)
                                 lineTo(a.right.x, a.right.y)
@@ -643,7 +670,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             projectArRouteSample(
                                 fix.latitude, fix.longitude,
                                 ArRouteSample(latitude, longitude, 0.0, elevation),
-                                referenceGround, 1.4, pose, reconnectFocalPixels,
+                                referenceGround, cameraHeightMeters.toDouble(), pose, reconnectFocalPixels,
                                 size.width.toDouble(), size.height.toDouble()
                             )
                         }

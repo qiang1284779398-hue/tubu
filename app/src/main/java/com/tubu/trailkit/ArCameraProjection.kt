@@ -30,30 +30,62 @@ data class ArCameraPose(
  */
 internal class ArCameraPoseFilter(private val response: Double = 0.22) {
     private var filtered: ArCameraPose? = null
-    private val alpha = response.coerceIn(0.05, 0.8)
+    private val defaultAlpha = response.coerceIn(0.05, 0.8)
+    private var magneticBaseline: Double? = null
 
     @Synchronized
-    fun apply(raw: ArCameraPose): ArCameraPose {
+    fun apply(raw: ArCameraPose): ArCameraPose = blendPose(raw, defaultAlpha)
+
+    /**
+     * Adaptive filter. The blend convention is previous*(1-alpha)+raw*alpha:
+     * larger alpha follows rapid turns more closely.
+     */
+    @Synchronized
+    fun applyAdaptive(
+        raw: ArCameraPose,
+        angularVelocityRadPerSec: Double,
+        magneticFieldMagnitudeMicroTesla: Double?,
+        sensorAccuracy: Int
+    ): ArCameraPose {
+        val speed = angularVelocityRadPerSec.takeIf { it.isFinite() }?.coerceAtLeast(0.0) ?: 0.0
+        val alpha = when {
+            speed < 0.15 -> 0.12
+            speed > 0.6 -> 0.42
+            else -> 0.12 + (speed - 0.15) / 0.45 * 0.30
+        }
+        val magnitude = magneticFieldMagnitudeMicroTesla?.takeIf { it.isFinite() && it in 10.0..100.0 }
+        if (magnitude != null && magneticBaseline == null) magneticBaseline = magnitude
+        val baseline = magneticBaseline
+        val deviation = if (magnitude != null && baseline != null && baseline > 0.0)
+            kotlin.math.abs(magnitude - baseline) / baseline else 0.0
+        val reliability = when {
+            sensorAccuracy == 0 || deviation >= 0.20 -> 0.08
+            deviation >= 0.15 -> 0.45
+            else -> 1.0
+        }
+        if (magnitude != null && reliability == 1.0) {
+            magneticBaseline = baseline?.let { it * 0.995 + magnitude * 0.005 } ?: magnitude
+        }
+        return blendPose(raw, (alpha * reliability).coerceIn(0.04, 0.50))
+    }
+
+    private fun blendPose(raw: ArCameraPose, alpha: Double): ArCameraPose {
         val previous = filtered
         if (previous == null) {
             filtered = raw
             return raw
         }
-
         fun blend(from: ArVector3, to: ArVector3): ArVector3 =
             from * (1.0 - alpha) + to * alpha
-
         fun normalize(vector: ArVector3): ArVector3? {
             val length = sqrt(vector.dot(vector))
             return if (length.isFinite() && length > 1e-6) vector * (1.0 / length) else null
         }
-
         fun cross(a: ArVector3, b: ArVector3) = ArVector3(
             a.north * b.up - a.up * b.north,
             a.up * b.east - a.east * b.up,
             a.east * b.north - a.north * b.east
         )
-
         val forward = normalize(blend(previous.forward, raw.forward)) ?: raw.forward
         val blendedRight = blend(previous.imageRight, raw.imageRight)
         val orthogonalRight = blendedRight - forward * blendedRight.dot(forward)
@@ -65,6 +97,7 @@ internal class ArCameraPoseFilter(private val response: Double = 0.22) {
     @Synchronized
     fun reset() {
         filtered = null
+        magneticBaseline = null
     }
 }
 
@@ -275,4 +308,164 @@ fun projectArRouteSample(
         -cameraHeightMeters
     }
     return projectArWorldPoint(east, north, up, pose, focalPixels, viewWidth, viewHeight)
+}
+
+
+/** Camera-space vertex used for robust clipping at the near plane. */
+data class ArCameraSpaceVertex(val x: Double, val y: Double, val z: Double)
+
+/** Clips a polygon against z >= nearPlane, creating intersection vertices instead of dropping a whole segment. */
+fun clipArPolygonToNearPlane(
+    vertices: List<ArCameraSpaceVertex>,
+    nearPlane: Double = 0.5
+): List<ArCameraSpaceVertex> {
+    if (vertices.size < 3 || !nearPlane.isFinite() || nearPlane <= 0.0) return emptyList()
+    val output = ArrayList<ArCameraSpaceVertex>()
+    var previous = vertices.last()
+    var previousInside = previous.z >= nearPlane
+    for (current in vertices) {
+        val currentInside = current.z >= nearPlane
+        if (currentInside != previousInside) {
+            val denominator = current.z - previous.z
+            if (kotlin.math.abs(denominator) > 1e-12) {
+                val t = ((nearPlane - previous.z) / denominator).coerceIn(0.0, 1.0)
+                output += ArCameraSpaceVertex(
+                    previous.x + (current.x - previous.x) * t,
+                    previous.y + (current.y - previous.y) * t,
+                    nearPlane
+                )
+            }
+        }
+        if (currentInside) output += current
+        previous = current
+        previousInside = currentInside
+    }
+    return output
+}
+
+fun projectArWorldPolygon(
+    worldVertices: List<ArVector3>,
+    pose: ArCameraPose,
+    focalPixels: Double,
+    viewWidth: Double,
+    viewHeight: Double,
+    nearPlane: Double = 0.5
+): List<ArScreenPoint> {
+    if (focalPixels <= 0.0 || viewWidth <= 0.0 || viewHeight <= 0.0) return emptyList()
+    val cameraVertices = worldVertices.map { world ->
+        ArCameraSpaceVertex(
+            pose.imageRight.dot(world),
+            -pose.imageUp.dot(world),
+            pose.forward.dot(world)
+        )
+    }
+    return clipArPolygonToNearPlane(cameraVertices, nearPlane).mapNotNull { point ->
+        val x = viewWidth * 0.5 + focalPixels * point.x / point.z
+        val y = viewHeight * 0.5 + focalPixels * point.y / point.z
+        if (x.isFinite() && y.isFinite() && kotlin.math.abs(x) <= viewWidth * 8 &&
+            kotlin.math.abs(y) <= viewHeight * 8
+        ) ArScreenPoint(x.toFloat(), y.toFloat()) else null
+    }
+}
+
+/** Interpolates missing DEM samples from the nearest valid neighbours, then uses GPX fallback. */
+fun resolveArElevationSamples(dem: List<Double?>, gpxFallback: List<Double?>): List<Double?> {
+    if (dem.isEmpty()) return emptyList()
+    val valid = dem.indices.filter { dem[it]?.isFinite() == true }
+    return dem.indices.map { index ->
+        dem[index]?.takeIf { it.isFinite() } ?: run {
+            val before = valid.lastOrNull { it < index }
+            val after = valid.firstOrNull { it > index }
+            when {
+                before != null && after != null -> {
+                    val a = dem[before]!!
+                    val b = dem[after]!!
+                    a + (b - a) * (index - before).toDouble() / (after - before)
+                }
+                else -> gpxFallback.getOrNull(index)?.takeIf { it.isFinite() }
+            }
+        }
+    }
+}
+
+/** Adaptive 0-120 m sampling: dense close to the camera and around bends/steep grade. */
+fun sampleArRouteAheadAdaptive(
+    route: PreparedRoute,
+    elevations: List<Double?>,
+    startProgressMeters: Double,
+    maxAheadMeters: Double = 120.0
+): List<ArRouteSample> {
+    if (route.points.size < 2 || route.totalMeters <= 0.0 || maxAheadMeters <= 0.0) return emptyList()
+    val start = startProgressMeters.coerceIn(0.0, route.totalMeters)
+    val end = min(route.totalMeters, start + maxAheadMeters)
+    val result = ArrayList<ArRouteSample>()
+    var distance = start
+    while (distance < end - 0.001) {
+        val sample = arInterpolateRoutePoint(route, elevations, distance)
+        val before = arInterpolateRoutePoint(route, elevations, (distance - 2.0).coerceAtLeast(0.0))
+        val after = arInterpolateRoutePoint(route, elevations, (distance + 2.0).coerceAtMost(route.totalMeters))
+        val turn = abs(signedTurnAngle(
+            arBearingDegrees(before.latitude, before.longitude, sample.latitude, sample.longitude),
+            arBearingDegrees(sample.latitude, sample.longitude, after.latitude, after.longitude)
+        ))
+        val grade = if (before.elevationMeters != null && after.elevationMeters != null) {
+            abs(after.elevationMeters - before.elevationMeters) / 4.0
+        } else 0.0
+        val near = distance - start < 30.0
+        val step = when {
+            turn > 15.0 || grade > 0.12 -> if (near) 0.75 else 1.75
+            near -> 2.0
+            else -> 3.5
+        }
+        result += sample
+        distance += step
+    }
+    result += arInterpolateRoutePoint(route, elevations, end)
+    return result.distinctBy { (it.progressMeters * 100.0).roundToLong() }
+}
+
+/** Conservative course correction; callers must establish phone/course alignment and no manual turn. */
+fun fuseArGpsCourse(
+    magneticHeadingDegrees: Double,
+    gpsCourseDegrees: Double,
+    speedMetersPerSecond: Double,
+    stableCycles: Int,
+    phoneAlignedWithTravel: Boolean,
+    userTurningPhone: Boolean,
+    gain: Double = 0.08
+): Double {
+    if (!magneticHeadingDegrees.isFinite() || !gpsCourseDegrees.isFinite() ||
+        speedMetersPerSecond < 1.0 || stableCycles < 3 || !phoneAlignedWithTravel || userTurningPhone
+    ) return magneticHeadingDegrees
+    val delta = signedTurnAngle(magneticHeadingDegrees, gpsCourseDegrees)
+    return (magneticHeadingDegrees + delta * gain.coerceIn(0.05, 0.10) + 360.0) % 360.0
+}
+
+/** ENU projection anchored at P_snap while retaining the real GPS optical-centre offset. */
+fun projectArRouteSampleFromAnchor(
+    anchorLatitude: Double,
+    anchorLongitude: Double,
+    cameraLatitude: Double,
+    cameraLongitude: Double,
+    sample: ArRouteSample,
+    referenceElevationMeters: Double?,
+    cameraHeightMeters: Double,
+    pose: ArCameraPose,
+    focalPixels: Double,
+    viewWidth: Double,
+    viewHeight: Double
+): ArScreenPoint? {
+    fun enu(lat: Double, lon: Double): Pair<Double, Double> {
+        val distance = arDistanceMeters(anchorLatitude, anchorLongitude, lat, lon)
+        val bearing = Math.toRadians(arBearingDegrees(anchorLatitude, anchorLongitude, lat, lon))
+        return distance * sin(bearing) to distance * cos(bearing)
+    }
+    val camera = enu(cameraLatitude, cameraLongitude)
+    val target = enu(sample.latitude, sample.longitude)
+    val up = if (sample.elevationMeters != null && referenceElevationMeters != null)
+        sample.elevationMeters - referenceElevationMeters - cameraHeightMeters else -cameraHeightMeters
+    return projectArWorldPoint(
+        target.first - camera.first, target.second - camera.second, up,
+        pose, focalPixels, viewWidth, viewHeight
+    )
 }

@@ -19,6 +19,7 @@ button:active{background:#39664d}
 .row{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
 #readout{padding:6px 9px;font-size:11px;text-align:right}
 #bottom{position:absolute;z-index:5;left:10px;right:10px;bottom:10px;display:flex;align-items:flex-end;gap:8px;pointer-events:none}
+#diagnostics{position:absolute;z-index:6;left:10px;right:10px;bottom:55px;padding:6px 9px;font-size:10px;line-height:1.35;white-space:normal;pointer-events:none;max-width:calc(100% - 20px);}
 #status{padding:7px 10px;font-size:11px;line-height:1.4;max-width:72%;pointer-events:auto}
 #exaggeration{padding:7px 10px;margin-left:auto;display:flex;align-items:center;gap:6px;font-size:10px;pointer-events:auto}
 #exaggeration input{width:76px;accent-color:#e8bd4b}
@@ -47,6 +48,7 @@ button:active{background:#39664d}
   <div id="readout" class="panel">Z -- · 方位 --° · 俯仰 --°</div>
  </div>
 </div>
+<div id="diagnostics" class="panel">DEM 命中 0 · 未命中 0 · 失败 0 · 回退 0 ｜ 卫星 命中 0 · 未命中 0 · 失败 0 · 回退 0</div>
 <div id="bottom">
  <div id="status" class="panel">正在加载 MapLibre 地形引擎…</div>
  <label id="exaggeration" class="panel">地形夸张 <span id="exValue">1.35×</span><input id="exSlider" type="range" min="1" max="2" step="0.05" value="1.35"></label>
@@ -58,7 +60,24 @@ button:active{background:#39664d}
  'use strict';
  const status=document.getElementById('status');
  const readout=document.getElementById('readout');
- let transferChunks=null;
+ const diagnostics=document.getElementById('diagnostics');
+ let transferChunks=null,transferReceived=0;
+ const updateDiagnostics=()=>{
+  try{
+   const c=JSON.parse(TrailKitBridge.getCacheStats());
+   const d=c.dem||{},i=c.imagery||{};
+   diagnostics.textContent='DEM 命中 '+(d.hits||0)+' · 未命中 '+(d.misses||0)+' · 失败 '+(d.failures||0)+' · 回退 '+(d.fallbacks||0)+' ｜ 卫星 命中 '+(i.hits||0)+' · 未命中 '+(i.misses||0)+' · 失败 '+(i.failures||0)+' · 回退 '+(i.fallbacks||0);
+  }catch(e){diagnostics.textContent='缓存诊断暂不可用：'+(e.message||e);}
+ };
+ setInterval(updateDiagnostics,750);
+ window.addEventListener('error',event=>{
+  const detail=(event.message||'未知异常')+' @ '+(event.filename||'')+':'+(event.lineno||0)+':'+(event.colno||0);
+  say('JavaScript 异常：'+detail,true);
+ });
+ window.addEventListener('unhandledrejection',event=>{
+  const reason=event.reason;const detail=reason&&(reason.stack||reason.message)||String(reason||'未处理 Promise 异常');
+  say('JavaScript Promise 异常：'+detail,true);
+ });
  const say=(message,error)=>{status.textContent=message;status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}};
  if(!window.maplibregl){say('MapLibre 本地引擎未能加载，请检查 APK 资源包。',true);return;}
  const empty={type:'FeatureCollection',features:[]};
@@ -86,7 +105,8 @@ button:active{background:#39664d}
   const message=e&&e.error&&e.error.message?e.error.message:'瓦片加载异常';
   if(/terrain|dem|tile|image|network/i.test(message))say('部分瓦片暂不可用；已缓存区域仍可显示。',false);
  });
- map.on('load',()=>{
+ map.on('style.load',()=>{
+  if(loaded)return;
   try{
    map.setTerrain({source:'dem',exaggeration:1.35});
    map.touchZoomRotate.enable();map.touchPitch.enable();map.doubleClickZoom.enable();
@@ -224,10 +244,15 @@ button:active{background:#39664d}
  }
  function setData(raw){
   try{
+   say('路线 setData：开始解析 JSON…');
    const data=typeof raw==='string'?JSON.parse(raw):raw;
+   if(!data||!data.routeLine||!data.routeRibbon||!data.waypoints)throw new Error('路线数据缺少 routeLine/routeRibbon/waypoints');
+   say('路线 setData：JSON 解析完成，准备写入 GeoJSON 源…');
    routeLineData=data.routeLine||empty;routeRibbonData=data.routeRibbon||empty;waypointData=data.waypoints||empty;
+   if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('waypoints'))throw new Error('MapLibre 路线数据源尚未初始化');
    map.getSource('route-line').setData(routeLineData);
    map.getSource('route-ribbon').setData(routeRibbonData);
+   say('路线 setData：轨迹线与缎带已提交，正在注册航点图标…');
    const endpoints=[];
    if(Array.isArray(data.start))endpoints.push({type:'Feature',properties:{spriteId:'endpoint-start'},geometry:{type:'Point',coordinates:data.start}});
    if(Array.isArray(data.end))endpoints.push({type:'Feature',properties:{spriteId:'endpoint-end'},geometry:{type:'Point',coordinates:data.end}});
@@ -238,12 +263,14 @@ button:active{background:#39664d}
     addSprite(p.spriteId||('wp-'+p.id),name,'waypoint');
    });
    map.getSource('waypoints').setData(waypointData);
+   say('路线 setData：航点已提交，正在执行全线 fitBounds…');
    selectedWaypointId=null;
    map.getSource('selected-waypoint').setData(empty);
    map.setFilter('waypoint-labels',null);
    selectLod();fitAll();
-   say('路线载入完成 · '+(routeLineData.features.find(f=>f.properties.lod==='full')?.geometry.coordinates.length||0)+' 个原始轨迹点 · '+waypointData.features.length+' 个途经点');
-  }catch(e){say('路线数据转换失败：'+(e.message||e),true);}
+   const rawCount=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full')?.geometry.coordinates.length||0;
+   say('路线 setData 完成 · '+rawCount+' 个轨迹点 · '+waypointData.features.length+' 个途经点 · 已执行全线定位');
+  }catch(e){const detail=(e&&e.stack)||((e&&e.message)||String(e));say('路线 setData 异常：'+detail,true);}
  }
  document.getElementById('fit').addEventListener('click',fitAll);
  document.getElementById('north').addEventListener('click',()=>map.easeTo({bearing:0,duration:420}));
@@ -264,14 +291,18 @@ button:active{background:#39664d}
   else if(map){map.resize();map.triggerRepaint();}
  });
  function beginDataTransfer(count){
-  if(!Number.isInteger(count)||count<1||count>2048)throw new Error('路线数据分块数量无效');
-  transferChunks=new Array(count);
+  if(!Number.isInteger(count)||count<1||count>2048){say('路线传输异常：分块数量无效 '+count,true);throw new Error('路线数据分块数量无效：'+count);}
+  transferChunks=new Array(count);transferReceived=0;
+  say('路线传输开始：共 '+count+' 块，等待原生分块…');
  }
  function appendDataChunk(index,chunk){
-  if(!transferChunks||index<0||index>=transferChunks.length)return;
-  transferChunks[index]=String(chunk);
+  if(!transferChunks||index<0||index>=transferChunks.length){say('路线传输异常：收到越界分块 '+index,true);throw new Error('路线分块索引越界：'+index);}
+  if(index!==transferReceived){say('路线传输异常：分块乱序，期望 '+transferReceived+' 实际 '+index,true);throw new Error('路线分块乱序');}
+  transferChunks[index]=String(chunk);transferReceived++;
+  if(index===0||(index+1)%10===0||index+1===transferChunks.length)say('路线传输分块：'+transferReceived+'/'+transferChunks.length);
  }
  function finishDataTransfer(){
+  say('路线传输结束信号已到达：'+transferReceived+'/'+(transferChunks?transferChunks.length:0)+' 块，正在校验…');
   let valid=!!transferChunks;
   if(valid){
    for(let i=0;i<transferChunks.length;i++){
@@ -279,9 +310,11 @@ button:active{background:#39664d}
    }
   }
   if(!valid){
-   transferChunks=null;say('路线数据传输不完整，请重新打开三维地形。',true);return;
+   transferChunks=null;say('路线传输异常：分块不完整，请重试。',true);return;
   }
-  const raw=transferChunks.join('');transferChunks=null;setData(raw);
+  const raw=transferChunks.join('');const count=transferChunks.length;transferChunks=null;
+  say('路线传输完成：'+count+' 块 · '+raw.length+' 字符，进入 setData…');
+  setData(raw);
  }
  window.TerrainLab={
   setData,beginDataTransfer,appendDataChunk,finishDataTransfer,

@@ -63,6 +63,59 @@ internal object ArTerrainDem {
         return top + (bottom - top) * fy.coerceIn(0.0, 1.0)
     }
 
+    /**
+     * DEM line-of-sight test. Returns 1 for visible/low-confidence, ~0.20 for
+     * medium-confidence obstruction, and ~0.05 for repeated high-confidence hits.
+     */
+    fun occlusionAlpha(
+        cameraLatitude: Double,
+        cameraLongitude: Double,
+        cameraGroundElevationMeters: Double,
+        cameraHeightMeters: Double,
+        targetLatitude: Double,
+        targetLongitude: Double,
+        targetElevationMeters: Double
+    ): Float {
+        val distance = haversine(cameraLatitude, cameraLongitude, targetLatitude, targetLongitude)
+        if (distance < 8.0) return 1f
+        val resolution = (cos(Math.toRadians(cameraLatitude)).coerceAtLeast(0.1) *
+            2.0 * PI * 6378137.0 / (TILE_SIZE * (1 shl ZOOM))).coerceAtLeast(1.0)
+        val step = (resolution * 0.85).coerceIn(4.0, 12.0)
+        val count = (distance / step).toInt().coerceIn(2, 24)
+        var valid = 0
+        var mediumHits = 0
+        var strongHits = 0
+        for (index in 1 until count) {
+            val fraction = index.toDouble() / count
+            val latitude = cameraLatitude + (targetLatitude - cameraLatitude) * fraction
+            val longitude = cameraLongitude + (targetLongitude - cameraLongitude) * fraction
+            val terrain = elevation(latitude, longitude) ?: continue
+            valid++
+            val lineOfSight = cameraGroundElevationMeters + cameraHeightMeters +
+                (targetElevationMeters - cameraGroundElevationMeters - cameraHeightMeters) * fraction
+            val excess = terrain - lineOfSight
+            if (excess > 4.0) strongHits++
+            else if (excess > 2.0) mediumHits++
+        }
+        val expected = (count - 1).coerceAtLeast(1)
+        if (valid.toDouble() / expected < 0.65) return 1f
+        return when {
+            strongHits >= 2 -> 0.05f
+            strongHits >= 1 || mediumHits >= 2 -> 0.20f
+            else -> 1f
+        }
+    }
+
+    private fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val p1 = Math.toRadians(lat1)
+        val p2 = Math.toRadians(lat2)
+        val dp = Math.toRadians(lat2 - lat1)
+        val dl = Math.toRadians(lon2 - lon1)
+        val h = kotlin.math.sin(dp / 2).let { it * it } +
+            cos(p1) * cos(p2) * kotlin.math.sin(dl / 2).let { it * it }
+        return 2.0 * 6371000.0 * kotlin.math.asin(kotlin.math.sqrt(h.coerceIn(0.0, 1.0)))
+    }
+
     private fun pixelElevation(globalX: Int, globalY: Int): Double? {
         val tileX = (globalX / TILE_SIZE).coerceIn(0, (1 shl ZOOM) - 1)
         val tileY = (globalY / TILE_SIZE).coerceIn(0, (1 shl ZOOM) - 1)

@@ -1,7 +1,9 @@
 package com.tubu.trailkit
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.PI
@@ -10,12 +12,24 @@ import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.tan
 
-/** Terrarium DEM sampler. Returns terrain surface elevation, not GPS-device altitude. */
+/** Terrarium DEM sampler with a bounded memory cache and persistent disk LRU. */
 internal object ArTerrainDem {
     private const val ZOOM = 14
     private const val TILE_SIZE = 256
     private const val MAX_CACHED_TILES = 48
+    private const val MAX_DISK_BYTES = 300L * 1024L * 1024L
     private val tileCache = LinkedHashMap<Long, Bitmap>(16, 0.75f, true)
+    @Volatile private var cacheDirectory: File? = null
+
+    @Synchronized
+    fun initialize(context: Context) {
+        val directory = File(context.applicationContext.cacheDir, "terrain-dem-z14")
+        if (cacheDirectory?.absolutePath != directory.absolutePath) {
+            cacheDirectory = directory
+            directory.mkdirs()
+            trimDiskCache()
+        }
+    }
 
     fun elevations(points: List<Pair<Double, Double>>): List<Double?> =
         points.map { (latitude, longitude) -> elevation(latitude, longitude) }
@@ -26,44 +40,124 @@ internal object ArTerrainDem {
         ) return null
         return runCatching {
             val worldSize = TILE_SIZE * (1 shl ZOOM).toDouble()
-            val x = (longitude + 180.0) / 360.0 * worldSize
+            val pixelX = ((longitude + 180.0) / 360.0 * worldSize)
             val latRad = Math.toRadians(latitude)
-            val y = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / PI) * 0.5 * worldSize
-            val tileX = floor(x / TILE_SIZE).toInt().coerceIn(0, (1 shl ZOOM) - 1)
-            val tileY = floor(y / TILE_SIZE).toInt().coerceIn(0, (1 shl ZOOM) - 1)
-            val pixelX = floor(x).toInt().mod(TILE_SIZE)
-            val pixelY = floor(y).toInt().mod(TILE_SIZE)
-            val bitmap = getTile(tileX, tileY) ?: return null
-            val pixel = bitmap.getPixel(pixelX.coerceIn(0, bitmap.width - 1), pixelY.coerceIn(0, bitmap.height - 1))
-            val red = (pixel shr 16) and 0xff
-            val green = (pixel shr 8) and 0xff
-            val blue = pixel and 0xff
-            red * 256.0 + green + blue / 256.0 - 32768.0
+            val pixelY = (1.0 - ln(tan(latRad) + 1.0 / cos(latRad)) / PI) * 0.5 * worldSize
+            val x0 = floor(pixelX).toInt().coerceIn(0, worldSize.toInt() - 1)
+            val y0 = floor(pixelY).toInt().coerceIn(0, worldSize.toInt() - 1)
+            val x1 = (x0 + 1).coerceAtMost(worldSize.toInt() - 1)
+            val y1 = (y0 + 1).coerceAtMost(worldSize.toInt() - 1)
+            val fx = (pixelX - floor(pixelX)).coerceIn(0.0, 1.0)
+            val fy = (pixelY - floor(pixelY)).coerceIn(0.0, 1.0)
+            val h00 = pixelElevation(x0, y0) ?: return null
+            val h10 = pixelElevation(x1, y0) ?: return null
+            val h01 = pixelElevation(x0, y1) ?: return null
+            val h11 = pixelElevation(x1, y1) ?: return null
+            bilinear(h00, h10, h01, h11, fx, fy)
         }.getOrNull()
+    }
+
+    internal fun bilinear(h00: Double, h10: Double, h01: Double, h11: Double, fx: Double, fy: Double): Double {
+        val top = h00 + (h10 - h00) * fx.coerceIn(0.0, 1.0)
+        val bottom = h01 + (h11 - h01) * fx.coerceIn(0.0, 1.0)
+        return top + (bottom - top) * fy.coerceIn(0.0, 1.0)
+    }
+
+    private fun pixelElevation(globalX: Int, globalY: Int): Double? {
+        val tileX = (globalX / TILE_SIZE).coerceIn(0, (1 shl ZOOM) - 1)
+        val tileY = (globalY / TILE_SIZE).coerceIn(0, (1 shl ZOOM) - 1)
+        val bitmap = getTile(tileX, tileY) ?: return null
+        val localX = (globalX % TILE_SIZE).coerceIn(0, bitmap.width - 1)
+        val localY = (globalY % TILE_SIZE).coerceIn(0, bitmap.height - 1)
+        val pixel = bitmap.getPixel(localX, localY)
+        val red = (pixel shr 16) and 0xff
+        val green = (pixel shr 8) and 0xff
+        val blue = pixel and 0xff
+        return red * 256.0 + green + blue / 256.0 - 32768.0
     }
 
     @Synchronized
     private fun getTile(x: Int, y: Int): Bitmap? {
         val key = (x.toLong() shl 32) or (y.toLong() and 0xffffffffL)
         tileCache[key]?.let { return it }
+        val directory = cacheDirectory
+        val file = directory?.let { File(it, "$x-$y.png") }
+        if (file != null && file.isFile && file.length() > 0L) {
+            val decoded = BitmapFactory.decodeFile(file.absolutePath)
+            if (decoded != null && decoded.width == TILE_SIZE && decoded.height == TILE_SIZE) {
+                file.setLastModified(System.currentTimeMillis())
+                remember(key, decoded)
+                writeIndex(directory)
+                return decoded
+            }
+            file.delete()
+        }
+
         val connection = URL("https://s3.amazonaws.com/elevation-tiles-prod/terrarium/$ZOOM/$x/$y.png")
             .openConnection() as HttpURLConnection
         connection.connectTimeout = 8000
         connection.readTimeout = 10000
         connection.setRequestProperty("User-Agent", "TrailKit Outdoor App")
         return try {
-            val bitmap = connection.inputStream.use { BitmapFactory.decodeStream(it) } ?: return null
-            tileCache[key] = bitmap
-            while (tileCache.size > MAX_CACHED_TILES) {
-                val iterator = tileCache.entries.iterator()
-                if (!iterator.hasNext()) break
-                val entry = iterator.next()
-                iterator.remove()
-                if (!entry.value.isRecycled) entry.value.recycle()
+            val bytes = connection.inputStream.use { it.readBytes() }
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+            if (bitmap.width != TILE_SIZE || bitmap.height != TILE_SIZE) {
+                bitmap.recycle()
+                return null
             }
+            if (file != null) {
+                val temporary = File(file.parentFile, file.name + ".tmp")
+                if (temporary.writeBytesSafely(bytes) && temporary.renameTo(file)) {
+                    trimDiskCache()
+                    writeIndex(directory!!)
+                } else temporary.delete()
+            }
+            remember(key, bitmap)
             bitmap
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private fun remember(key: Long, bitmap: Bitmap) {
+        tileCache.put(key, bitmap)?.let { if (it !== bitmap && !it.isRecycled) it.recycle() }
+        while (tileCache.size > MAX_CACHED_TILES) {
+            val iterator = tileCache.entries.iterator()
+            if (!iterator.hasNext()) break
+            val entry = iterator.next()
+            iterator.remove()
+            if (!entry.value.isRecycled) entry.value.recycle()
+        }
+    }
+
+    private fun File.writeBytesSafely(bytes: ByteArray): Boolean = runCatching {
+        parentFile?.mkdirs()
+        outputStream().use { it.write(bytes); it.fd.sync() }
+        length() == bytes.size.toLong()
+    }.getOrDefault(false)
+
+    @Synchronized
+    private fun trimDiskCache() {
+        val directory = cacheDirectory ?: return
+        val files = directory.listFiles()?.filter { it.isFile && it.extension == "png" } ?: return
+        var total = files.sumOf { it.length() }
+        files.sortedBy { it.lastModified() }.forEach { file ->
+            if (total <= MAX_DISK_BYTES) return@forEach
+            total -= file.length()
+            file.delete()
+        }
+        writeIndex(directory)
+    }
+
+    private fun writeIndex(directory: File) {
+        runCatching {
+            val index = File(directory, "index.txt")
+            val temporary = File(directory, "index.txt.tmp")
+            val rows = directory.listFiles()?.filter { it.isFile && it.extension == "png" }
+                ?.sortedByDescending { it.lastModified() }
+                ?.joinToString("\n") { "${it.name}\t${it.length()}\t${it.lastModified()}" }.orEmpty()
+            temporary.writeText(rows)
+            temporary.renameTo(index)
         }
     }
 }

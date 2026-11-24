@@ -320,7 +320,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                     samples.mapIndexed { index, sample ->
                         val targetElevation = dem.first.getOrNull(index)
                         if (targetElevation == null) 1f else ArTerrainDem.occlusionAlpha(
-                            fix.latitude, fix.longitude, dem.second, frame.cameraHeightMeters,
+                            fix.latitude, fix.longitude, dem.second, cameraHeightMeters.toDouble(),
                             sample.latitude, sample.longitude, targetElevation
                         )
                     }

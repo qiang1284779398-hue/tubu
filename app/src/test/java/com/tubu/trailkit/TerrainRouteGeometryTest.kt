@@ -64,14 +64,19 @@ class TerrainRouteGeometryTest {
         assertEquals(ribbon.first(), ribbon.last())
     }
 
-    @Test fun handlesLongTrackWithoutFixedTileOrPointLimit() {
-        val points = (0 until 50_000).map { i ->
-            val lat = 28.0 + i * 0.000001
-            val lon = 98.0 + i * 0.000001
-            lat to lon
+    @Test fun handles100KmTrackWith50000PointsWithoutFixedTileOrPointLimit() {
+        val pointCount = 50_000
+        val stepMeters = 100_000.0 / (pointCount - 1)
+        val latitudeStep = stepMeters / 111_195.0
+        val points = (0 until pointCount).map { i ->
+            (28.0 + i * latitudeStep) to 98.0
         }
+        val measuredLength = (points.last().first - points.first().first) * 111_195.0
+        assertEquals(100_000.0, measuredLength, 2.0)
+
         val lods = TerrainRouteGeometry.buildLods(points, emptyList(), emptyList())
-        assertEquals(50_000, lods.last().line.size)
-        assertTrue(lods.all { it.ribbon.isNotEmpty() })
+        assertEquals(pointCount, lods.last().line.size)
+        assertTrue(lods.first().line.size < lods.last().line.size)
+        assertTrue(lods.all { it.ribbon.isNotEmpty() && it.ribbon.all { p -> p.first.isFinite() && p.second.isFinite() } })
     }
 }

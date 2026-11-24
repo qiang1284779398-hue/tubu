@@ -197,11 +197,16 @@ private fun arInterpolateRoutePoint(
 /** Median-filter short elevation spikes caused by arm/wrist motion and barometric noise. */
 fun smoothArRouteElevations(elevations: List<Double?>, radius: Int = 2): List<Double?> {
     if (elevations.isEmpty() || radius <= 0) return elevations
-    return elevations.indices.map { index ->
+    val median = elevations.indices.map { index ->
         val start = (index - radius).coerceAtLeast(0)
         val end = (index + radius).coerceAtMost(elevations.lastIndex)
         val values = (start..end).mapNotNull { elevations[it] }.filter { it.isFinite() }.sorted()
         if (values.isEmpty()) null else values[values.size / 2]
+    }
+    // A light 3-point pass suppresses residual barometric noise without touching route XY.
+    return median.indices.map { index ->
+        val values = (index - 1..index + 1).mapNotNull { median.getOrNull(it) }
+        if (values.isEmpty()) null else values.average()
     }
 }
 /** Resamples GPX at a fixed metric interval so sparse files still render smooth bends. */
@@ -490,3 +495,22 @@ fun projectArRouteSampleFromAnchor(
         pose, focalPixels, viewWidth, viewHeight
     )
 }
+
+/** Removes only unmistakable isolated coordinate spikes; ordinary bends and sparse legs remain intact. */
+fun cleanArRoutePoints(points: List<Pair<Double, Double>>): List<Pair<Double, Double>> {
+    if (points.size < 3) return points
+    val cleaned = ArrayList<Pair<Double, Double>>(points.size)
+    cleaned += points.first()
+    for (index in 1 until points.lastIndex) {
+        val previous = cleaned.last()
+        val current = points[index]
+        val next = points[index + 1]
+        val incoming = arDistanceMeters(previous.first, previous.second, current.first, current.second)
+        val outgoing = arDistanceMeters(current.first, current.second, next.first, next.second)
+        val bypass = arDistanceMeters(previous.first, previous.second, next.first, next.second)
+        if (!(incoming > 120.0 && outgoing > 120.0 && bypass < 30.0)) cleaned += current
+    }
+    cleaned += points.last()
+    return cleaned
+}
+

@@ -13,7 +13,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17231
 #top{position:absolute;z-index:5;top:10px;left:10px;right:10px;display:flex;gap:7px;align-items:flex-start;pointer-events:none}
 .panel{pointer-events:auto;background:rgba(12,24,19,.88);color:#f4f1e6;border:1px solid rgba(255,255,255,.14);border-radius:12px;box-shadow:0 3px 14px #0005;backdrop-filter:blur(8px)}
 #legend{padding:8px 11px;font-size:11px;line-height:1.45;min-width:118px}
-#controls{margin-left:auto;display:flex;flex-direction:column;gap:6px;max-width:56%}
+#controls{margin-left:auto;display:flex;flex-direction:column;gap:6px;max-width:56%;pointer-events:auto}
 button{border:1px solid #ffffff30;border-radius:10px;background:#203b2e;color:#fff;padding:9px 11px;font-size:12px;font-weight:650;min-height:36px;touch-action:manipulation}
 button:active{background:#39664d}
 .row{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
@@ -23,6 +23,8 @@ button:active{background:#39664d}
 #status{padding:7px 10px;font-size:11px;line-height:1.4;max-width:72%;pointer-events:auto}
 #exaggeration{padding:7px 10px;margin-left:auto;display:flex;align-items:center;gap:6px;font-size:10px;pointer-events:auto}
 #exaggeration input{width:76px;accent-color:#e8bd4b}
+#tilt{padding:7px 10px;display:flex;align-items:center;gap:6px;font-size:10px;pointer-events:auto}
+#tilt input{width:64px;accent-color:#e8bd4b}
 #error{color:#ffd3c9}
 #attrib{position:absolute;z-index:4;right:8px;bottom:0;color:#fff;background:#0008;padding:2px 5px;font-size:9px;pointer-events:none}
 .maplibregl-ctrl-group{border-radius:10px!important;overflow:hidden}
@@ -51,6 +53,7 @@ button:active{background:#39664d}
 <div id="diagnostics" class="panel">DEM 命中 0 · 未命中 0 · 失败 0 · 回退 0 ｜ 卫星 命中 0 · 未命中 0 · 失败 0 · 回退 0</div>
 <div id="bottom">
  <div id="status" class="panel">正在加载 MapLibre 地形引擎…</div>
+ <label id="tilt" class="panel">自动俯仰 <span id="tiltValue">100%</span><input id="tiltSlider" type="range" min="0" max="100" step="5" value="100"></label>
  <label id="exaggeration" class="panel">地形夸张 <span id="exValue">1.35×</span><input id="exSlider" type="range" min="1" max="2" step="0.05" value="1.35"></label>
 </div>
 <div id="attrib">© Esri World Imagery · AWS Terrain Tiles</div>
@@ -126,7 +129,9 @@ button:active{background:#39664d}
  try{map.addControl(new maplibregl.NavigationControl({showCompass:false,visualizePitch:true}),'bottom-right');}catch(e){say('导航控件初始化异常：'+((e&&e.stack)||e),true);}
  let suppressAutoTiltUntil=0;
  let moveStartState=null;
- const targetPitchForZoom=z=>Math.max(40,Math.min(68,Math.round(40+(z-11)*9)));
+ let tiltStrength=1;
+ try{const saved=Number(localStorage.getItem('terrainlab_tilt_strength'));if(Number.isFinite(saved)&&saved>=0&&saved<=1)tiltStrength=saved;}catch(_){}
+ const targetPitchForZoom=z=>tiltStrength<=0.02?null:Math.round(Math.max(40,Math.min(68,Math.round(40+(z-11)*9)))*tiltStrength);
  map.on('movestart',()=>{moveStartState={zoom:map.getZoom(),pitch:map.getPitch()};});
  map.on('moveend',()=>{
   if(!moveStartState)return;
@@ -139,6 +144,7 @@ button:active{background:#39664d}
   // pitched manually (dp > 2) is respected and left alone.
   if(Math.abs(dz)<0.05||dp>2)return;
   const target=targetPitchForZoom(map.getZoom());
+  if(target===null)return;
   if(Math.abs(map.getPitch()-target)>3){try{map.easeTo({pitch:target,duration:450});}catch(_){}}
  });
  const forceSize=()=>{try{const w=window.innerWidth||0,h=window.innerHeight||0;const el=document.getElementById('map');if(el&&w>0&&h>0){el.style.width=w+'px';el.style.height=h+'px';}if(map)map.resize();}catch(_){}};
@@ -234,7 +240,7 @@ button:active{background:#39664d}
   // Open/reset in the oblique 3D view from the design (pitch 58°, bearing -18°).
   // Terrain is enabled, but at pitch 0 the overview reads as a flat 2D photo map.
   let tilted=false;
-  const tilt=()=>{if(tilted)return;tilted=true;try{map.easeTo({pitch:58,bearing:-18,duration:700});}catch(_){}};
+  const tilt=()=>{if(tilted)return;tilted=true;if(tiltStrength<=0.02)return;try{map.easeTo({pitch:Math.round(58*tiltStrength),bearing:-18,duration:700});}catch(_){}};
   try{map.once('moveend',tilt);}catch(_){}
   setTimeout(tilt,1000);
   return true;
@@ -329,6 +335,16 @@ button:active{background:#39664d}
   const value=Number(event.target.value);document.getElementById('exValue').textContent=value.toFixed(2)+'×';
   map.setTerrain({source:'dem',exaggeration:value});
  });
+ const tiltSliderEl=document.getElementById('tiltSlider');
+ if(tiltSliderEl){
+  tiltSliderEl.value=String(Math.round(tiltStrength*100));
+  document.getElementById('tiltValue').textContent=Math.round(tiltStrength*100)+'%';
+  tiltSliderEl.addEventListener('input',event=>{
+   tiltStrength=Number(event.target.value)/100;
+   document.getElementById('tiltValue').textContent=event.target.value+'%';
+   try{localStorage.setItem('terrainlab_tilt_strength',String(tiltStrength));}catch(_){}
+  });
+ }
  document.addEventListener('visibilitychange',()=>{
   if(document.hidden){if(map)map.stop();}
   else if(map){map.resize();map.triggerRepaint();}

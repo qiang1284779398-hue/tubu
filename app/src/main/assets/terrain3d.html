@@ -213,6 +213,12 @@ button:active{background:#39664d}
   coords.forEach(p=>{west=Math.min(west,p[0]);east=Math.max(east,p[0]);south=Math.min(south,p[1]);north=Math.max(north,p[1]);});
   if(west===east){west-=.001;east+=.001;}if(south===north){south-=.001;north+=.001;}
   map.fitBounds([[west,south],[east,north]],{padding:{top:85,bottom:85,left:45,right:45},duration:650,maxZoom:14});
+  // Open/reset in the oblique 3D view from the design (pitch 58°, bearing -18°).
+  // Terrain is enabled, but at pitch 0 the overview reads as a flat 2D photo map.
+  let tilted=false;
+  const tilt=()=>{if(tilted)return;tilted=true;try{map.easeTo({pitch:58,bearing:-18,duration:700});}catch(_){}};
+  try{map.once('moveend',tilt);}catch(_){}
+  setTimeout(tilt,1000);
   return true;
  }
  function updateContours(){

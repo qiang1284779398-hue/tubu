@@ -168,6 +168,7 @@ button:active{background:#39664d}
    loaded=true;
    try{updateReadout();}catch(e){say('读数更新异常：'+((e&&e.stack)||e),true);}
    notifyReady();
+   if(pendingData!==null){const queued=pendingData;pendingData=null;setData(queued);}
   }
  });
  map.on('load',notifyReady);
@@ -250,7 +251,6 @@ button:active{background:#39664d}
    if(!data||!data.routeLine||!data.routeRibbon||!data.waypoints)throw new Error('路线数据缺少 routeLine/routeRibbon/waypoints');
    say('路线 setData：JSON 解析完成，准备写入 GeoJSON 源…');
    routeLineData=data.routeLine||empty;routeRibbonData=data.routeRibbon||empty;waypointData=data.waypoints||empty;
-   if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('waypoints'))throw new Error('MapLibre 路线数据源尚未初始化');
    if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('route-points')||!map.getSource('waypoints')||!map.getSource('selected-waypoint')){
     pendingData=raw;say('路线数据已接收，等待地图样式与本地数据源就绪…');return;
    }

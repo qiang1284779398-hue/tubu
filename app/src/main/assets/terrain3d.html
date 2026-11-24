@@ -124,6 +124,23 @@ button:active{background:#39664d}
  }catch(e){say('地图初始化失败：'+(e.message||e),true);return;}
  try{map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-left');}catch(e){say('比例尺控件初始化异常：'+((e&&e.stack)||e),true);}
  try{map.addControl(new maplibregl.NavigationControl({showCompass:false,visualizePitch:true}),'bottom-right');}catch(e){say('导航控件初始化异常：'+((e&&e.stack)||e),true);}
+ let suppressAutoTiltUntil=0;
+ let moveStartState=null;
+ const targetPitchForZoom=z=>Math.max(40,Math.min(68,Math.round(40+(z-11)*9)));
+ map.on('movestart',()=>{moveStartState={zoom:map.getZoom(),pitch:map.getPitch()};});
+ map.on('moveend',()=>{
+  if(!moveStartState)return;
+  const dz=map.getZoom()-moveStartState.zoom;
+  const dp=Math.abs(map.getPitch()-moveStartState.pitch);
+  moveStartState=null;
+  if(Date.now()<suppressAutoTiltUntil)return;
+  // Zoom-coupled auto-tilt (Ovi-style drone view): zooming in leans the camera
+  // toward the viewer, zooming out relaxes it. A gesture in which the user
+  // pitched manually (dp > 2) is respected and left alone.
+  if(Math.abs(dz)<0.05||dp>2)return;
+  const target=targetPitchForZoom(map.getZoom());
+  if(Math.abs(map.getPitch()-target)>3){try{map.easeTo({pitch:target,duration:450});}catch(_){}}
+ });
  const forceSize=()=>{try{const w=window.innerWidth||0,h=window.innerHeight||0;const el=document.getElementById('map');if(el&&w>0&&h>0){el.style.width=w+'px';el.style.height=h+'px';}if(map)map.resize();}catch(_){}};
  window.addEventListener('resize',forceSize);
  setTimeout(forceSize,300);setTimeout(forceSize,1200);setTimeout(forceSize,3000);
@@ -212,6 +229,7 @@ button:active{background:#39664d}
   let west=Infinity,south=Infinity,east=-Infinity,north=-Infinity;
   coords.forEach(p=>{west=Math.min(west,p[0]);east=Math.max(east,p[0]);south=Math.min(south,p[1]);north=Math.max(north,p[1]);});
   if(west===east){west-=.001;east+=.001;}if(south===north){south-=.001;north+=.001;}
+  suppressAutoTiltUntil=Date.now()+2600;
   map.fitBounds([[west,south],[east,north]],{padding:{top:85,bottom:85,left:45,right:45},duration:650,maxZoom:14});
   // Open/reset in the oblique 3D view from the design (pitch 58°, bearing -18°).
   // Terrain is enabled, but at pitch 0 the overview reads as a flat 2D photo map.

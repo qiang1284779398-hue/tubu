@@ -56,6 +56,14 @@ internal fun Terrain3DDialog(
     var walkingMode by remember { mutableStateOf(false) }
     val isWalkingMode by rememberUpdatedState(walkingMode)
     val webView = remember(context, projectId) { WebView(context) }
+    DisposableEffect(tileCache, webView) {
+        tileCache.onTileCached = { kind ->
+            webView.post {
+                webView.evaluateJavascript("window.TerrainLab&&window.TerrainLab.refreshTiles('$kind')", null)
+            }
+        }
+        onDispose { tileCache.onTileCached = null }
+    }
     val bridge = remember(webView, payload) {
         payload?.let { readyPayload ->
             TerrainLabBridge(

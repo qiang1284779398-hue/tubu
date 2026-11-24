@@ -19,7 +19,10 @@ internal data class TerrainWaypointSnapshot(
 )
 
 internal fun buildTerrainWaypointSnapshot(encoded: String): List<TerrainWaypointSnapshot> =
-    decodeGpxWaypoints(encoded).mapIndexed { index, waypoint ->
+    buildTerrainWaypointSnapshot(decodeGpxWaypoints(encoded))
+
+internal fun buildTerrainWaypointSnapshot(waypoints: List<GpxWaypoint>): List<TerrainWaypointSnapshot> =
+    waypoints.mapIndexed { index, waypoint ->
         val name = waypoint.name.ifBlank { "途经点 ${index + 1}" }
         TerrainWaypointSnapshot(
             id = "wp-$index",

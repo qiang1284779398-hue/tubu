@@ -5,6 +5,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class TerrainTileCacheTest {
@@ -35,8 +37,8 @@ class TerrainTileCacheTest {
                 }
             }.map { it.get() }
             assertEquals(1, count.get())
-            assertEquals(8, results.size)
-            assertEquals(3, results.first()?.size)
+            assertEquals(8, values.size)
+            assertEquals(3, values.first()?.size)
         } finally {
             executor.shutdownNow()
         }

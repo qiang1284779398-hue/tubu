@@ -766,7 +766,23 @@ fun TrailKitApp(sharedGpxUri: Uri? = null, autoOpen3D: Boolean = false, onShared
     if (safetyOpen && project != null) TrailSafetyDialog(project) { safetyOpen=false }
     if (trackOpen && project != null) TrailTrackDialog(project.trackData) { trackOpen=false }
     if (project != null) OfflineMapDialog(project.mapPath, project.trackData, project.id, project.waypointData, project.elevationData, visible=mapOpen, onClose={ mapOpen=false; mapOpenedFromCamera=false }, fromCamera=mapOpenedFromCamera, onReturnToCamera={ mapOpen=false; mapOpenedFromCamera=false; arCameraOpen=true })
-    if (project != null) Terrain3DDialog(project.id, project.name, project.trackData, project.elevationData, project.waypointData, visible=terrain3dOpen) { terrain3dOpen=false }
+    val terrainTrackCoordinates = remember(project?.id, project?.trackData) {
+        project?.let { decodeTrackPoints(it.trackData) } ?: emptyList()
+    }
+    val terrainElevations = remember(project?.id, project?.elevationData) {
+        project?.let { decodeGpxElevations(it.elevationData) } ?: emptyList()
+    }
+    val terrainWaypoints = remember(project?.id, project?.waypointData) {
+        project?.let { buildTerrainWaypointSnapshot(it.waypointData) } ?: emptyList()
+    }
+    if (project != null) Terrain3DDialog(
+        projectId = project.id,
+        projectName = project.name,
+        trackCoordinates = terrainTrackCoordinates,
+        elevations = terrainElevations,
+        waypoints = terrainWaypoints,
+        visible = terrain3dOpen
+    ) { terrain3dOpen = false }
     if (project != null) TerrainArCameraDialog(project.id, project.name, project.trackData, project.elevationData, visible=arCameraOpen, onClose={ arCameraOpen=false }, onJumpToMap={ arCameraOpen=false; mapOpenedFromCamera=true; mapOpen=true })
 
     if (advancedToolsOpen && project != null) {

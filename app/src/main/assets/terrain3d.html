@@ -87,9 +87,25 @@ button:active{background:#39664d}
   version:8,
   sources:{
    imagery:{type:'raster',tiles:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],tileSize:256,maxzoom:19,attribution:'© Esri'},
-   dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,maxzoom:14,encoding:'terrarium',attribution:'AWS Terrain Tiles'}
+   dem:{type:'raster-dem',tiles:['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],tileSize:256,maxzoom:14,encoding:'terrarium',attribution:'AWS Terrain Tiles'},
+   'terrain-contours':{type:'geojson',data:empty},
+   'route-ribbon':{type:'geojson',data:empty},
+   'route-line':{type:'geojson',data:empty},
+   'route-points':{type:'geojson',data:empty},
+   waypoints:{type:'geojson',data:empty},
+   'selected-waypoint':{type:'geojson',data:empty}
   },
-  layers:[{id:'satellite',type:'raster',source:'imagery',paint:{'raster-opacity':1}}]
+  layers:[
+   {id:'satellite',type:'raster',source:'imagery',paint:{'raster-opacity':1}},
+   {id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d','hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315}},
+   {id:'terrain-contours-line',type:'line',source:'terrain-contours',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#f1d99a','line-width':1,'line-opacity':.72},layout:{visibility:'none'}},
+   {id:'route-ribbon-fill',type:'fill',source:'route-ribbon',filter:['==',['get','lod'],'overview'],paint:{'fill-color':'#ff9a3c','fill-opacity':.32}},
+   {id:'route-casing',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#171d19','line-width':7,'line-opacity':.92}},
+   {id:'route-main',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffad43','line-width':4,'line-opacity':1}},
+   {id:'route-endpoints',type:'symbol',source:'route-points',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-size':.72,'symbol-sort-key':0}},
+   {id:'waypoint-labels',type:'symbol',source:'waypoints',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.62,'symbol-sort-key':['get','priority']}},
+   {id:'selected-waypoint-label',type:'symbol',source:'selected-waypoint',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.78,'symbol-sort-key':-1}}
+  ]
  };
  try{
   map=new maplibregl.Map({
@@ -107,36 +123,13 @@ button:active{background:#39664d}
  });
  map.on('style.load',()=>{
   if(loaded)return;
+  const step=(name,fn)=>{try{fn();say('初始化完成：'+name);}catch(e){say('初始化步骤异常 ['+name+']：'+((e&&e.stack)||e),true);}};
   try{
-   map.setTerrain({source:'dem',exaggeration:1.35});
-   map.touchZoomRotate.enable();map.touchPitch.enable();map.doubleClickZoom.enable();
+   step('DEM 地形',()=>map.setTerrain({source:'dem',exaggeration:1.35}));
+   step('手势控制',()=>{map.touchZoomRotate.enable();map.touchPitch.enable();map.doubleClickZoom.enable();});
    map.addLayer({id:'terrain-hillshade',type:'hillshade',source:'dem',paint:{
     'hillshade-exaggeration':.38,'hillshade-shadow-color':'#25372d',
     'hillshade-highlight-color':'#f7efd7','hillshade-illumination-direction':315
-   }});
-   map.addSource('terrain-contours',{type:'geojson',data:empty});
-   map.addLayer({id:'terrain-contours-line',type:'line',source:'terrain-contours',layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#f1d99a','line-width':1,'line-opacity':.72}});
-   map.addSource('route-ribbon',{type:'geojson',data:empty});
-   map.addLayer({id:'route-ribbon-fill',type:'fill',source:'route-ribbon',filter:['==',['get','lod'],'overview'],paint:{'fill-color':'#ff9a3c','fill-opacity':.32}});
-   map.addSource('route-line',{type:'geojson',data:empty});
-   map.addLayer({id:'route-casing',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#171d19','line-width':7,'line-opacity':.92}});
-   map.addLayer({id:'route-main',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffad43','line-width':4,'line-opacity':1}});
-   map.addSource('route-points',{type:'geojson',data:empty});
-   map.addLayer({id:'route-endpoints',type:'symbol',source:'route-points',layout:{
-    'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,
-    'icon-pitch-alignment':'viewport','icon-size':.72,'symbol-sort-key':0
-   }});
-   map.addSource('waypoints',{type:'geojson',data:empty});
-   map.addLayer({id:'waypoint-labels',type:'symbol',source:'waypoints',layout:{
-    'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':false,'icon-ignore-placement':false,
-    'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.62,
-    'symbol-sort-key':['get','priority']
-   }});
-   map.addSource('selected-waypoint',{type:'geojson',data:empty});
-   map.addLayer({id:'selected-waypoint-label',type:'symbol',source:'selected-waypoint',layout:{
-    'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,
-    'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.78,
-    'symbol-sort-key':-1
    }});
    // Keep start/end labels above selected and ordinary waypoint labels.
    map.moveLayer('route-endpoints');
@@ -167,9 +160,14 @@ button:active{background:#39664d}
      say('三维地形已就绪 · DEM z14 · '+cacheText);
     }
    });
-   loaded=true;updateReadout();say('地形引擎已就绪，等待原生路线数据…');
-   try{TrailKitBridge.onReady();}catch(_){}
-  }catch(e){say('地形图层初始化失败：'+(e.message||e),true);}
+   loaded=true;updateReadout();say('地图样式初始化结束，等待路线数据…');
+  }catch(e){say('地图初始化主流程异常：'+((e&&e.stack)||e),true);}
+  finally{
+   loaded=true;
+   try{updateReadout();}catch(e){say('读数更新异常：'+((e&&e.stack)||e),true);}
+   try{TrailKitBridge.onReady();say('路线数据下发已触发（无论地图初始化是否部分失败）');}
+   catch(e){say('原生 onReady 调用异常：'+((e&&e.stack)||e),true);}
+  }
  });
  function roundedRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
  function labelSprite(text,kind){

@@ -117,7 +117,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
     }
     LaunchedEffect(context) { ArTerrainDem.initialize(context) }
     val reverseRoute = remember(projectId) { navigationPrefs.getBoolean("reverse_$projectId", false) }
-    val baseRoutePoints = remember(encodedTrack) { decodeTrackPoints(encodedTrack) }
+    val baseRoutePoints = remember(encodedTrack) { cleanArRoutePoints(decodeTrackPoints(encodedTrack)) }
     val routePoints = remember(baseRoutePoints, reverseRoute) { if (reverseRoute) baseRoutePoints.asReversed() else baseRoutePoints }
     val route = remember(routePoints) { if (routePoints.size >= 2) prepareRoute(routePoints) else null }
     val routeProgressKey = "progress_${projectId}_${encodedTrack.hashCode()}_${if (reverseRoute) "rev" else "fwd"}"
@@ -547,16 +547,28 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                 provider.unbindAll()
                                 val camera = provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview)
                                 val camera2Info = Camera2CameraInfo.from(camera.cameraInfo)
+                                // Read characteristics from the Camera2 camera actually bound by CameraX.
                                 val physicalSize = camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
                                 val focalLengths = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+                                val pixelArray = camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE)
+                                val calibrated = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_INTRINSIC_CALIBRATION)
+                                val distortion = camera2Info.getCameraCharacteristic(CameraCharacteristics.LENS_DISTORTION)
                                 val sensorRotation = camera.cameraInfo.getSensorRotationDegrees(targetRotation)
                                 if (physicalSize != null && focalLengths != null && focalLengths.isNotEmpty()) {
                                     val rotated = sensorRotation % 180 != 0
+                                    val validCalibration = calibrated != null && calibrated.size >= 4 &&
+                                        pixelArray != null && calibrated[0] > 0f && calibrated[1] > 0f
                                     cameraIntrinsics = ArCameraIntrinsics(
                                         if (rotated) physicalSize.height.toDouble() else physicalSize.width.toDouble(),
                                         if (rotated) physicalSize.width.toDouble() else physicalSize.height.toDouble(),
                                         focalLengths.first().toDouble(),
-                                        true
+                                        validCalibration,
+                                        intrinsicFxPixels = if (validCalibration) calibrated!![0].toDouble() else null,
+                                        intrinsicFyPixels = if (validCalibration) calibrated!![1].toDouble() else null,
+                                        sourcePixelWidth = pixelArray?.width?.toDouble(),
+                                        sourcePixelHeight = pixelArray?.height?.toDouble(),
+                                        distortionK1 = distortion?.getOrNull(0)?.toDouble() ?: 0.0,
+                                        distortionK2 = distortion?.getOrNull(1)?.toDouble() ?: 0.0
                                     )
                                 }
                                 cameraError = ""
@@ -586,17 +598,25 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             )
                             val leftGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent - 90.0, 0.65)
                             val rightGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent + 90.0, 0.65)
-                            val left = projectArRouteSample(
-                                match.snappedLat, match.snappedLon, sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
-                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels, size.width.toDouble(), size.height.toDouble()
+                            val left = projectArRouteSampleFromAnchor(
+                                match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
+                                sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
+                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels,
+                                size.width.toDouble(), size.height.toDouble(),
+                                cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
                             )
-                            val right = projectArRouteSample(
-                                match.snappedLat, match.snappedLon, sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
-                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels, size.width.toDouble(), size.height.toDouble()
+                            val right = projectArRouteSampleFromAnchor(
+                                match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
+                                sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
+                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels,
+                                size.width.toDouble(), size.height.toDouble(),
+                                cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
                             )
-                            val center = projectArRouteSample(
-                                match.snappedLat, match.snappedLon, sample, referenceElevation, cameraHeightMeters.toDouble(),
-                                pose, focalPixels, size.width.toDouble(), size.height.toDouble()
+                            val center = projectArRouteSampleFromAnchor(
+                                match.snappedLat, match.snappedLon, fix.latitude, fix.longitude, sample,
+                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels,
+                                size.width.toDouble(), size.height.toDouble(),
+                                cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
                             )
                             if (left != null && right != null && center != null) {
                                 CameraRibbonPoint(center, left, right, sample.progressMeters)
@@ -857,6 +877,23 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         }
                     } else if (!offRoute) {
                         Text("等待 GPS 定位", color = Color(0xFFFFE082), fontSize = 15.sp, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("相机高度 ${"%.2f".format(Locale.CHINA, cameraHeightMeters)} m", color = Color(0xFFB9C8BE), fontSize = 11.sp)
+                        Slider(
+                            modifier = Modifier.weight(1f),
+                            value = cameraHeightMeters,
+                            onValueChange = {
+                                cameraHeightMeters = it.coerceIn(1.1f, 1.9f)
+                                navigationPrefs.edit().putFloat("ar_camera_height_$projectId", cameraHeightMeters).apply()
+                            },
+                            valueRange = 1.1f..1.9f,
+                            steps = 7
+                        )
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(

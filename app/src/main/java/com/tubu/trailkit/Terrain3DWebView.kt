@@ -23,6 +23,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.webkit.WebViewAssetLoader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -39,29 +41,39 @@ internal fun Terrain3DDialog(
     if (!visible) return
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val payload = remember(projectId, trackCoordinates, elevations, waypoints) {
-        buildTerrainLabPayload(projectId, trackCoordinates, elevations, waypoints)
+    var payload by remember(projectId, trackCoordinates, elevations, waypoints) {
+        mutableStateOf<String?>(null)
     }
-    val tileCache = remember(context) { TerrainTileCache(context.applicationContext) }
+    val tileCache = remember(context, projectId) { TerrainTileCache(context.applicationContext) }
     val assetLoader = remember(context) {
         WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))
             .build()
     }
-    var status by remember { mutableStateOf("正在启动 MapLibre 三维地形…") }
+    var status by remember { mutableStateOf("正在整理路线与航点数据…") }
     var selectedWaypoint by remember { mutableStateOf<JSONObject?>(null) }
     var walkingMode by remember { mutableStateOf(false) }
     val isWalkingMode by rememberUpdatedState(walkingMode)
-    val webView = remember(context) { WebView(context) }
+    val webView = remember(context, projectId) { WebView(context) }
     val bridge = remember(webView, payload) {
-        TerrainLabBridge(
-            webView = webView,
-            payload = payload,
-            tileCache = tileCache,
-            onStatus = { status = it },
-            onWaypoint = { raw -> selectedWaypoint = runCatching { JSONObject(raw) }.getOrNull() },
-            onWalk = { walkingMode = true }
-        )
+        payload?.let { readyPayload ->
+            TerrainLabBridge(
+                webView = webView,
+                payload = readyPayload,
+                tileCache = tileCache,
+                onStatus = { status = it },
+                onWaypoint = { raw -> selectedWaypoint = runCatching { JSONObject(raw) }.getOrNull() },
+                onWalk = { walkingMode = true }
+            )
+        }
+    }
+
+    LaunchedEffect(projectId, trackCoordinates, elevations, waypoints) {
+        status = "正在后台整理路线、缎带与航点数据…"
+        payload = withContext(Dispatchers.Default) {
+            buildTerrainLabPayload(projectId, trackCoordinates, elevations, waypoints)
+        }
+        status = "路线数据已准备，正在启动 MapLibre 三维地形…"
     }
 
     LaunchedEffect(walkingMode) {
@@ -123,45 +135,58 @@ internal fun Terrain3DDialog(
                 }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                AndroidView(
-                    factory = {
-                        webView.apply {
-                            setBackgroundColor(Color.rgb(18, 29, 24))
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.loadsImagesAutomatically = true
-                            settings.useWideViewPort = true
-                            settings.loadWithOverviewMode = true
-                            settings.setSupportZoom(false)
-                            settings.allowFileAccess = false
-                            settings.allowContentAccess = false
-                            settings.javaScriptCanOpenWindowsAutomatically = false
-                            addJavascriptInterface(bridge, "TrailKitBridge")
-                            webViewClient = object : androidx.webkit.WebViewClientCompat() {
-                                override fun shouldInterceptRequest(
-                                    view: WebView?,
-                                    request: WebResourceRequest
-                                ): WebResourceResponse? {
-                                    if (request.method.equals("GET", ignoreCase = true)) {
-                                        tileCache.intercept(request.url.toString())?.let { return it }
+                val readyBridge = bridge
+                if (readyBridge != null) {
+                    AndroidView(
+                        factory = {
+                            webView.apply {
+                                setBackgroundColor(Color.rgb(18, 29, 24))
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.loadsImagesAutomatically = true
+                                settings.useWideViewPort = true
+                                settings.loadWithOverviewMode = true
+                                settings.setSupportZoom(false)
+                                settings.allowFileAccess = false
+                                settings.allowContentAccess = false
+                                settings.javaScriptCanOpenWindowsAutomatically = false
+                                addJavascriptInterface(readyBridge, "TrailKitBridge")
+                                webViewClient = object : androidx.webkit.WebViewClientCompat() {
+                                    override fun shouldInterceptRequest(
+                                        view: WebView?,
+                                        request: WebResourceRequest
+                                    ): WebResourceResponse? {
+                                        if (request.method.equals("GET", ignoreCase = true)) {
+                                            tileCache.intercept(request.url.toString())?.let { return it }
+                                        }
+                                        return assetLoader.shouldInterceptRequest(request.url)
+                                            ?: super.shouldInterceptRequest(view, request)
                                     }
-                                    return assetLoader.shouldInterceptRequest(request.url)
-                                        ?: super.shouldInterceptRequest(view, request)
                                 }
-                            }
-                            webChromeClient = object : WebChromeClient() {
-                                override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                                    if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
-                                        status = "地图引擎：${message.message().take(180)}"
+                                webChromeClient = object : WebChromeClient() {
+                                    override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                                        if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                                            status = "地图引擎：${message.message().take(180)}"
+                                        }
+                                        return true
                                     }
-                                    return true
                                 }
+                                loadUrl("https://appassets.androidplatform.net/assets/terrain3d.html")
                             }
-                            loadUrl("https://appassets.androidplatform.net/assets/terrain3d.html")
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Column(
+                        Modifier.align(Alignment.Center).padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(status, style = MaterialTheme.typography.bodyMedium)
+                        Text("长路线会在后台生成简化层级与真实宽度缎带，不阻塞主界面", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 selectedWaypoint?.let { waypoint ->
                     Surface(
                         modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp),

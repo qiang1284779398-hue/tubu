@@ -27,9 +27,9 @@ import javax.microedition.khronos.opengles.GL10
 import kotlin.math.*
 
 @Composable
-internal fun NativeTerrainWalkDialog(projectName:String,encodedTrack:String,visible:Boolean,onClose:()->Unit){
+internal fun NativeTerrainWalkDialog(projectName:String,trackCoordinates:List<Pair<Double,Double>>,visible:Boolean,onClose:()->Unit){
  if(!visible)return
- val points=remember(encodedTrack){decodeTrackPoints(encodedTrack)}
+ val points=remember(trackCoordinates){trackCoordinates}
  var status by remember{mutableStateOf("正在启动高分辨率 DEM 地形…")}
  val ctx=androidx.compose.ui.platform.LocalContext.current
  val view=remember(points){TerrainSurface(ctx,points){status=it}}

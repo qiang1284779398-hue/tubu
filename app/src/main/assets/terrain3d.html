@@ -17,7 +17,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17231
 button{border:1px solid #ffffff30;border-radius:10px;background:#203b2e;color:#fff;padding:9px 11px;font-size:12px;font-weight:650;min-height:36px;touch-action:manipulation}
 button:active{background:#39664d}
 .row{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
-#readout{padding:6px 9px;font-size:11px;text-align:right}
+#readout{padding:6px 9px;font-size:11px;text-align:right;white-space:pre-line}
 #bottom{position:absolute;z-index:5;left:10px;right:10px;bottom:10px;display:flex;align-items:flex-end;gap:8px;pointer-events:none}
 #diagnostics{position:absolute;z-index:6;left:10px;right:10px;bottom:55px;padding:6px 9px;font-size:10px;line-height:1.35;white-space:normal;pointer-events:none;max-width:calc(100% - 20px);}
 #status{padding:7px 10px;font-size:11px;line-height:1.4;max-width:72%;pointer-events:auto}
@@ -68,6 +68,7 @@ button:active{background:#39664d}
    const d=c.dem||{},i=c.imagery||{};
    diagnostics.textContent='DEM 命中 '+(d.hits||0)+' · 未命中 '+(d.misses||0)+' · 失败 '+(d.failures||0)+' · 回退 '+(d.fallbacks||0)+' ｜ 卫星 命中 '+(i.hits||0)+' · 未命中 '+(i.misses||0)+' · 失败 '+(i.failures||0)+' · 回退 '+(i.fallbacks||0);
   }catch(e){diagnostics.textContent='缓存诊断暂不可用：'+(e.message||e);}
+  try{updateReadout();}catch(_){}
  };
  setInterval(updateDiagnostics,750);
  window.addEventListener('error',event=>{
@@ -81,6 +82,12 @@ button:active{background:#39664d}
  const say=(message,error)=>{status.textContent=message;status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}};
  if(!window.maplibregl){say('MapLibre 本地引擎未能加载，请检查 APK 资源包。',true);return;}
  const empty={type:'FeatureCollection',features:[]};
+ const WEBGL2_OK=(()=>{try{return !!window.WebGL2RenderingContext&&!!document.createElement('canvas').getContext('webgl2');}catch(_){return false;}})();
+ function geoLine(){
+  let canvasText='?';
+  try{const c=map&&map.getCanvas();if(c)canvasText=c.clientWidth+'×'+c.clientHeight;}catch(_){}
+  return 'WebGL2 '+(WEBGL2_OK?'✓':'✗')+' · 视口 '+(window.innerWidth||0)+'×'+(window.innerHeight||0)+' · 画布 '+canvasText;
+ }
  let routeLineData=empty,routeRibbonData=empty,waypointData=empty,pendingData=null;
  let map=null,loaded=false,contoursVisible=false,layerMode=2,contourTimer=0,selectedWaypointId=null;
  const mapStyle={
@@ -117,6 +124,9 @@ button:active{background:#39664d}
  }catch(e){say('地图初始化失败：'+(e.message||e),true);return;}
  try{map.addControl(new maplibregl.ScaleControl({unit:'metric'}),'bottom-left');}catch(e){say('比例尺控件初始化异常：'+((e&&e.stack)||e),true);}
  try{map.addControl(new maplibregl.NavigationControl({showCompass:false,visualizePitch:true}),'bottom-right');}catch(e){say('导航控件初始化异常：'+((e&&e.stack)||e),true);}
+ const forceSize=()=>{try{const w=window.innerWidth||0,h=window.innerHeight||0;const el=document.getElementById('map');if(el&&w>0&&h>0){el.style.width=w+'px';el.style.height=h+'px';}if(map)map.resize();}catch(_){}};
+ window.addEventListener('resize',forceSize);
+ setTimeout(forceSize,300);setTimeout(forceSize,1200);setTimeout(forceSize,3000);
  map.on('error',e=>{
   const message=e&&e.error&&e.error.message?e.error.message:'瓦片加载异常';
   if(/terrain|dem|tile|image|network/i.test(message))say('部分瓦片暂不可用；已缓存区域仍可显示。',false);
@@ -193,7 +203,7 @@ button:active{background:#39664d}
  }
  function updateReadout(){
   if(!map)return;
-  readout.textContent='Z '+map.getZoom().toFixed(1)+' · 方位 '+Math.round((map.getBearing()+360)%360)+'° · 俯仰 '+Math.round(map.getPitch())+'°';
+  readout.textContent='Z '+map.getZoom().toFixed(1)+' · 方位 '+Math.round((map.getBearing()+360)%360)+'° · 俯仰 '+Math.round(map.getPitch())+'°\n'+geoLine();
  }
  function fitAll(){
   const full=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full');

@@ -161,8 +161,10 @@ internal fun Terrain3DDialog(
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
                                 settings.loadsImagesAutomatically = true
-                                settings.useWideViewPort = true
-                                settings.loadWithOverviewMode = true
+                                // Do NOT enable useWideViewPort/loadWithOverviewMode: they make the
+                                // WebView lay the page out in an oversized virtual viewport, pushing
+                                // the page bottom (status/diagnostics) off-screen and misplacing the
+                                // map canvas relative to the visible area.
                                 settings.setSupportZoom(false)
                                 settings.allowFileAccess = false
                                 settings.allowContentAccess = false

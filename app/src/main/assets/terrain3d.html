@@ -19,9 +19,7 @@ button:active{background:#39664d}
 .row{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
 #readout{padding:6px 9px;font-size:11px;text-align:right;white-space:pre-line}
 #leftcol{display:flex;flex-direction:column;gap:7px;max-width:54%;pointer-events:none}
-#diagnostics{padding:6px 9px;font-size:10px;line-height:1.35;white-space:normal;pointer-events:none}
-#routeinfo{padding:6px 9px;font-size:10px;line-height:1.35;white-space:pre-line;pointer-events:none}
-#status{padding:7px 10px;font-size:11px;line-height:1.4;pointer-events:auto;white-space:pre-line}
+#status{padding:7px 10px;font-size:11px;line-height:1.4;pointer-events:auto;white-space:pre-line;display:none}
 #exaggeration{padding:7px 10px;display:flex;align-items:center;gap:6px;font-size:10px;pointer-events:auto}
 #exaggeration input{flex:1;accent-color:#e8bd4b}
 #tilt{padding:7px 10px;display:flex;align-items:center;gap:6px;font-size:10px;pointer-events:auto;white-space:nowrap}
@@ -44,8 +42,6 @@ button:active{background:#39664d}
  <div id="leftcol">
  <div id="legend" class="panel">3D TERRAIN LAB<br><b>真实 DEM 山体</b><br>单指平移 · 双指调视角</div>
  <div id="status" class="panel">正在加载 MapLibre 地形引擎…</div>
- <div id="diagnostics" class="panel">DEM 命中 0 · 未命中 0 · 失败 0 · 回退 0 ｜ 卫星 命中 0 · 未命中 0 · 失败 0 · 回退 0</div>
- <div id="routeinfo" class="panel">路线信息加载中…</div>
  <label id="tilt" class="panel">自动俯仰 <span id="tiltValue">100%</span><input id="tiltSlider" type="range" min="0" max="100" step="5" value="100"></label>
  <label id="exaggeration" class="panel">地形夸张 <span id="exValue">1.35×</span><input id="exSlider" type="range" min="1" max="2" step="0.05" value="1.35"></label>
  </div>
@@ -68,16 +64,8 @@ button:active{background:#39664d}
  'use strict';
  const status=document.getElementById('status');
  const readout=document.getElementById('readout');
- const diagnostics=document.getElementById('diagnostics');
  let transferChunks=null,transferReceived=0;
- const updateDiagnostics=()=>{
-  try{
-   const c=JSON.parse(TrailKitBridge.getCacheStats());
-   const d=c.dem||{},i=c.imagery||{};
-   diagnostics.textContent='DEM 命中 '+(d.hits||0)+' · 未命中 '+(d.misses||0)+' · 失败 '+(d.failures||0)+' · 回退 '+(d.fallbacks||0)+' ｜ 卫星 命中 '+(i.hits||0)+' · 未命中 '+(i.misses||0)+' · 失败 '+(i.failures||0)+' · 回退 '+(i.fallbacks||0);
-  }catch(e){diagnostics.textContent='缓存诊断暂不可用：'+(e.message||e);}
-  try{updateReadout();}catch(_){}
- };
+ const updateDiagnostics=()=>{try{updateReadout();}catch(_){}};
  setInterval(updateDiagnostics,750);
  window.addEventListener('error',event=>{
   const detail=(event.message||'未知异常')+' @ '+(event.filename||'')+':'+(event.lineno||0)+':'+(event.colno||0);
@@ -87,15 +75,16 @@ button:active{background:#39664d}
   const reason=event.reason;const detail=reason&&(reason.stack||reason.message)||String(reason||'未处理 Promise 异常');
   say('JavaScript Promise 异常：'+detail,true);
  });
- const say=(message,error)=>{status.textContent=message;status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}};
+ let statusHideTimer=0;
+ const say=(message,error)=>{
+  status.textContent=message;status.style.display='block';
+  status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';
+  clearTimeout(statusHideTimer);
+  if(!error)statusHideTimer=setTimeout(()=>{status.style.display='none';},4000);
+  try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}
+ };
  if(!window.maplibregl){say('MapLibre 本地引擎未能加载，请检查 APK 资源包。',true);return;}
  const empty={type:'FeatureCollection',features:[]};
- const WEBGL2_OK=(()=>{try{return !!window.WebGL2RenderingContext&&!!document.createElement('canvas').getContext('webgl2');}catch(_){return false;}})();
- function geoLine(){
-  let canvasText='?';
-  try{const c=map&&map.getCanvas();if(c)canvasText=c.clientWidth+'×'+c.clientHeight;}catch(_){}
-  return 'WebGL2 '+(WEBGL2_OK?'✓':'✗')+' · 视口 '+(window.innerWidth||0)+'×'+(window.innerHeight||0)+' · 画布 '+canvasText;
- }
  let routeLineData=empty,routeRibbonData=empty,waypointData=empty,pendingData=null;
  let map=null,loaded=false,contoursVisible=false,layerMode=2,contourTimer=0,selectedWaypointId=null;
  const mapStyle={
@@ -199,17 +188,13 @@ button:active{background:#39664d}
    step('地图俯仰结束事件',()=>map.on('pitchend',updateReadout));
    step('地图空闲与瓦片诊断事件',()=>map.on('idle',()=>{
     if(!loaded)return;
-    let cacheText='缓存统计暂不可用';
     let missingDem=0,missingImagery=0;
     try{
      const c=JSON.parse(TrailKitBridge.getCacheStats());
      missingDem=c.dem.offlineMissing||0;missingImagery=c.imagery.offlineMissing||0;
-     cacheText='DEM 命中 '+c.dem.hits+' / 未命中 '+c.dem.misses+' · 卫星命中 '+c.imagery.hits+' / 未命中 '+c.imagery.misses;
     }catch(_){}
     if(missingDem+missingImagery>0){
      say('瓦片缺失或网络获取失败：DEM '+missingDem+' 张、卫星影像 '+missingImagery+' 张。请联网浏览该区域完成缓存，再尝试离线使用。',true);
-    }else{
-     say('三维地形已就绪 · DEM z14 · '+cacheText);
     }
    }));
    loaded=true;step('相机读数更新',updateReadout);say('地图样式初始化结束，等待路线数据…');
@@ -258,7 +243,7 @@ button:active{background:#39664d}
  function updateReadout(){
   if(!map)return;
   const tp=targetPitchForZoom(map.getZoom());
-  readout.textContent='Z '+map.getZoom().toFixed(1)+' · 方位 '+Math.round((map.getBearing()+360)%360)+'° · 俯仰 '+Math.round(map.getPitch())+'°\n'+geoLine()+'\n'+(tp===null?'自动俯仰 关':'自动俯仰 目标 '+tp+'° · 强度 '+Math.round(tiltStrength*100)+'%');
+  readout.textContent='Z '+map.getZoom().toFixed(1)+' · 方位 '+Math.round((map.getBearing()+360)%360)+'° · 俯仰 '+Math.round(map.getPitch())+'°\n'+(tp===null?'自动俯仰 关':'自动俯仰 目标 '+tp+'° · 强度 '+Math.round(tiltStrength*100)+'%');
  }
  function fitAll(){
   const full=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full');
@@ -366,7 +351,6 @@ button:active{background:#39664d}
   step('路线 LOD 切换',selectLod);
   step('全线相机定位',()=>{if(!fitAll())throw new Error('当前项目没有可显示的有效 GPX 轨迹');});
   const rawCount=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full')?.geometry.coordinates.length||0;
-  const ri=document.getElementById('routeinfo');if(ri)ri.textContent='轨迹 '+rawCount+' 点 · 途经点 '+waypointData.features.length+' 个 · 图标 成功 '+spriteSuccess+' / 失败 '+spriteFailure;
   say('路线 setData 结束 · '+rawCount+' 个轨迹点 · '+waypointData.features.length+' 个途经点 · 图标失败 '+spriteFailure+' · 已尝试全线定位');
  }
  document.getElementById('fit').addEventListener('click',fitAll);

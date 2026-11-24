@@ -18,7 +18,7 @@ val ensureTerrainMapLibreAssets by tasks.registering {
             "maplibre-gl.css" to cssFile
         ).forEach { (name, target) ->
             if (!target.isFile || target.length() < 1024L) {
-                val url = java.net.URL("https://unpkg.com/maplibre-gl:$TERRAIN_MAPLIBRE_VERSION/dist/$name")
+                val url = java.net.URL("https://unpkg.com/maplibre-gl@$TERRAIN_MAPLIBRE_VERSION/dist/$name")
                 val connection = url.openConnection().apply {
                     connectTimeout = 15_000
                     readTimeout = 45_000

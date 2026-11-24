@@ -17,9 +17,7 @@ html,body,#map{margin:0;width:100%;height:100%;overflow:hidden;background:#17231
 button{border:1px solid #ffffff30;border-radius:10px;background:#203b2e;color:#fff;padding:9px 11px;font-size:12px;font-weight:650;min-height:36px;touch-action:manipulation}
 button:active{background:#39664d}
 .row{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
-#readout{padding:6px 9px;font-size:11px;text-align:right;white-space:pre-line}
 #leftcol{display:flex;flex-direction:column;gap:7px;max-width:54%;pointer-events:none}
-#status{padding:7px 10px;font-size:11px;line-height:1.4;pointer-events:auto;white-space:pre-line;display:none}
 #exaggeration{padding:7px 10px;display:flex;align-items:center;gap:6px;font-size:10px;pointer-events:auto}
 #exaggeration input{flex:1;accent-color:#e8bd4b}
 #tilt{padding:7px 10px;display:flex;align-items:center;gap:6px;font-size:10px;pointer-events:auto;white-space:nowrap}
@@ -41,7 +39,6 @@ button:active{background:#39664d}
 <div id="top">
  <div id="leftcol">
  <div id="legend" class="panel">3D TERRAIN LAB<br><b>真实 DEM 山体</b><br>单指平移 · 双指调视角</div>
- <div id="status" class="panel">正在加载 MapLibre 地形引擎…</div>
  <label id="tilt" class="panel">自动俯仰 <span id="tiltValue">100%</span><input id="tiltSlider" type="range" min="0" max="100" step="5" value="100"></label>
  <label id="exaggeration" class="panel">地形夸张 <span id="exValue">1.35×</span><input id="exSlider" type="range" min="1" max="2" step="0.05" value="1.35"></label>
  </div>
@@ -54,7 +51,6 @@ button:active{background:#39664d}
   </div>
   <div class="row"><button id="walk">原生行走模式</button></div>
   <div class="row"><button id="nav">导航：关</button><button id="fullscreen">全屏</button></div>
-  <div id="readout" class="panel">Z -- · 方位 --° · 俯仰 --°</div>
  </div>
 </div>
 <div id="attrib">© Esri World Imagery · AWS Terrain Tiles</div>
@@ -62,11 +58,7 @@ button:active{background:#39664d}
 <script>
 (function(){
  'use strict';
- const status=document.getElementById('status');
- const readout=document.getElementById('readout');
  let transferChunks=null,transferReceived=0;
- const updateDiagnostics=()=>{try{updateReadout();}catch(_){}};
- setInterval(updateDiagnostics,750);
  window.addEventListener('error',event=>{
   const detail=(event.message||'未知异常')+' @ '+(event.filename||'')+':'+(event.lineno||0)+':'+(event.colno||0);
   say('JavaScript 异常：'+detail,true);
@@ -75,12 +67,9 @@ button:active{background:#39664d}
   const reason=event.reason;const detail=reason&&(reason.stack||reason.message)||String(reason||'未处理 Promise 异常');
   say('JavaScript Promise 异常：'+detail,true);
  });
- let statusHideTimer=0;
  const say=(message,error)=>{
-  status.textContent=message;status.style.display='block';
-  status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';
-  clearTimeout(statusHideTimer);
-  if(!error)statusHideTimer=setTimeout(()=>{status.style.display='none';},4000);
+  // No in-page status panel (the user wants a clean map): messages only go to
+  // the native status strip under the WebView via the bridge.
   try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}
  };
  if(!window.maplibregl){say('MapLibre 本地引擎未能加载，请检查 APK 资源包。',true);return;}
@@ -99,6 +88,7 @@ button:active{background:#39664d}
    'route-points':{type:'geojson',data:empty},
    waypoints:{type:'geojson',data:empty},
    'selected-waypoint':{type:'geojson',data:empty},
+   'waypoint-labels-data':{type:'geojson',data:empty},
    'my-location':{type:'geojson',data:empty}
   },
   layers:[
@@ -112,7 +102,7 @@ button:active{background:#39664d}
    {id:'route-endpoints-dots',type:'circle',source:'route-points',paint:{'circle-radius':7,'circle-color':['match',['get','kind'],'start','#37d67a','#ff5d5d'],'circle-stroke-color':'#ffffff','circle-stroke-width':2}},
    {id:'waypoint-dots',type:'circle',source:'waypoints',paint:{'circle-radius':4.5,'circle-color':'#ffd65d','circle-stroke-color':'#090e0b','circle-stroke-width':1.5}},
    {id:'route-endpoints',type:'symbol',source:'route-points',layout:{'icon-image':['get','spriteId'],'icon-anchor':'left','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-size':.95,'symbol-sort-key':0}},
-   {id:'waypoint-labels',type:'symbol',source:'waypoints',layout:{'icon-image':['get','spriteId'],'icon-anchor':'left','icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.8,'symbol-sort-key':['get','priority']}},
+   {id:'waypoint-labels',type:'symbol',source:'waypoint-labels-data',layout:{'icon-image':['get','spriteId'],'icon-anchor':'left','icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.8,'symbol-sort-key':['get','priority']}},
    {id:'selected-waypoint-label',type:'symbol',source:'selected-waypoint',layout:{'icon-image':['get','spriteId'],'icon-anchor':'left','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.85,'symbol-sort-key':-1}},
    {id:'my-location-halo',type:'circle',source:'my-location',paint:{'circle-radius':10,'circle-color':'#ffffff','circle-opacity':.92}},
    {id:'my-location-arrow',type:'symbol',source:'my-location',filter:['==',['get','hasHeading'],true],layout:{'icon-image':'nav-arrow','icon-size':.62,'icon-rotate':['get','bearing'],'icon-rotation-alignment':'map','icon-allow-overlap':true,'icon-ignore-placement':true}},
@@ -182,10 +172,8 @@ button:active{background:#39664d}
    }));
    step('航点悬停进入事件',()=>map.on('mouseenter','waypoint-labels',()=>map.getCanvas().style.cursor='pointer'));
    step('航点悬停离开事件',()=>map.on('mouseleave','waypoint-labels',()=>map.getCanvas().style.cursor=''));
-   step('地图平移结束事件',()=>map.on('moveend',()=>{updateReadout();if(contoursVisible)queueContours();}));
-   step('地图缩放结束事件',()=>map.on('zoomend',()=>{updateReadout();selectLod();if(contoursVisible)queueContours();}));
-   step('地图旋转结束事件',()=>map.on('rotateend',updateReadout));
-   step('地图俯仰结束事件',()=>map.on('pitchend',updateReadout));
+   step('地图平移结束事件',()=>map.on('moveend',()=>{if(contoursVisible)queueContours();}));
+   step('地图缩放结束事件',()=>map.on('zoomend',()=>{selectLod();if(contoursVisible)queueContours();}));
    step('地图空闲与瓦片诊断事件',()=>map.on('idle',()=>{
     if(!loaded)return;
     let missingDem=0,missingImagery=0;
@@ -197,11 +185,10 @@ button:active{background:#39664d}
      say('瓦片缺失或网络获取失败：DEM '+missingDem+' 张、卫星影像 '+missingImagery+' 张。请联网浏览该区域完成缓存，再尝试离线使用。',true);
     }
    }));
-   loaded=true;step('相机读数更新',updateReadout);say('地图样式初始化结束，等待路线数据…');
+   loaded=true;say('地图样式初始化结束，等待路线数据…');
   }catch(e){say('地图初始化主流程异常：'+((e&&e.stack)||e),true);}
   finally{
    loaded=true;
-   try{updateReadout();}catch(e){say('读数更新异常：'+((e&&e.stack)||e),true);}
    notifyReady();
    if(pendingData!==null){const queued=pendingData;pendingData=null;setData(queued);}
   }
@@ -242,11 +229,6 @@ button:active{background:#39664d}
   const z=map.getZoom();const lod=z<9?'overview':z<12?'mid':z<15?'near':'full';
   const filter=['==',['get','lod'],lod];
   map.setFilter('route-ribbon-fill',filter);map.setFilter('route-casing',filter);map.setFilter('route-main',filter);
- }
- function updateReadout(){
-  if(!map)return;
-  const tp=targetPitchForZoom(map.getZoom());
-  readout.textContent='Z '+map.getZoom().toFixed(1)+' · 方位 '+Math.round((map.getBearing()+360)%360)+'° · 俯仰 '+Math.round(map.getPitch())+'°\n'+(tp===null?'自动俯仰 关':'自动俯仰 目标 '+tp+'° · 强度 '+Math.round(tiltStrength*100)+'%');
  }
  function fitAll(){
   const full=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full');
@@ -327,7 +309,7 @@ button:active{background:#39664d}
    if(!Array.isArray(data.routeLine.features)||!Array.isArray(data.routeRibbon.features)||!Array.isArray(data.waypoints.features))throw new Error('路线 GeoJSON features 格式错误');
   }catch(e){say('路线 setData 解析异常：'+((e&&e.stack)||e),true);return;}
   routeLineData=data.routeLine;routeRibbonData=data.routeRibbon;waypointData=data.waypoints;
-  if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('route-points')||!map.getSource('waypoints')||!map.getSource('selected-waypoint')){
+  if(!map.getSource('route-line')||!map.getSource('route-ribbon')||!map.getSource('route-points')||!map.getSource('waypoints')||!map.getSource('selected-waypoint')||!map.getSource('waypoint-labels-data')){
    pendingData=raw;say('路线数据已接收，等待地图样式与本地数据源就绪…');return;
   }
   step('轨迹线 GeoJSON',()=>map.getSource('route-line').setData(routeLineData));
@@ -338,14 +320,21 @@ button:active{background:#39664d}
   step('起点图标注册',()=>addSprite('endpoint-start','起点','endpoint'));
   step('终点图标注册',()=>addSprite('endpoint-end','终点','endpoint'));
   step('起终点 GeoJSON',()=>map.getSource('route-points').setData({type:'FeatureCollection',features:endpoints}));
+  // Waypoints whose name is just the generic placeholder (blank / '途经点' /
+  // '途经点 N' — the GPX parser's default for unnamed points) get a dot only;
+  // a screen full of identical '途经点' texts helps nobody. Real names label.
+  const isGenericName=n=>{const t=(n||'').trim();return !t||t==='途经点'||/^途经点\s*\d+$/.test(t);};
   let spriteSuccess=0,spriteFailure=0;
+  const labelFeatures=[];
   waypointData.features.forEach((feature,index)=>{
-   const p=feature.properties||{},name=(p.name||'途经点').slice(0,24),id=p.spriteId||('wp-'+p.id);
-   try{addSprite(id,name,'waypoint');spriteSuccess++;}
+   const p=feature.properties||{},name=(p.name||'').slice(0,24),id=p.spriteId||('wp-'+p.id);
+   if(isGenericName(name))return;
+   try{addSprite(id,name,'waypoint');spriteSuccess++;labelFeatures.push(feature);}
    catch(e){spriteFailure++;say('航点图标异常 ['+name+']：'+((e&&e.stack)||e),true);}
   });
-  say('航点图标注册：成功 '+spriteSuccess+' · 失败 '+spriteFailure);
+  say('航点图标注册：成功 '+spriteSuccess+' · 失败 '+spriteFailure+' · 无名点仅圆点 '+(waypointData.features.length-labelFeatures.length)+' 个');
   step('途经点 GeoJSON',()=>map.getSource('waypoints').setData(waypointData));
+  step('途经点标注 GeoJSON',()=>map.getSource('waypoint-labels-data').setData({type:'FeatureCollection',features:labelFeatures}));
   step('清除选中航点状态',()=>{
    selectedWaypointId=null;
    map.getSource('selected-waypoint').setData(empty);

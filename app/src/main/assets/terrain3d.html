@@ -109,14 +109,14 @@ button:active{background:#39664d}
    {id:'route-ribbon-fill',type:'fill',source:'route-ribbon',filter:['==',['get','lod'],'overview'],paint:{'fill-color':'#ff9a3c','fill-opacity':.32}},
    {id:'route-casing',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#171d19','line-width':7,'line-opacity':.92}},
    {id:'route-main',type:'line',source:'route-line',filter:['==',['get','lod'],'overview'],layout:{'line-join':'round','line-cap':'round'},paint:{'line-color':'#ffad43','line-width':4,'line-opacity':1}},
-   {id:'route-endpoints-dots',type:'circle',source:'route-points',paint:{'circle-radius':9,'circle-color':['match',['get','kind'],'start','#37d67a','#ff5d5d'],'circle-stroke-color':'#ffffff','circle-stroke-width':2.5}},
-   {id:'waypoint-dots',type:'circle',source:'waypoints',paint:{'circle-radius':6,'circle-color':'#ffd65d','circle-stroke-color':'#090e0b','circle-stroke-width':2}},
-   {id:'route-endpoints',type:'symbol',source:'route-points',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-size':.9,'symbol-sort-key':0}},
-   {id:'waypoint-labels',type:'symbol',source:'waypoints',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.72,'symbol-sort-key':['get','priority']}},
-   {id:'selected-waypoint-label',type:'symbol',source:'selected-waypoint',layout:{'icon-image':['get','spriteId'],'icon-anchor':'bottom','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.78,'symbol-sort-key':-1}},
-   {id:'my-location-halo',type:'circle',source:'my-location',paint:{'circle-radius':12,'circle-color':'#ffffff','circle-opacity':.92}},
-   {id:'my-location-arrow',type:'symbol',source:'my-location',filter:['==',['get','hasHeading'],true],layout:{'icon-image':'nav-arrow','icon-size':.8,'icon-rotate':['get','bearing'],'icon-rotation-alignment':'map','icon-allow-overlap':true,'icon-ignore-placement':true}},
-   {id:'my-location-core',type:'circle',source:'my-location',paint:{'circle-radius':7,'circle-color':'#2f7bff','circle-stroke-color':'#ffffff','circle-stroke-width':2.5}}
+   {id:'route-endpoints-dots',type:'circle',source:'route-points',paint:{'circle-radius':7,'circle-color':['match',['get','kind'],'start','#37d67a','#ff5d5d'],'circle-stroke-color':'#ffffff','circle-stroke-width':2}},
+   {id:'waypoint-dots',type:'circle',source:'waypoints',paint:{'circle-radius':4.5,'circle-color':'#ffd65d','circle-stroke-color':'#090e0b','circle-stroke-width':1.5}},
+   {id:'route-endpoints',type:'symbol',source:'route-points',layout:{'icon-image':['get','spriteId'],'icon-anchor':'left','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-size':.95,'symbol-sort-key':0}},
+   {id:'waypoint-labels',type:'symbol',source:'waypoints',layout:{'icon-image':['get','spriteId'],'icon-anchor':'left','icon-allow-overlap':false,'icon-ignore-placement':false,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.8,'symbol-sort-key':['get','priority']}},
+   {id:'selected-waypoint-label',type:'symbol',source:'selected-waypoint',layout:{'icon-image':['get','spriteId'],'icon-anchor':'left','icon-allow-overlap':true,'icon-ignore-placement':true,'icon-pitch-alignment':'viewport','icon-rotation-alignment':'viewport','icon-size':.85,'symbol-sort-key':-1}},
+   {id:'my-location-halo',type:'circle',source:'my-location',paint:{'circle-radius':10,'circle-color':'#ffffff','circle-opacity':.92}},
+   {id:'my-location-arrow',type:'symbol',source:'my-location',filter:['==',['get','hasHeading'],true],layout:{'icon-image':'nav-arrow','icon-size':.62,'icon-rotate':['get','bearing'],'icon-rotation-alignment':'map','icon-allow-overlap':true,'icon-ignore-placement':true}},
+   {id:'my-location-core',type:'circle',source:'my-location',paint:{'circle-radius':6,'circle-color':'#2f7bff','circle-stroke-color':'#ffffff','circle-stroke-width':2}}
   ]
  };
  try{
@@ -210,27 +210,30 @@ button:active{background:#39664d}
  setTimeout(()=>{if(!readySent){say('地图样式仍未完成加载，先行下发本地路线数据');notifyReady();}},2500);
  function roundedRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
  function labelSprite(text,kind){
+  // Ovi-style labels: transparent background, yellow text with a dark outline,
+  // drawn right of the point (transparent gap baked into the left of the sprite
+  // and the layer anchored 'left'), so the text never covers the dot itself.
   const scale=2,ctxCanvas=document.createElement('canvas'),ctx=ctxCanvas.getContext('2d');
-  ctx.font='bold 25px system-ui,"Noto Sans CJK SC",sans-serif';
-  const width=Math.ceil(ctx.measureText(text).width+30),height=48;
+  const fontPx=kind==='endpoint'?27:24,gap=16;
+  ctx.font='bold '+fontPx+'px system-ui,"Noto Sans CJK SC",sans-serif';
+  const width=Math.ceil(gap+ctx.measureText(text).width+8),height=44;
   ctxCanvas.width=width*scale;ctxCanvas.height=height*scale;ctx.scale(scale,scale);
-  roundedRect(ctx,1,1,width-2,height-2,10);
-  ctx.fillStyle=kind==='endpoint'?'rgba(17,34,25,.96)':'rgba(12,22,18,.88)';ctx.fill();
-  ctx.lineWidth=3;ctx.strokeStyle=kind==='endpoint'?'#f4c85c':'#090e0b';ctx.stroke();
-  ctx.font='bold 25px system-ui,"Noto Sans CJK SC",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-  ctx.lineJoin='round';ctx.lineWidth=4;ctx.strokeStyle='#090d0b';ctx.strokeText(text,width/2,height/2+1);
-  ctx.fillStyle=kind==='endpoint'?'#fff0a6':'#ffd65d';ctx.fillText(text,width/2,height/2+1);
+  ctx.font='bold '+fontPx+'px system-ui,"Noto Sans CJK SC",sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';
+  ctx.lineJoin='round';ctx.lineWidth=6;ctx.strokeStyle='rgba(5,8,6,.92)';ctx.strokeText(text,gap,height/2+1);
+  ctx.fillStyle=kind==='endpoint'?'#ffe98a':'#ffd65d';ctx.fillText(text,gap,height/2+1);
   return ctx.getImageData(0,0,ctxCanvas.width,ctxCanvas.height);
  }
  function addSprite(id,text,kind){if(map.hasImage(id))map.removeImage(id);map.addImage(id,labelSprite(text,kind),{pixelRatio:2});}
  function navArrowSprite(){
-  const scale=2,size=96,ctxCanvas=document.createElement('canvas'),ctx=ctxCanvas.getContext('2d');
+  // Compact navigation dart pointing straight up (north at bearing 0); the map
+  // rotates it by the heading via icon-rotate with icon-rotation-alignment 'map'.
+  const scale=2,size=72,ctxCanvas=document.createElement('canvas'),ctx=ctxCanvas.getContext('2d');
   ctxCanvas.width=size*scale;ctxCanvas.height=size*scale;ctx.scale(scale,scale);
-  // Navigation arrow pointing straight up (north at bearing 0); the map rotates
-  // it by the heading via icon-rotate with icon-rotation-alignment 'map'.
   ctx.beginPath();
-  ctx.moveTo(48,4);ctx.lineTo(80,86);ctx.lineTo(48,66);ctx.lineTo(16,86);ctx.closePath();
-  ctx.lineJoin='round';ctx.lineWidth=5;ctx.strokeStyle='#ffffff';ctx.stroke();
+  ctx.moveTo(36,3);ctx.lineTo(63,63);ctx.lineTo(36,50);ctx.lineTo(9,63);ctx.closePath();
+  ctx.lineJoin='round';
+  ctx.lineWidth=9;ctx.strokeStyle='rgba(6,12,9,.45)';ctx.stroke();
+  ctx.lineWidth=5;ctx.strokeStyle='#ffffff';ctx.stroke();
   ctx.fillStyle='#2f7bff';ctx.fill();
   return ctx.getImageData(0,0,ctxCanvas.width,ctxCanvas.height);
  }

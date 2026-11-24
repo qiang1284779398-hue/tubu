@@ -150,7 +150,7 @@ internal fun Terrain3DDialog(
         fun push(force: Boolean) {
             val loc = lastLocation ?: return
             val now = SystemClock.elapsedRealtime()
-            if (!force && now - lastPushAt < 400) return
+            if (!force && now - lastPushAt < 50) return
             lastPushAt = now
             val heading: Double? = when {
                 loc.hasBearing() && loc.speed >= 1.0f -> loc.bearing.toDouble()
@@ -205,8 +205,8 @@ internal fun Terrain3DDialog(
                         if (!hasSmooth) {
                             smoothSin = sin(rad); smoothCos = cos(rad); hasSmooth = true
                         } else {
-                            smoothSin = smoothSin * 0.85 + sin(rad) * 0.15
-                            smoothCos = smoothCos * 0.85 + cos(rad) * 0.15
+                            smoothSin = smoothSin * 0.55 + sin(rad) * 0.45
+                            smoothCos = smoothCos * 0.55 + cos(rad) * 0.45
                         }
                         compassDeg = ((Math.toDegrees(atan2(smoothSin, smoothCos)) % 360.0) + 360.0) % 360.0
                         push(false)
@@ -216,8 +216,8 @@ internal fun Terrain3DDialog(
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) { }
         }
         if (accelSensor != null && magnetSensor != null) {
-            sensorManager.registerListener(sensorListener, accelSensor, SensorManager.SENSOR_DELAY_UI)
-            sensorManager.registerListener(sensorListener, magnetSensor, SensorManager.SENSOR_DELAY_UI)
+            sensorManager.registerListener(sensorListener, accelSensor, SensorManager.SENSOR_DELAY_GAME)
+            sensorManager.registerListener(sensorListener, magnetSensor, SensorManager.SENSOR_DELAY_GAME)
         }
         onDispose {
             runCatching { locationManager.removeUpdates(locationListener) }

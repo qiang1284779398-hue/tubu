@@ -140,7 +140,7 @@ internal object ArTerrainDem {
             if (decoded != null && decoded.width == TILE_SIZE && decoded.height == TILE_SIZE) {
                 file.setLastModified(System.currentTimeMillis())
                 remember(key, decoded)
-                writeIndex(directory)
+                directory?.let(::writeIndex)
                 return decoded
             }
             file.delete()

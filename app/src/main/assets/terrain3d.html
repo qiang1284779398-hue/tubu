@@ -419,12 +419,27 @@ button:active{background:#39664d}
   say('路线传输完成：'+count+' 块 · '+raw.length+' 字符，进入 setData…');
   setData(raw);
  }
+ // Tile-refresh coalescing: the native cache calls refreshTiles() EVERY time
+  // a single background tile download lands. Reloading the source per tile made
+  // the whole viewport strobe while downloads trickled in on a slow link.
+  // Collect the kinds and reload each dirty source at most once per window.
+  const pendingTileRefresh={};
+  let tileRefreshTimer=0;
+  function flushTileRefresh(){
+   tileRefreshTimer=0;
+   const kinds=Object.keys(pendingTileRefresh);
+   for(const k of kinds)delete pendingTileRefresh[k];
+   for(const id of kinds){
+    const urls=id==='dem'?['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'];
+    try{const source=map&&map.getSource(id);if(source&&typeof source.setTiles==='function')source.setTiles(urls);}catch(e){say('瓦片刷新异常：'+((e&&e.stack)||e),true);}
+   }
+   if(kinds.length&&map)map.triggerRepaint();
+  }
  window.TerrainLab={
   setData,beginDataTransfer,appendDataChunk,finishDataTransfer,
   refreshTiles(kind){
-   const id=kind==='DEM'?'dem':'imagery';
-   const urls=id==='dem'?['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png']:['https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'];
-   try{const source=map&&map.getSource(id);if(source&&typeof source.setTiles==='function')source.setTiles(urls);if(map)map.triggerRepaint();say((id==='dem'?'DEM':'卫星')+' 瓦片已缓存，已请求刷新视口');}catch(e){say('瓦片刷新异常：'+((e&&e.stack)||e),true);}
+   pendingTileRefresh[kind==='DEM'?'dem':'imagery']=true;
+   if(!tileRefreshTimer)tileRefreshTimer=setTimeout(flushTileRefresh,1500);
   },
   clearSelectedWaypoint(){
    selectedWaypointId=null;

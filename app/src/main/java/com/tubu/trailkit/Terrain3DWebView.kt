@@ -1,13 +1,11 @@
 package com.tubu.trailkit
 
-import android.annotation.SuppressLint
 import android.graphics.Color
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -140,11 +138,6 @@ internal fun Terrain3DDialog(
                                     tileCache.intercept(request.url.toString())
                                         ?: assetLoader.shouldInterceptRequest(request.url)
                                         ?: super.shouldInterceptRequest(view, request)
-                                override fun onReceivedError(
-                                    view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?
-                                ) {
-                                    if (request?.isForMainFrame == true) status = "地图页面加载失败：${error?.description ?: "未知错误"}"
-                                }
                             }
                             webChromeClient = object : WebChromeClient() {
                                 override fun onConsoleMessage(message: ConsoleMessage): Boolean {

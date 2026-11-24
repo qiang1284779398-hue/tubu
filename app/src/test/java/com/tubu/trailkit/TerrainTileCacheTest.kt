@@ -2,6 +2,7 @@ package com.tubu.trailkit
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -13,7 +14,7 @@ class TerrainTileCacheTest {
         store.put("b", byteArrayOf(3, 4))
         assertNotNull(store.get("a"))
         store.put("c", byteArrayOf(5, 6))
-        assertEquals(null, store.get("b"))
+        assertTrue(store.get("b") == null)
         assertNotNull(store.get("a"))
         assertNotNull(store.get("c"))
         assertEquals(4L, store.sizeBytes())

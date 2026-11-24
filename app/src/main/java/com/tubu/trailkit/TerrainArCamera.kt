@@ -58,9 +58,9 @@ private data class ArTerrainSnapshot(
     val currentGroundElevationMeters: Double
 )
 private data class CameraRibbonPoint(
-    val center: ArScreenPoint,
-    val left: ArScreenPoint,
-    val right: ArScreenPoint,
+    val center: ArScreenPoint?,
+    val leftWorld: ArVector3,
+    val rightWorld: ArVector3,
     val progressMeters: Double
 )
 
@@ -632,28 +632,28 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                         val samples = arRouteSamples
                         val referenceElevation = arReferenceElevation
                         val focalPixels = cameraIntrinsics.focalPixels(size.width.toDouble(), size.height.toDouble())
-                        val ribbonPoints = samples.mapIndexedNotNull { index, sample ->
+                        val ribbonPoints = samples.mapIndexed { index, sample ->
                             val previous = samples[(index - 1).coerceAtLeast(0)]
                             val next = samples[(index + 1).coerceAtMost(samples.lastIndex)]
+                            val incoming = bearingToPoint(previous.latitude to previous.longitude, sample.latitude to sample.longitude)
+                            val outgoing = bearingToPoint(sample.latitude to sample.longitude, next.latitude to next.longitude)
+                            val turn = kotlin.math.abs(signedTurnAngle(incoming, outgoing))
+                            val halfWidth = if (turn > 120.0) 0.35 else 0.65
                             val tangent = bearingToPoint(
                                 previous.latitude to previous.longitude,
                                 next.latitude to next.longitude
                             )
-                            val leftGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent - 90.0, 0.65)
-                            val rightGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent + 90.0, 0.65)
-                            val left = projectArRouteSampleFromAnchor(
+                            val leftGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent - 90.0, halfWidth)
+                            val rightGeo = offsetArGeoPoint(sample.latitude, sample.longitude, tangent + 90.0, halfWidth)
+                            val leftWorld = arRouteSampleWorldVectorFromAnchor(
                                 match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
                                 sample.copy(latitude = leftGeo.first, longitude = leftGeo.second),
-                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels,
-                                size.width.toDouble(), size.height.toDouble(),
-                                cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
+                                referenceElevation, cameraHeightMeters.toDouble()
                             )
-                            val right = projectArRouteSampleFromAnchor(
+                            val rightWorld = arRouteSampleWorldVectorFromAnchor(
                                 match.snappedLat, match.snappedLon, fix.latitude, fix.longitude,
                                 sample.copy(latitude = rightGeo.first, longitude = rightGeo.second),
-                                referenceElevation, cameraHeightMeters.toDouble(), pose, focalPixels,
-                                size.width.toDouble(), size.height.toDouble(),
-                                cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
+                                referenceElevation, cameraHeightMeters.toDouble()
                             )
                             val center = projectArRouteSampleFromAnchor(
                                 match.snappedLat, match.snappedLon, fix.latitude, fix.longitude, sample,
@@ -661,9 +661,7 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                                 size.width.toDouble(), size.height.toDouble(),
                                 cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
                             )
-                            if (left != null && right != null && center != null) {
-                                CameraRibbonPoint(center, left, right, sample.progressMeters)
-                            } else null
+                            CameraRibbonPoint(center, leftWorld, rightWorld, sample.progressMeters)
                         }
 
                         for (i in 1 until ribbonPoints.size) {
@@ -671,44 +669,50 @@ internal fun TerrainArCameraDialog(projectId: String, projectName: String, encod
                             val b = ribbonPoints[i]
                             val distanceAlong = (a.progressMeters + b.progressMeters) * 0.5 - match.progressMeters
                             val alpha = (1.0 - distanceAlong / 135.0).toFloat().coerceIn(0.16f, 0.9f) * if (gpsWeak) 0.48f else 1f
-                            val quad = Path().apply {
-                                moveTo(a.left.x, a.left.y)
-                                lineTo(a.right.x, a.right.y)
-                                lineTo(b.right.x, b.right.y)
-                                lineTo(b.left.x, b.left.y)
-                                close()
-                            }
-                            drawPath(quad, Color(0xFF052A43).copy(alpha = 0.54f * alpha))
-                            drawPath(quad, Color(0xFF168CFF).copy(alpha = 0.72f * alpha))
-                            drawLine(
-                                Color(0xFFBDEEFF).copy(alpha = 0.92f * alpha),
-                                androidx.compose.ui.geometry.Offset(a.center.x, a.center.y),
-                                androidx.compose.ui.geometry.Offset(b.center.x, b.center.y),
-                                2.2f
+                            val clippedQuad = projectArWorldPolygon(
+                                listOf(a.leftWorld, a.rightWorld, b.rightWorld, b.leftWorld),
+                                pose, focalPixels, size.width.toDouble(), size.height.toDouble(),
+                                0.5, cameraIntrinsics.distortionK1, cameraIntrinsics.distortionK2
                             )
-
-                            if ((a.progressMeters / 24.0).toInt() != (b.progressMeters / 24.0).toInt()) {
-                                val dx = b.center.x - a.center.x
-                                val dy = b.center.y - a.center.y
-                                val length = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
-                                val ux = dx / length
-                                val uy = dy / length
-                                val mid = androidx.compose.ui.geometry.Offset(
-                                    (a.center.x + b.center.x) * 0.5f,
-                                    (a.center.y + b.center.y) * 0.5f
-                                )
-                                val arrowLength = 10f.coerceAtLeast((length * 0.38f).coerceAtMost(24f))
-                                val tip = androidx.compose.ui.geometry.Offset(mid.x + ux * arrowLength, mid.y + uy * arrowLength)
-                                val base = androidx.compose.ui.geometry.Offset(mid.x - ux * arrowLength * 0.55f, mid.y - uy * arrowLength * 0.55f)
-                                val perpX = -uy * arrowLength * 0.5f
-                                val perpY = ux * arrowLength * 0.5f
-                                val arrow = Path().apply {
-                                    moveTo(tip.x, tip.y)
-                                    lineTo(base.x + perpX, base.y + perpY)
-                                    lineTo(base.x - perpX, base.y - perpY)
+                            if (clippedQuad.size >= 3) {
+                                val quad = Path().apply {
+                                    moveTo(clippedQuad.first().x, clippedQuad.first().y)
+                                    clippedQuad.drop(1).forEach { lineTo(it.x, it.y) }
                                     close()
                                 }
-                                drawPath(arrow, Color.White.copy(alpha = 0.94f * alpha))
+                                drawPath(quad, Color(0xFF052A43).copy(alpha = 0.54f * alpha))
+                                drawPath(quad, Color(0xFF168CFF).copy(alpha = 0.72f * alpha))
+                            }
+                            if (a.center != null && b.center != null) {
+                                drawLine(
+                                    Color(0xFFBDEEFF).copy(alpha = 0.92f * alpha),
+                                    androidx.compose.ui.geometry.Offset(a.center.x, a.center.y),
+                                    androidx.compose.ui.geometry.Offset(b.center.x, b.center.y),
+                                    2.2f
+                                )
+                                if ((a.progressMeters / 24.0).toInt() != (b.progressMeters / 24.0).toInt()) {
+                                    val dx = b.center.x - a.center.x
+                                    val dy = b.center.y - a.center.y
+                                    val length = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                                    val ux = dx / length
+                                    val uy = dy / length
+                                    val mid = androidx.compose.ui.geometry.Offset(
+                                        (a.center.x + b.center.x) * 0.5f,
+                                        (a.center.y + b.center.y) * 0.5f
+                                    )
+                                    val arrowLength = 10f.coerceAtLeast((length * 0.38f).coerceAtMost(24f))
+                                    val tip = androidx.compose.ui.geometry.Offset(mid.x + ux * arrowLength, mid.y + uy * arrowLength)
+                                    val base = androidx.compose.ui.geometry.Offset(mid.x - ux * arrowLength * 0.55f, mid.y - uy * arrowLength * 0.55f)
+                                    val perpX = -uy * arrowLength * 0.5f
+                                    val perpY = ux * arrowLength * 0.5f
+                                    val arrow = Path().apply {
+                                        moveTo(tip.x, tip.y)
+                                        lineTo(base.x + perpX, base.y + perpY)
+                                        lineTo(base.x - perpX, base.y - perpY)
+                                        close()
+                                    }
+                                    drawPath(arrow, Color.White.copy(alpha = 0.94f * alpha))
+                                }
                             }
                         }
                     }

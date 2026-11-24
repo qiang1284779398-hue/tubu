@@ -172,7 +172,6 @@ button:active{background:#39664d}
  function updateReadout(){
   if(!map)return;
   readout.textContent='Z '+map.getZoom().toFixed(1)+' · 方位 '+Math.round((map.getBearing()+360)%360)+'° · 俯仰 '+Math.round(map.getPitch())+'°';
-  try{TrailKitBridge.onViewportChanged(map.getZoom(),map.getBearing(),map.getPitch());}catch(_){}
  }
  function fitAll(){
   const full=routeLineData.features.find(f=>f.properties&&f.properties.lod==='full');

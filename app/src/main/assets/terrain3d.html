@@ -59,7 +59,7 @@ button:active{background:#39664d}
  const status=document.getElementById('status');
  const readout=document.getElementById('readout');
  const say=(message,error)=>{status.textContent=message;status.style.borderColor=error?'#e26c5c':'rgba(255,255,255,.14)';status.style.color=error?'#ffd3c9':'#f4f1e6';try{if(window.TrailKitBridge)TrailKitBridge.onStatus(message);}catch(_){}};
- if(!window.maplibregl){say('MapLibre JS 加载失败。首次启动需要网络加载地图引擎。',true);return;}
+ if(!window.maplibregl){say('MapLibre 本地引擎未能加载，请检查 APK 资源包。',true);return;}
  const empty={type:'FeatureCollection',features:[]};
  let routeLineData=empty,routeRibbonData=empty,waypointData=empty;
  let map=null,loaded=false,contoursVisible=false,layerMode=2,contourTimer=0,selectedWaypointId=null;
@@ -139,7 +139,7 @@ button:active{background:#39664d}
      cacheText='DEM 命中 '+c.dem.hits+' / 未命中 '+c.dem.misses+' · 卫星命中 '+c.imagery.hits+' / 未命中 '+c.imagery.misses;
     }catch(_){}
     if(missingDem+missingImagery>0){
-     say('离线缓存缺失：DEM '+missingDem+' 张、卫星影像 '+missingImagery+' 张。请联网浏览该区域后再离线使用。',true);
+     say('瓦片缺失或网络获取失败：DEM '+missingDem+' 张、卫星影像 '+missingImagery+' 张。请联网浏览该区域完成缓存，再尝试离线使用。',true);
     }else{
      say('三维地形已就绪 · DEM z14 · '+cacheText);
     }
@@ -260,8 +260,22 @@ button:active{background:#39664d}
   if(document.hidden){if(map)map.stop();}
   else if(map){map.resize();map.triggerRepaint();}
  });
+ function beginDataTransfer(count){
+  if(!Number.isInteger(count)||count<1||count>2048)throw new Error('路线数据分块数量无效');
+  transferChunks=new Array(count);
+ }
+ function appendDataChunk(index,chunk){
+  if(!transferChunks||index<0||index>=transferChunks.length)return;
+  transferChunks[index]=String(chunk);
+ }
+ function finishDataTransfer(){
+  if(!transferChunks||transferChunks.some(chunk=>typeof chunk!=='string')){
+   transferChunks=null;say('路线数据传输不完整，请重新打开三维地形。',true);return;
+  }
+  const raw=transferChunks.join('');transferChunks=null;setData(raw);
+ }
  window.TerrainLab={
-  setData,
+  setData,beginDataTransfer,appendDataChunk,finishDataTransfer,
   clearSelectedWaypoint(){
    selectedWaypointId=null;
    if(map&&map.getSource('selected-waypoint'))map.getSource('selected-waypoint').setData(empty);
